@@ -27,6 +27,7 @@ export { Dawg, DAWG_FORMAT, DAWG_VERSION } from './dawg.js'
 export { FuzzyIndex, INDEX_FORMAT, INDEX_VERSION } from './fuzzy-index.js'
 export { createAffixStripper } from './expanders.js'
 export { createAnalyzer, validateMorphology } from './morphology.js'
+export { createMorphSearch } from './morph-search.js'
 export { roundCost, EPSILON } from './dp.js'
 export {
   PROFILE_FORMAT,

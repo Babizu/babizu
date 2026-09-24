@@ -11,7 +11,7 @@ import { PAZEH_PROFILE } from '../fixtures/pazeh.js'
 const MORPHOLOGY = {
   cost: 0.3,
   minStem: 3,
-  prefixes: [{ form: 'mu', gloss: { 'zh-TW': '主事焦點', en: 'AF' } }, { form: 'pa' }],
+  prefixes: [{ form: 'mu', gloss: { 'zh-TW': '主事焦點', en: 'AF' } }, { form: 'pa' }, { form: 'minu' }],
   suffixes: [{ form: 'an' }],
   infixes: [{ form: 'in' }],
 }
@@ -29,6 +29,12 @@ const records = [
   rec('binaket', 'word', 'binaket', '被打了'), // 沒有標註衍生關係：要靠構詞分析連起來
   rec('patukuan', 'word', 'patukuan', '讓…看'),
   rec('tuku', 'word', 'tuku', '看'),
+  rec('kawas', 'word', 'kawas', '天'),
+  rec('mukawas', 'word', 'mukawas', '天亮', {
+    morphology: { formType: 'free', segmentation: null, gloss: null, derivedFrom: [{ relation: '<', text: 'kawas-' }] },
+  }),
+  rec('dox', 'word', 'dox', '喝（方言）'),
+  rec('mudox', 'word', 'mudox', '喝了（方言）'),
   rec('s1', 'sentence', 'yaku ka mudaux dalum.', '我喝水'),
   rec('s2', 'sentence', 'binaket ni yaku.', '被我打了'),
 ]
@@ -108,3 +114,41 @@ describe('衍生形（查詞根 → 找到衍生詞）', () => {
     expect(without.search('daux', { fields: ['native'] }).occurrences.find((h) => h.doc.id === 'dict:s1')?.matchType).toBe('substring')
   })
 })
+
+describe('第二版：派生詞列表與音變 ∘ 構詞的聯合搜尋', () => {
+  it('詞根相符時列出辭典標註的派生詞，排在詞根本身之後', () => {
+    const res = withMorphology.search('kinawas', { fields: ['native'] })
+    const root = res.entries.find((h) => h.doc.id === 'dict:kawas')
+    const child = res.entries.find((h) => h.doc.id === 'dict:mukawas')
+    expect(root).toMatchObject({ matchType: 'lemma', kind: 'head' })
+    expect(child).toMatchObject({ matchType: 'lemma', kind: 'root', term: 'kawas' })
+    expect(child?.score).toBeGreaterThan(/** @type {any} */ (root).score)
+  })
+
+  it('去詞綴後詞幹帶方言音變：minudox → daux（o→au），說明附上詞幹的對齊', () => {
+    const hit = withMorphology.search('minudox', { fields: ['native'] }).entries.find((h) => h.doc.id === 'dict:daux')
+    expect(hit?.matchType).toBe('lemma')
+    expect(hit?.analysis).toMatchObject({ stem: 'daux', stemSurface: 'dox', stemDistance: 0.1 })
+    expect(hit?.analysis?.steps.map((s) => s.form)).toEqual(['minu'])
+    expect(hit?.analysis?.stemAlignment?.map((s) => `${s.source}→${s.target}`)).toEqual(['o→au'])
+  })
+
+  it('詞綴本身帶方言音變：minedaux 的 mine- 對應 minu-', () => {
+    const hit = withMorphology.search('minedaux', { fields: ['native'] }).entries.find((h) => h.doc.id === 'dict:daux')
+    expect(hit?.matchType).toBe('lemma')
+    expect(hit?.analysis?.steps[0]).toMatchObject({ type: 'prefix', form: 'minu', surface: 'mine' })
+  })
+
+  it('衍生形方向也涵蓋查詢的方言變體：查 daux 找到 mudox（經由 dox）', () => {
+    const hit = withMorphology.search('daux', { fields: ['native'] }).entries.find((h) => h.doc.id === 'dict:mudox')
+    expect(hit?.matchType).toBe('derived')
+    expect(hit?.analysis).toMatchObject({ stem: 'dox', stemSurface: 'daux' })
+  })
+
+  it('lemmaDistance: 0 時詞幹必須完全相同（關閉音變）', () => {
+    const strict = engineWith({ ...PAZEH_PROFILE, morphology: { ...MORPHOLOGY, lemmaDistance: 0 } })
+    const res = strict.search('minudox', { fields: ['native'] })
+    expect(res.entries.some((h) => h.doc.id === 'dict:daux')).toBe(false)
+  })
+})
+

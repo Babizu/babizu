@@ -15,7 +15,7 @@
  * 除了詞圖之外，其餘索引都在第一次用到時才建立（lazy）。
  */
 
-import { FuzzyIndex } from '../fuzzy/index.js'
+import { createMorphSearch, FuzzyIndex } from '../fuzzy/index.js'
 import { decodePosting, docAt, INDEX_FORMAT_VERSION } from './format.js'
 import { createTextTools, detectQueryMode, glossTokens, zhNormalize } from './text.js'
 
@@ -80,9 +80,13 @@ export const FUZZINESS = Object.freeze({
 
 /**
  * @typedef {object} LemmaAnalysis
- * @property {string} stem 分析出的詞幹
- * @property {import('../fuzzy/morphology.js').MorphStep[]} steps 由外而內的構詞步驟
- * @property {number} cost 構詞步驟的成本
+ * @property {string} stem 詞幹（詞庫中的寫法）
+ * @property {Array<import('../fuzzy/morph-search.js').MorphStepHit>} steps 由外而內的構詞步驟
+ *   （詞綴本身有音變時，step.surface 是查詢中的寫法）
+ * @property {number} cost 總成本（構詞步驟＋詞綴音變＋詞幹音變）
+ * @property {string} [stemSurface] 詞根相符時，查詢中對應詞幹的那一段（與 stem 不同表示詞幹有音變）
+ * @property {number} [stemDistance] 詞幹部分的加權編輯距離
+ * @property {AlignmentNote[] | null} [stemAlignment] 詞幹音變的對齊說明（只為前幾筆結果計算）
  */
 
 /** @typedef {'fuzzy' | 'prefix' | 'lemma' | 'derived' | 'substring'} MatchType */
@@ -144,6 +148,16 @@ const MATCH_TYPE_RANK = { fuzzy: 0, prefix: 1, lemma: 2, derived: 3, substring: 
  */
 const MORPHOLOGY_BASE_SCORE = 0.4
 
+/** 詞根相符時，辭典標註的派生詞（root posting）排在詞根本身之後 */
+const LEMMA_DERIVATIVE_PENALTY = 0.1
+
+/** 構詞搜尋的總成本上限：min(LEMMA_MAX_DISTANCE, 模糊程度門檻 ＋ LEMMA_EXTRA_DISTANCE) */
+const LEMMA_MAX_DISTANCE = 1
+const LEMMA_EXTRA_DISTANCE = 0.6
+
+/** 查詢的方言變體也拿來找衍生形：只取距離這麼小、且全由方言規則構成的模糊命中 */
+const DIALECT_VARIANT_DISTANCE = 0.3
+
 
 /**
  * 把前綴／包含命中換算成「等效距離」，好跟模糊命中一起排序。
@@ -186,6 +200,10 @@ export class SearchEngine {
     this.text = createTextTools(profile)
     this.metric = this.text.createSearchMetric()
     this.index = FuzzyIndex.deserialize(lexicon, this.metric)
+    /** 構詞搜尋（語言設定檔有 morphology 時才有），見 babizu/fuzzy 的 morph-search.js */
+    this.morphSearch = this.text.morphology
+      ? createMorphSearch({ analyzer: this.text.morphology, metric: this.metric, index: this.index })
+      : null
     /** @type {Map<string, number> | null} */
     this._idIndex = null
     /** @type {Map<string, number[]> | null} */
@@ -418,7 +436,9 @@ export class SearchEngine {
           doc: prev?.doc ?? this.doc(k),
           term: t.term,
           distance: t.distance,
-          score: rankScore(t.matchType, t.distance, Math.max(0, t.term.length - key.length)),
+          score:
+            rankScore(t.matchType, t.distance, Math.max(0, t.term.length - key.length)) +
+            (t.matchType === 'lemma' && kind === 'root' ? LEMMA_DERIVATIVE_PENALTY : 0),
           matchType: t.matchType,
           kind,
           alignment: null,
@@ -430,6 +450,11 @@ export class SearchEngine {
     response.entries = sortEntries([...entries.values()])
     for (const hit of response.entries.slice(0, explainLimit)) {
       if (hit.matchType === 'fuzzy' && hit.distance > 0) hit.alignment = this.explainNotes(key, hit.term)
+      const a = hit.analysis
+      if (a && a.stemAlignment === undefined) {
+        // 詞根相符：查詢中的詞幹 → 詞庫詞幹；衍生形：查詢 → 方言變體詞幹
+        a.stemAlignment = a.stemSurface && a.stemSurface !== a.stem ? this.explainNotes(a.stemSurface, a.stem) : null
+      }
     }
 
     // 例句：每個查詢詞都要在句中出現（模糊），距離相加排序
@@ -502,15 +527,21 @@ export class SearchEngine {
    * @param {SearchResponse} response 累加走訪統計
    * @private
    */
-  _fuzzyTerms(key, level, response) {
+  _fuzzyTerms(key, level, response, prepared = null) {
     const n = Array.from(key).length
-    const { results, stats } = this.index.searchWithStats(key, {
-      maxDistance: level.maxDistance(n),
-      normalization: 'max',
-      maxNormalized: level.maxNormalized,
-    })
+    const stats = { visitedNodes: 0, prunedNodes: 0, computedRows: 0 }
+    // 普通模糊搜尋與構詞搜尋的各個還原變體共用一次詞圖走訪（多通道，結果與分開搜尋相同）
+    const [plain, ...morph] = this.index.searchChannels(
+      [
+        { query: key, options: { maxDistance: level.maxDistance(n), normalization: 'max', maxNormalized: level.maxNormalized } },
+        ...(prepared?.channels ?? []),
+      ],
+      stats,
+    )
     response.stats.visitedNodes += stats.visitedNodes
-    return results
+    // 與 FuzzyIndex.search 相同的排序
+    plain.sort((a, b) => a.score - b.score || a.distance - b.distance || (a.term < b.term ? -1 : a.term > b.term ? 1 : 0))
+    return { results: plain, morph }
   }
 
   /**
@@ -530,8 +561,14 @@ export class SearchEngine {
   _matchTerms(key, level, response, fuzzy = true) {
     /** @type {Map<string, TermMatch>} */
     const matches = new Map()
+    const morphology = fuzzy && this.morphSearch !== null && level.maxDistance(Array.from(key).length) > 0
+    /** @type {TermMatch[]} */
+    let lemma = []
     if (fuzzy) {
-      for (const r of this._fuzzyTerms(key, level, response)) {
+      const prepared = morphology ? /** @type {NonNullable<typeof this.morphSearch>} */ (this.morphSearch).prepare(key) : null
+      const { results, morph } = this._fuzzyTerms(key, level, response, prepared)
+      if (prepared) lemma = this._lemmaTerms(key, level, prepared, morph)
+      for (const r of results) {
         matches.set(r.term, {
           term: r.term,
           payloads: r.payloads,
@@ -548,9 +585,13 @@ export class SearchEngine {
     for (const m of this._substringTerms(key)) {
       if (!matches.has(m.term)) matches.set(m.term, m)
     }
-    if (fuzzy && this.text.morphology && level.maxDistance(Array.from(key).length) > 0) {
+    if (morphology) {
+      // 查詢的方言變體（純規則、距離不大）也當作詞幹去找衍生形：查 daux 也找得到 minudox
+      const variants = [...matches.values()]
+        .filter((m) => m.matchType === 'fuzzy' && m.distance > 0 && m.distance <= DIALECT_VARIANT_DISTANCE)
+        .filter((m) => this.explainNotes(key, m.term).every((s) => s.op === 'rule'))
       // 構詞命中：同一個詞若也是前綴或包含命中，構詞的說明更有用；模糊命中則保留原本的
-      for (const m of [...this._lemmaTerms(key, level, response), ...this._derivedTerms(key)]) {
+      for (const m of [...lemma, ...this._derivedTerms(key, variants)]) {
         const prev = matches.get(m.term)
         if (!prev || prev.matchType === 'substring' || prev.matchType === 'prefix' || m.distance < prev.distance) {
           if (prev?.matchType !== 'fuzzy') matches.set(m.term, m)
@@ -567,34 +608,49 @@ export class SearchEngine {
    * （詞幹本身，或加了中綴、重疊、詞幹交替後的樣子）。先用「字元 → 詞」索引找出含核心形式的詞，
    * 再用構詞分析驗證，分析結果的詞幹必須正好是查詢。
    *
+   * 查詢的方言變體（variants：純規則、距離小的模糊命中詞）也各當一次詞幹，
+   * 成本加上變體本身的距離，說明中附上查詢 → 變體的對齊。
+   *
    * @param {string} key
+   * @param {TermMatch[]} [variants]
    * @returns {TermMatch[]}
    * @private
    */
-  _derivedTerms(key) {
+  _derivedTerms(key, variants = []) {
     const morphology = /** @type {import('../fuzzy/morphology.js').Analyzer} */ (this.text.morphology)
-    if (Array.from(key).length < morphology.spec.minStem) return []
     const { terms } = this._ensureTermIndex()
-    /** @type {TermMatch[]} */
-    const out = []
-    const seen = new Set()
-    for (const core of morphology.coreForms(key)) {
-      for (const id of this._termsContaining(core)) {
-        const term = terms[id]
-        if (term === key || seen.has(term)) continue
-        seen.add(term)
-        const a = morphology.analyze(term).find((x) => x.stem === key)
-        if (!a) continue
-        out.push({
-          term,
-          payloads: this.index.payloads[id],
-          distance: a.cost,
-          matchType: 'derived',
-          analysis: { stem: a.stem, steps: a.steps, cost: a.cost },
-        })
+    /** @type {Map<string, TermMatch>} */
+    const out = new Map()
+    for (const { term: stem, distance: offset } of [{ term: key, distance: 0 }, ...variants]) {
+      if (Array.from(stem).length < morphology.spec.minStem) continue
+      const seen = new Set()
+      for (const core of morphology.coreForms(stem)) {
+        for (const id of this._termsContaining(core)) {
+          const term = terms[id]
+          if (term === key || term === stem || seen.has(term)) continue
+          seen.add(term)
+          const a = morphology.analyze(term).find((x) => x.stem === stem)
+          if (!a) continue
+          const distance = Math.round((a.cost + offset) * 1e9) / 1e9
+          const prev = out.get(term)
+          if (prev && prev.distance <= distance) continue
+          out.set(term, {
+            term,
+            payloads: this.index.payloads[id],
+            distance,
+            matchType: 'derived',
+            analysis: {
+              stem,
+              steps: a.steps,
+              cost: distance,
+              // 方言變體：說明「查詢 → 詞幹」的音變（stemSurface 借用為查詢本身）
+              ...(offset > 0 ? { stemSurface: key, stemDistance: offset } : {}),
+            },
+          })
+        }
       }
     }
-    return out
+    return [...out.values()]
   }
 
   /**
@@ -616,57 +672,38 @@ export class SearchEngine {
   }
 
   /**
-   * 詞根相符（去詞綴方向）：查詢經構詞分析去掉詞綴後，詞幹在詞庫中的命中。
+   * 詞根相符（去詞綴方向）：音變 ∘ 構詞 ∘ 詞庫的聯合搜尋（babizu/fuzzy 的 morph-search.js）。
    *
-   * 預設詞幹必須正好是詞庫中的詞（直接查詞圖，O(詞長)）。構詞規格的 `stemDistance` 大於 0 時，
-   * 改以這個預算走一次模糊搜尋，距離＝構詞步驟成本＋詞幹距離，
-   * 「另一個方言的衍生詞 → 這個方言的詞根」也找得到，代價是較多巧合命中與較慢的查詢。
+   * 前綴鏈、後綴鏈的成本先算成兩張圖表，當作詞圖 DP 的起始列與詞尾附加成本，一次走訪就同時處理
+   * 「詞綴＋詞幹＋方言音變」，詞綴本身的音變（mine-／minu-）也在內。
+   * 總成本上限＝ min(1, 該模糊程度的門檻 ＋ 0.6)；詞幹部分的音變另受規格的 lemmaDistance 限制。
    * 精確模式不做（精確只比對拼寫相同的詞）。
    *
    * @param {string} key
    * @param {typeof FUZZINESS[Fuzziness]} level
-   * @param {SearchResponse} response
+   * @param {ReturnType<NonNullable<SearchEngine['morphSearch']>['prepare']>} prepared
+   * @param {import('../fuzzy/fuzzy-index.js').SearchResult[][]} results 各還原變體通道的候選
    * @returns {TermMatch[]}
    * @private
    */
-  _lemmaTerms(key, level, response) {
-    /** @type {Map<string, TermMatch>} */
-    const out = new Map()
-    const morphology = /** @type {import('../fuzzy/morphology.js').Analyzer} */ (this.text.morphology)
-    for (const a of morphology.analyze(key)) {
-      const budget = Math.min(level.maxDistance(Array.from(a.stem).length), morphology.spec.stemDistance ?? 0)
-      /** @type {Array<{term: string, payloads: unknown[], distance: number}>} */
-      let results
-      if (budget > 0) {
-        const found = this.index.searchWithStats(a.stem, {
-          maxDistance: budget,
-          normalization: 'max',
-          maxNormalized: level.maxNormalized,
-        })
-        response.stats.visitedNodes += found.stats.visitedNodes
-        results = found.results
-      } else {
-        const payloads = this.index.lookup(a.stem)
-        results = payloads ? [{ term: a.stem, payloads, distance: 0 }] : []
-      }
-      for (const r of results) {
-        if (r.term === key) continue
-        const distance = Math.round((a.cost + r.distance) * 1e9) / 1e9
-        const prev = out.get(r.term)
-        if (prev && prev.distance <= distance) continue
-        out.set(r.term, {
-          term: r.term,
-          payloads: r.payloads,
-          distance,
-          matchType: 'lemma',
-          analysis: { stem: a.stem, steps: a.steps, cost: a.cost },
-        })
-      }
-    }
-    return [...out.values()]
+  _lemmaTerms(key, level, prepared, results) {
+    if (!prepared) return []
+    const search = /** @type {NonNullable<typeof this.morphSearch>} */ (this.morphSearch)
+    const maxDistance = Math.min(LEMMA_MAX_DISTANCE, level.maxDistance(Array.from(key).length) + LEMMA_EXTRA_DISTANCE)
+    return search.finish(prepared, results, maxDistance).map((h) => ({
+      term: h.term,
+      payloads: h.payloads,
+      distance: h.distance,
+      matchType: /** @type {MatchType} */ ('lemma'),
+      analysis: {
+        stem: h.term,
+        steps: h.steps,
+        cost: h.distance,
+        stemSurface: h.stemSurface,
+        stemDistance: h.stemDistance,
+      },
+    }))
   }
-
-
 
   /**
    * 前綴與包含比對。
@@ -893,13 +930,15 @@ export class SearchEngine {
 }
 
 /**
- * 構詞命中（lemma、derived）只取詞條本身的詞形、其他寫法、變體。
- * 不沿用 root posting：查 mudaux 得到詞幹 daux 時，列出 daux 的所有衍生詞（兄弟詞）只會淹沒結果。
+ * 哪些 posting 可以跟哪種命中方式搭配：
+ * - 詞根相符（lemma）：詞根本身，以及辭典標註的派生詞（root posting，排在詞根之後）。
+ *   查 kinawas 得到詞根 kawas 時，mukawas、maakawas 等已標註的派生詞也要列出來
+ * - 衍生形（derived）：不沿用 root posting，那是「衍生詞的衍生詞」
  * @param {MatchType} matchType
  * @param {import('./format.js').MatchKind} kind
  */
 function usablePosting(matchType, kind) {
-  if (matchType === 'lemma' || matchType === 'derived') return kind !== 'root'
+  if (matchType === 'derived') return kind !== 'root'
   return true
 }
 

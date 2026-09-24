@@ -28,6 +28,13 @@
  * - allowFinal = false：假設 Y[j] 存在且不是邊界（列 N_j）
  * - allowFinal = true ：假設 Y[j] 不存在或是邊界（列 F_j），此時才允許 final 規則
  * 往後的列引用第 j 列時，依實際的 Y[j] 選用正確的那一列。
+ *
+ * ## 邊界條件（構詞搜尋用）
+ * 預設起點只有 D(0, 0) = 0。`compileQuery` 可以另外給起點成本向量 start：
+ *   D(i, 0) = min( start[i], D(i-1, 0) + del(X[i-1]) )
+ * 讓候選字串可以從 X 的任何位置 i 開始比對（前面的部分由呼叫端以 start[i] 計價，例如前綴鏈）。
+ * 結尾的對應（後綴鏈）由呼叫端在詞尾取 min_i D(i, M) + end[i]。
+ * 所有成本仍然非負，剪枝的下界論證不受影響（見 docs/fuzzy-search.md 第 10 節）。
  */
 
 /** 浮點誤差容忍值：0.1 累加三次會得到 0.30000000000000004 */
@@ -52,7 +59,15 @@ export function roundCost(x) {
  *   at[i]：所有「source 恰好是 X 在位置 i 結尾的後綴、且 X 側位置條件成立」的規則，
  *   以 target 字串分組。DP 計算時只要拿 Y 的後綴去查這張雜湊表即可。
  * @property {boolean} hasFinal 是否有任何 final 規則匹配到 X（沒有的話 F_j 恆等於 N_j）
+ * @property {Float64Array | null} start 第 0 列的起點成本（null 表示只有 D(0, 0) = 0）
  * @property {ColumnContext} column 計算列時重複使用的暫存
+ */
+
+/**
+ * @typedef {object} QueryOptions
+ * @property {ArrayLike<number> | null} [start] 起點成本向量（長度 N + 1）；見檔頭「邊界條件」
+ * @property {ArrayLike<boolean> | null} [extraInitial] 額外視為「X 的詞首」的位置（例如前綴鏈的終點）
+ * @property {ArrayLike<boolean> | null} [extraFinal] 額外視為「X 的詞尾」的位置（例如後綴鏈的起點）
  */
 
 /**
@@ -110,10 +125,12 @@ export class CompiledRules {
   /**
    * 為查詢字串建立規則匹配表。
    * @param {string[]} x 查詢字串（code point 陣列）
+   * @param {QueryOptions} [options]
    * @returns {QueryPlan}
    */
-  compileQuery(x) {
+  compileQuery(x, options = {}) {
     const n = x.length
+    const { start = null, extraInitial = null, extraFinal = null } = options
     /** @type {Array<Map<string, CompiledRule[]> | null>} */
     const at = new Array(n + 1).fill(null)
     let hasFinal = false
@@ -125,8 +142,10 @@ export class CompiledRules {
         const candidates = this.bySource.get(key)
         if (!candidates) continue
         for (const rule of candidates) {
-          if (rule.position === 'initial' && !(i - a === 0 || this.isBoundary(x[i - a - 1]))) continue
-          if (rule.position === 'final' && !(i === n || this.isBoundary(x[i]))) continue
+          if (rule.position === 'initial' && !(i - a === 0 || this.isBoundary(x[i - a - 1]) || extraInitial?.[i - a])) {
+            continue
+          }
+          if (rule.position === 'final' && !(i === n || this.isBoundary(x[i]) || extraFinal?.[i])) continue
           if (rule.position === 'final') hasFinal = true
           let byTarget = at[i]
           if (!byTarget) byTarget = at[i] = new Map()
@@ -141,6 +160,7 @@ export class CompiledRules {
       chars: x,
       at,
       hasFinal,
+      start: start ? Float64Array.from(start) : null,
       column: {
         j: 0,
         yChar: '',
@@ -240,8 +260,8 @@ export function fillRow(plan, compiled, costs, ctx, allowFinal, out, trace = nul
   const insertCost = prevRow ? costs.ins(yChar) : 0
 
   for (let i = 0; i <= n; i++) {
-    // 起點 D(0, 0) = 0；其餘格子由轉移取最小值
-    let best = i === 0 && j === 0 ? 0 : Infinity
+    // 起點：預設 D(0, 0) = 0；有邊界條件時第 0 列的每一格都可以是起點。其餘格子由轉移取最小值
+    let best = j === 0 ? (plan.start ? plan.start[i] : i === 0 ? 0 : Infinity) : Infinity
 
     if (prevRow) {
       // 插入 Y[j-1]

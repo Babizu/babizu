@@ -226,7 +226,9 @@
       "infix": "Infix",
       "reduplication": "Reduplication",
       "alternation": "Stem alternation"
-    }
+    },
+    "surface": "written {surface} in your query (dialect or spelling difference)",
+    "stemChange": "Sound change in the stem"
   },
   "nav": {
     "about": "About",

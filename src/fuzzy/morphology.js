@@ -56,8 +56,10 @@
  * @property {number} [cost=0.3] 每個構詞步驟的預設成本
  * @property {number} [minStem=3] 詞幹最短長度（code point）
  * @property {number} [maxSteps=3] 最多剝除幾層（交替不計）
- * @property {number} [stemDistance=0] 搜尋時詞幹允許的加權編輯距離。0 表示詞幹必須正好是詞庫中的詞；
- *   設成方言對應規則的權重（例如 0.1）可以讓「另一個方言的衍生詞 → 這個方言的詞根」也找得到，但會增加巧合命中
+ * @property {number} [lemmaDistance=0.3] 構詞命中時，詞幹部分允許的加權編輯距離（音變預算）。
+ *   0 表示詞幹必須正好是詞庫中的詞；0.1–0.3 讓「另一個方言的衍生詞 → 這個方言的詞根」也找得到
+ * @property {number} [affixDistance=0.2] 每個詞綴允許的加權編輯距離（詞綴本身的方言差異，例如 mine-／minu-）
+ * @property {number} [lemmaSpread=0.6] 構詞命中只保留成本在「最佳 ＋ lemmaSpread」之內的詞，控制候選數
  * @property {string} [vowels='aeiouéə'] 元音字母（決定「首輔音」「首元音」與中綴位置）
  * @property {AffixSpec[]} [prefixes]
  * @property {AffixSpec[]} [suffixes]
@@ -82,7 +84,15 @@
  * @property {number} cost 各步驟成本的總和
  */
 
-const DEFAULTS = Object.freeze({ cost: 0.3, minStem: 3, maxSteps: 3, stemDistance: 0, vowels: 'aeiouéə' })
+const DEFAULTS = Object.freeze({
+  cost: 0.3,
+  minStem: 3,
+  maxSteps: 3,
+  lemmaDistance: 0.3,
+  affixDistance: 0.2,
+  lemmaSpread: 0.6,
+  vowels: 'aeiouéə',
+})
 
 /** 同一個詞最多回傳幾個分析，避免規格過寬時列舉爆量 */
 const MAX_ANALYSES = 64
@@ -97,7 +107,7 @@ export function validateMorphology(spec) {
   if (!spec || typeof spec !== 'object' || Array.isArray(spec)) return ['morphology 必須是物件']
   const s = /** @type {Record<string, any>} */ (spec)
   const errors = []
-  for (const key of ['cost', 'minStem', 'maxSteps', 'stemDistance']) {
+  for (const key of ['cost', 'minStem', 'maxSteps', 'lemmaDistance', 'affixDistance', 'lemmaSpread']) {
     if (s[key] !== undefined && !(typeof s[key] === 'number' && s[key] >= 0)) errors.push(`morphology.${key} 必須是非負數`)
   }
   if (s.vowels !== undefined && (typeof s.vowels !== 'string' || !s.vowels)) errors.push('morphology.vowels 必須是非空字串')
@@ -137,6 +147,8 @@ export function validateMorphology(spec) {
  * @property {(word: string) => Analysis[]} analyze 去詞綴：所有可能的（詞幹, 步驟）；已正規化的輸入
  * @property {(stem: string, steps: MorphStep[]) => string} generate 還原詞綴
  * @property {(stem: string) => string[]} coreForms 詞幹在衍生詞中可能的核心形式（找衍生詞時用）
+ * @property {(w: string) => string} onset 詞首的輔音（群）
+ * @property {(pattern: 'Ca' | 'CV' | 'full', base: string) => string | null} reduplicant 詞幹 base 套用重疊模式時前面要加的字串
  * @property {MorphologySpec} spec 正規化後的規格
  */
 
@@ -152,7 +164,9 @@ export function createAnalyzer(spec, normalize = (s) => s) {
   const cost = spec.cost ?? DEFAULTS.cost
   const minStem = spec.minStem ?? DEFAULTS.minStem
   const maxSteps = spec.maxSteps ?? DEFAULTS.maxSteps
-  const stemDistance = spec.stemDistance ?? DEFAULTS.stemDistance
+  const lemmaDistance = spec.lemmaDistance ?? DEFAULTS.lemmaDistance
+  const affixDistance = spec.affixDistance ?? DEFAULTS.affixDistance
+  const lemmaSpread = spec.lemmaSpread ?? DEFAULTS.lemmaSpread
   const vowels = new Set(Array.from(normalize(spec.vowels ?? DEFAULTS.vowels)))
 
   /** @param {AffixSpec[] | undefined} list */
@@ -309,7 +323,22 @@ export function createAnalyzer(spec, normalize = (s) => s) {
     analyze,
     generate,
     coreForms,
-    spec: { cost, minStem, maxSteps, stemDistance, vowels: [...vowels].join(''), prefixes, suffixes, infixes, reduplication, alternations: spec.alternations ?? [] },
+    onset,
+    reduplicant,
+    spec: {
+      cost,
+      minStem,
+      maxSteps,
+      lemmaDistance,
+      affixDistance,
+      lemmaSpread,
+      vowels: [...vowels].join(''),
+      prefixes,
+      suffixes,
+      infixes,
+      reduplication,
+      alternations: alternations.map((a) => ({ ...a, before: a.before ? [...a.before] : null })),
+    },
   }
 }
 

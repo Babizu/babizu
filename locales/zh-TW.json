@@ -226,7 +226,9 @@
       "infix": "中綴",
       "reduplication": "重疊",
       "alternation": "詞幹交替"
-    }
+    },
+    "surface": "查詢中寫作 {surface}（方言或拼寫差異）",
+    "stemChange": "詞幹的音變"
   },
   "nav": {
     "about": "關於",

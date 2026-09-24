@@ -33,6 +33,11 @@
  * 反過來，若不檢查 target 前綴而把前 L 列全部納入，下界又會太鬆（預設規則有
  * say→tshay，L = 5，前 5 層幾乎無法剪枝）。
  * 測試中的「暴力比對性質測試」用來保證剪枝不會漏掉任何結果。
+ *
+ * ## 邊界條件（構詞搜尋）
+ * `start`、`end` 兩個向量讓候選詞只對應查詢的一段：第 0 列取 start（詞幹可以從前綴鏈的
+ * 任何終點開始），詞尾取 min_i F_j[i] + end[i]（詞幹可以在後綴鏈的任何起點結束）。
+ * end ≥ 0，所以上面的下界照樣成立；普通搜尋就是 start = [0, ∞…]、end = [∞…, 0] 的特例。
  */
 
 import { Dawg } from './dawg.js'
@@ -56,6 +61,11 @@ import { resolveNormalization } from './normalization.js'
  * @property {number} [limit=Infinity] 最多回傳幾筆
  * @property {QueryExpander[]} [expanders] 查詢展開器（實驗性，見 expanders.js）
  * @property {(event: NodeVisit) => void} [onNode] 每走訪一個節點回呼一次（視覺化用）
+ * @property {ArrayLike<number>} [start] 邊界條件：第 0 列的起點成本（長度 = 查詢長度 + 1）
+ * @property {ArrayLike<number>} [end] 邊界條件：詞尾在查詢各位置結束的附加成本（長度同上）
+ * @property {(term: string, row: Float64Array, payloads: unknown[]) => void} [onTerminal]
+ *   每走到一個詞尾就回呼一次，附上完整的 F 列（row[i] = 查詢前 i 個字元轉成這個詞的成本）。
+ *   用於「查詢的每一個前綴對哪些詞在門檻內」這類需要整列的用途（構詞圖表）
  */
 
 /**
@@ -78,6 +88,7 @@ import { resolveNormalization } from './normalization.js'
  * @property {number} score 正規化分數（normalization='none' 時等於 distance）
  * @property {unknown[]} payloads 加入詞庫時附帶的資料
  * @property {string} [via] 若經由查詢展開找到，記錄展開說明
+ * @property {number} [endAt] 有邊界條件時，詞在查詢中結束的位置（達到最小值的 i）
  */
 
 /**
@@ -272,7 +283,25 @@ export class FuzzyIndex {
   }
 
   /**
-   * 搜尋主體：詞圖深度優先走訪 + 逐列 DP + 剪枝。
+   * 多通道搜尋：一次詞圖走訪同時跑好幾組查詢／邊界條件（例如普通模糊搜尋＋構詞搜尋的各個還原變體）。
+   *
+   * 每個通道有自己的 DP 列、上限與剪枝；某個通道在一個節點被剪掉，只是它不再往下算，
+   * 其他通道照常進行，所有通道都剪掉時才停止往下走。所以每個通道的結果與單獨搜尋完全相同，
+   * 但詞圖的走訪、路徑維護、出邊檢查只做一次。通道最多 31 個（以位元遮罩記錄存活的通道）。
+   *
+   * @param {Array<{query: string, options?: SearchOptions}>} channels
+   * @param {SearchStats} [stats] 累加統計（走訪節點數以實際走訪計，不按通道重複計算）
+   * @returns {SearchResult[][]} 各通道的結果（未排序）
+   */
+  searchChannels(channels, stats = { visitedNodes: 0, prunedNodes: 0, computedRows: 0 }) {
+    return this._searchChannels(
+      channels.map((c) => ({ query: c.query, options: c.options ?? {} })),
+      stats,
+    )
+  }
+
+  /**
+   * 單一查詢的搜尋主體：就是只有一個通道的 `_searchChannels`。
    * @param {string} query
    * @param {SearchOptions} options
    * @param {SearchStats} stats 累加統計
@@ -280,43 +309,79 @@ export class FuzzyIndex {
    * @private
    */
   _searchCore(query, options, stats) {
-    const { maxDistance = 1, maxNormalized = Infinity, onNode } = options
-    const norm = resolveNormalization(options.normalization ?? 'none')
+    return this._searchChannels([{ query, options }], stats)[0]
+  }
+
+  /**
+   * 搜尋主體：詞圖深度優先走訪 + 逐列 DP + 剪枝（可同時跑多個通道）。
+   * @param {Array<{query: string, options: SearchOptions}>} specs
+   * @param {SearchStats} stats 累加統計
+   * @returns {SearchResult[][]}
+   * @private
+   */
+  _searchChannels(specs, stats) {
+    if (specs.length === 0) return []
+    if (specs.length > 31) throw new RangeError('一次最多 31 個通道')
     const { compiled, costs } = this.metric
-    const x = this.metric.prepare(query)
-    const n = x.length
-    const plan = compiled.compileQuery(x)
     const span = compiled.maxTargetLength
     const dawg = this.dawg
     const payloads = this._payloads
 
-    /** @type {string[]} 目前走訪路徑上的字元 */
+    /** @type {string[]} 目前走訪路徑上的字元（所有通道共用） */
     const path = []
-    /**
-     * rowsN[j]、rowsF[j]：路徑上第 j 層的兩種列；minN[j]、minF[j] 為各列最小值。
-     * 同一深度的兄弟節點依序走訪，前一個兄弟的子樹走完才會覆寫，所以每層各配置一次即可重複使用。
-     * @type {Float64Array[]}
-     */
-    const rowsN = []
-    /** @type {Float64Array[]} */
-    const rowsF = []
-    /** @type {number[]} */
-    const minN = []
-    /** @type {number[]} */
-    const minF = []
     /** 第 r 列（r < 目前深度）是否該用 F 列：看路徑上第 r 個字元是否為邊界 */
     const useF = (/** @type {number} */ r) => compiled.isBoundary(path[r])
-    const rowAt = (/** @type {number} */ r) => (useF(r) ? rowsF[r] : rowsN[r])
 
-    /** @type {SearchResult[]} */
-    const results = []
+    const channels = specs.map(({ query, options }) => {
+      const x = this.metric.prepare(query)
+      const n = x.length
+      const start = options.start ?? null
+      const end = options.end ?? null
+      if ((start && start.length !== n + 1) || (end && end.length !== n + 1)) {
+        throw new RangeError(`start／end 的長度必須是查詢長度 + 1（${n + 1}）`)
+      }
+      /**
+       * rowsN[j]、rowsF[j]：路徑上第 j 層的兩種列；minN[j]、minF[j] 為各列最小值。
+       * 同一深度的兄弟節點依序走訪，前一個兄弟的子樹走完才會覆寫，所以每層各配置一次即可重複使用。
+       * @type {Float64Array[]}
+       */
+      const rowsN = []
+      /** @type {Float64Array[]} */
+      const rowsF = []
+      return {
+        n,
+        start,
+        end,
+        maxDistance: options.maxDistance ?? 1,
+        maxNormalized: options.maxNormalized ?? Infinity,
+        norm: resolveNormalization(options.normalization ?? 'none'),
+        onNode: options.onNode,
+        onTerminal: options.onTerminal,
+        // 前綴鏈的終點也算詞首、後綴鏈的起點也算詞尾，詞首／詞尾規則才能套用在詞幹上
+        plan: compiled.compileQuery(x, {
+          start,
+          extraInitial: start ? Array.from(start, (c) => c < Infinity) : null,
+          extraFinal: end ? Array.from(end, (c) => c < Infinity) : null,
+        }),
+        rowsN,
+        rowsF,
+        /** @type {number[]} */
+        minN: [],
+        /** @type {number[]} */
+        minF: [],
+        rowAt: (/** @type {number} */ r) => (useF(r) ? rowsF[r] : rowsN[r]),
+        /** @type {SearchResult[]} */
+        results: [],
+      }
+    })
 
     /**
      * @param {number} node 詞圖節點編號
      * @param {number} j 深度
      * @param {number} base 這個節點的子樹中，第一個詞的字典序名次
+     * @param {number} alive 仍在計算的通道（位元遮罩）
      */
-    const visit = (node, j, base) => {
+    const visit = (node, j, base, alive) => {
       stats.visitedNodes++
       const isTerminal = dawg.isFinal(node)
       const firstEdge = dawg.firstEdge(node)
@@ -329,81 +394,105 @@ export class FuzzyIndex {
         else hasOtherChild = true
       }
 
-      const column = prepareColumn(plan, compiled, path, j, rowAt)
+      let nextAlive = 0
+      for (let c = 0; c < channels.length; c++) {
+        if ((alive & (1 << c)) === 0) continue
+        const ch = channels[c]
+        const { n, plan, rowsN, rowsF, minN, minF } = ch
+        const column = prepareColumn(plan, compiled, path, j, ch.rowAt)
 
-      // N_j：子節點不是邊界字元時使用
-      const rowN = (rowsN[j] ??= new Float64Array(n + 1))
-      fillRow(plan, compiled, costs, column, false, rowN)
-      minN[j] = minOf(rowN)
-      stats.computedRows++
-
-      // F_j：只有「本節點是詞尾」或「有邊界字元的子節點」時才會被用到
-      let rowF = rowN
-      if (plan.hasFinal && (isTerminal || hasBoundaryChild)) {
-        rowF = rowsF[j] && rowsF[j] !== rowN ? rowsF[j] : new Float64Array(n + 1)
-        fillRow(plan, compiled, costs, column, true, rowF)
+        // N_j：子節點不是邊界字元時使用
+        const rowN = (rowsN[j] ??= new Float64Array(n + 1))
+        fillRow(plan, compiled, costs, column, false, rowN)
+        minN[j] = minOf(rowN)
         stats.computedRows++
-      }
-      rowsF[j] = rowF
-      minF[j] = rowF === rowN ? minN[j] : minOf(rowF)
 
-      // 此子樹允許的絕對距離上界
-      let bound = maxDistance
-      if (Number.isFinite(maxNormalized) && norm.bound) {
-        bound = Math.min(bound, norm.bound(maxNormalized, n, j + dawg.height[node]))
-      }
+        // F_j：只有「本節點是詞尾」或「有邊界字元的子節點」時才會被用到
+        let rowF = rowN
+        if (plan.hasFinal && (isTerminal || hasBoundaryChild)) {
+          rowF = rowsF[j] && rowsF[j] !== rowN ? rowsF[j] : new Float64Array(n + 1)
+          fillRow(plan, compiled, costs, column, true, rowF)
+          stats.computedRows++
+        }
+        rowsF[j] = rowF
+        minF[j] = rowF === rowN ? minN[j] : minOf(rowF)
 
-      // 詞尾：記錄結果。base 就是這個詞的字典序名次（完美雜湊）
-      let distance = null
-      let accepted = false
-      if (isTerminal) {
-        distance = roundCost(rowF[n])
-        if (distance <= maxDistance + EPSILON) {
-          const score = roundCost(norm.score(distance, n, j))
-          if (score <= maxNormalized + EPSILON) {
-            accepted = true
-            results.push({ term: path.slice(0, j).join(''), distance, score, payloads: payloads[base] ?? [] })
+        // 此子樹允許的絕對距離上界
+        let bound = ch.maxDistance
+        if (Number.isFinite(ch.maxNormalized) && ch.norm.bound) {
+          bound = Math.min(bound, ch.norm.bound(ch.maxNormalized, n, j + dawg.height[node]))
+        }
+
+        // 詞尾：記錄結果。base 就是這個詞的字典序名次（完美雜湊）
+        let distance = null
+        let accepted = false
+        if (isTerminal) {
+          let endAt = n
+          if (ch.end) {
+            let best = Infinity
+            for (let i = 0; i <= n; i++) {
+              const v = rowF[i] + ch.end[i]
+              if (v < best) {
+                best = v
+                endAt = i
+              }
+            }
+            distance = roundCost(best)
+          } else {
+            distance = roundCost(rowF[n])
+          }
+          if (ch.onTerminal) ch.onTerminal(path.slice(0, j).join(''), rowF, payloads[base] ?? [])
+          if (distance <= ch.maxDistance + EPSILON) {
+            const score = roundCost(ch.norm.score(distance, n, j))
+            if (score <= ch.maxNormalized + EPSILON) {
+              accepted = true
+              /** @type {SearchResult} */
+              const result = { term: path.slice(0, j).join(''), distance, score, payloads: payloads[base] ?? [] }
+              if (ch.end) result.endAt = endAt
+              ch.results.push(result)
+            }
           }
         }
+
+        // 剪枝：子樹內任何詞距離的下界（證明見檔頭）
+        let lowerBound = Infinity
+        if (hasOtherChild) lowerBound = minN[j]
+        if (hasBoundaryChild) lowerBound = Math.min(lowerBound, minF[j])
+        for (let r = Math.max(0, j - span + 1); r < j; r++) {
+          const jump = compiled.jumpWeights.get(/** @type {string} */ (column.suffix[j - r]))
+          if (jump !== undefined) lowerBound = Math.min(lowerBound, (useF(r) ? minF[r] : minN[r]) + jump)
+        }
+        const pruned = endEdge > firstEdge && lowerBound > bound + EPSILON
+
+        if (ch.onNode) {
+          ch.onNode({
+            prefix: path.slice(0, j).join(''),
+            depth: j,
+            node,
+            lowerBound: roundCost(lowerBound),
+            bound: roundCost(bound),
+            pruned,
+            terminal: isTerminal,
+            distance,
+            accepted,
+          })
+        }
+        if (!pruned) nextAlive |= 1 << c
       }
 
-      // 剪枝：子樹內任何詞距離的下界（證明見檔頭）
-      let lowerBound = Infinity
-      if (hasOtherChild) lowerBound = minN[j]
-      if (hasBoundaryChild) lowerBound = Math.min(lowerBound, minF[j])
-      for (let r = Math.max(0, j - span + 1); r < j; r++) {
-        const jump = compiled.jumpWeights.get(/** @type {string} */ (column.suffix[j - r]))
-        if (jump !== undefined) lowerBound = Math.min(lowerBound, (useF(r) ? minF[r] : minN[r]) + jump)
-      }
-      const pruned = endEdge > firstEdge && lowerBound > bound + EPSILON
-
-      if (onNode) {
-        onNode({
-          prefix: path.slice(0, j).join(''),
-          depth: j,
-          node,
-          lowerBound: roundCost(lowerBound),
-          bound: roundCost(bound),
-          pruned,
-          terminal: isTerminal,
-          distance,
-          accepted,
-        })
-      }
-
-      if (pruned) {
-        stats.prunedNodes++
+      if (nextAlive === 0) {
+        if (endEdge > firstEdge) stats.prunedNodes++
         return
       }
       for (let e = firstEdge; e < endEdge; e++) {
         path[j] = dawg.label(e)
-        visit(dawg.target(e), j + 1, base + dawg.wordsBefore(e))
+        visit(dawg.target(e), j + 1, base + dawg.wordsBefore(e), nextAlive)
       }
       path.length = j
     }
 
-    visit(dawg.root, 0, 0)
-    return results
+    visit(dawg.root, 0, 0, (1 << channels.length) - 1)
+    return channels.map((c) => c.results)
   }
 
   /**

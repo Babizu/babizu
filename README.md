@@ -7,7 +7,8 @@
 
 - **跨方言模糊搜尋**：多字元加權編輯距離，方言間系統性的語音對應（`r↔l`、詞尾 `l↔n`、`er↔ee`…）只算極小的距離；
   規則寫在語言設定檔（JSON），不用寫程式。另有前綴與包含比對，補足短查詢。
-- **構詞**：在語言設定檔宣告詞綴、中綴、重疊與詞幹交替，查衍生詞就能找到詞根，查詞根也能找到衍生形（包括例句中的），並說明構詞。
+- **構詞**：在語言設定檔宣告詞綴、中綴、重疊與詞幹交替。查衍生詞就能找到詞根，查詞根也能找到衍生形（包括例句中的），並說明構詞。
+  音變與構詞聯合搜尋：詞綴或詞幹帶有方言差異（`minudox` → `daux`）也找得到；構詞圖表當作編輯距離 DP 的邊界條件，一次詞圖走訪完成。
 - **快**：詞庫存成 DAWG 詞圖（同時合併共同前綴與後綴），搜尋時動態規劃逐層剪枝，剪枝的正確性有證明與性質測試；
   1 萬多個詞只佔約 0.25 MB 記憶體，查詢數毫秒，在 Web Worker 中執行。
 - **溯源**：標準資料格式保留原始拼寫、頁碼、列號、時間碼、原書掃描頁；每筆記錄都有「出處」卡與複製引用。
@@ -57,7 +58,8 @@ npx babizu dev        # 在有 babizu.config.js 的目錄
 | 子路徑 | 內容 |
 |---|---|
 | `babizu` | `defineSite`、`defineAdapter` |
-| `babizu/fuzzy` | `WeightedEditDistance`、`FuzzyIndex`、`RuleSet`、`createMetricFromProfile`… |
+| `babizu/fuzzy` | `WeightedEditDistance`、`FuzzyIndex`、`RuleSet`、`createMetricFromProfile`、`createAnalyzer`、`createMorphSearch`… |
+| `babizu/fst` | 實驗性：通用 WFST 參考後端（惰性組合、最短路徑），評估用 |
 | `babizu/search` | `buildSearchIndex`、`SearchEngine`、`createTextTools` |
 | `babizu/schema` | JSON Schema 驗證器、`createRecord` 等輔助函式、代碼表 |
 | `babizu/dataset` | 資料集讀寫與驗證 |

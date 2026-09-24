@@ -1,6 +1,6 @@
 {
   "name": "babizu",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "多語言、可溯源的辭典網站框架：跨方言加權模糊搜尋、標準語料格式、多語系介面、靜態部署",
   "type": "module",
   "license": "MIT",
@@ -14,6 +14,7 @@
   "exports": {
     ".": "./src/index.js",
     "./fuzzy": "./src/fuzzy/index.js",
+    "./fst": "./src/fst/index.js",
     "./schema": "./src/schema/index.js",
     "./schema/constants": "./src/schema/constants.js",
     "./schema/types": "./src/schema/types.js",
