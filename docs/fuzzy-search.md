@@ -241,20 +241,66 @@ DAWG 則是幾個 TypedArray（CSR 格式的 `edgeStart`／`edgeTarget`、邊標
 2. **Double-Array DAWG**：把圖壓進兩個陣列（BASE／CHECK），可直接 mmap，載入時間接近零。
    `FuzzyIndex` 只依賴「列出出邊、是否為詞尾、height、詞數前綴和」四個操作，換底層時介面不變。
 
-## 10. 詞形還原（lemmatization）的擴充點
+## 10. 構詞：去詞綴與還原詞綴（`src/fuzzy/morphology.js`）
 
-`search(query, { expanders })` 接受查詢展開器 `(query) => [{ form, cost, note }]`。搜尋會對每個展開形式再搜一次，距離加上展開成本後合併結果。`src/fuzzy/expanders.js` 附一個示範用的詞綴剝除器（未啟用，詞綴清單不是完整的語言學分析）。
+加權編輯距離無法跨越詞綴：《巴宰語詞典》標註的 2,141 組「衍生詞 < 詞根」中，
+兩者距離的中位數是 2.0，只有 8.6% 在「標準」模糊程度的門檻內。
+加入構詞之前，查衍生詞找到詞根的只有 5.3%（109／2,070）。
 
-長期可以改用加權有限狀態轉錄器（WFST）：
+### 做法
 
-- **E**：語音規則轉錄器，每條規則是一條加權邊，權重在 tropical semiring 上相加。
-- **L**：詞形還原轉錄器，詞形 → 詞根＋詞綴標記。
-- 組合 E ∘ L，一次搜尋就同時完成「方言變體 → 標準形 → 詞根」。
+語言設定檔的 `morphology` 宣告詞綴、中綴、重疊與詞幹交替（見 [language-profile.md](language-profile.md#morphology-構詞選填)），
+由同一份規格做兩個方向：
 
-標準資料格式已經保留做這件事所需的材料：記錄的 `morphology.derivedFrom`（衍生來源）、
-`morphology.segmentation` 與 `interlinear`（分詞形式與詞素對譯）。
+| 方向 | 命中方式 | 做法 |
+|---|---|---|
+| 去詞綴：查 `mudaux` → `daux` | `lemma`（詞根相符） | 對查詢做 `analyze`，每個分析出的詞幹直接查詞圖（`stemDistance` > 0 時改走模糊搜尋） |
+| 還原詞綴：查 `baket` → `binaket`、`pabaket mu!` | `derived`（衍生形） | 用「字元 → 詞」索引找出含詞幹核心形式的詞（詞幹本身，或加了中綴、重疊、交替後的樣子），再用 `analyze` 驗證詞幹正好是查詢 |
 
-索引也已把詞根以 `root` 身分編入 posting，查詞根時會列出所有衍生詞。
+兩種命中的等效距離都是 0.4 ＋ 構詞步驟成本（一層詞綴約 0.7），排在完全相同、跨方言變體與短的前綴命中之後，包含命中之前。
+構詞命中只取詞條本身（詞形、其他寫法、變體），不沿用詞根的 `root` posting；
+否則查 `mudaux` 會把 `daux` 的所有兄弟衍生詞都列出來。
+
+搜尋索引完全沒有改變：一開始的設計曾在建索引時把每個詞的分析結果登錄成 posting，
+結果 posting 多了 50%、`lexicon.json` 的 gzip 多了 39%；改成查詢時處理之後，索引大小與建置前相同。
+
+### 實測（巴宰–噶哈巫語，規格由 `pazeh-kaxabu-minubizu/tools/learn-morphology.mjs` 從詞典學出）
+
+| 指標 | 加入前 | 加入後 |
+|---|---|---|
+| 查衍生詞 → 詞根詞條出現在結果中 | 5.3% | 91.3%（規格用全部詞對學出；以 80／20 切分，未見過的詞對約 84%） |
+| 詞根在結果中的名次 | — | 中位數 5、p90 10 |
+| 每個查詢中，詞幹不是標註詞根的詞根相符詞條 | — | 0.69 筆 |
+| 查詞根時，辭典沒有標註、由構詞分析找到的衍生形 | — | 平均每個詞根 3.0 筆 |
+| 一般查詢耗時（600 個詞，標準／寬鬆，中位數） | 5.6／17.5 ms | 5.9／18.0 ms |
+| `lexicon.json`（gzip） | 130 KB | 130 KB |
+
+另外用重構前的 2,383 組基準查詢驗證：沒有 `morphology` 時結果完全相同；
+加上之後沒有任何既有命中消失，模糊命中也都不變。只有 6 筆被分數更好的構詞命中取代，例如 `singaren`：
+原本是距離 1.1 的相近拼寫，現在是 `singar` ＋ `-en`，0.7。
+
+詞幹允許模糊比對時（`stemDistance`），召回幾乎不變（0.1：91.6%），但巧合命中從 0.69 增加到 1.78 筆，耗時也增加，
+所以預設為 0。
+
+### 與有限狀態轉錄器（FST）的比較
+
+這套搜尋在詞庫自動機（DAWG）上深度優先走訪，逐層算加權編輯距離並剪枝，
+本質上就是 Oflazer (1996) 的容錯有限狀態辨識，也等同「查詢 ∘ 錯誤模型 ∘ 詞典」的三方即時組合
+（Pirinen & Hardwick 2012）。方言規則表就是加權的錯誤模型轉錄器，只是以 DP 格子執行。
+
+差別在詞典那一側：FST 系統的詞典是構詞轉錄器（詞根 × 詞綴規則，lexc／twolc），可以產生沒出現過的詞形，並附完整的構詞標記；
+這裡的詞典是詞表，構詞規格只負責「分析、再用詞表驗證」。取捨如下：
+
+- **巴宰語沒有現成的構詞 FST**，從頭撰寫需要長期的語言學維護；部分重疊在 FST 中特別費工（Beesley & Karttunen 的 compile-replace）。
+- **瀏覽器端**：FST 需要 WASM 版的 HFST 執行檔與編譯好的轉錄器；這裡是純 JS，索引大小不變。
+- **效能同級**：HFST 的編輯距離 2 查詢，英文約 0.75 ms／詞、芬蘭語約 22 ms／詞（Pirinen & Hardwick 2012，C++）；
+  這裡約 1 萬個詞，標準模糊程度的中位數約 6 ms。
+- **規則的上下文**：FST 改寫規則可以有任意左右文與規則順序；這裡的方言規則只有「任何／詞首／詞尾」，
+  構詞交替只有「某些後綴前」。目前資料中需要更多上下文條件的對應很少（約 1–4%）。
+
+若日後有人撰寫完整的構詞 FST，這份宣告式規格可以轉寫成 lexc；搜尋端也可以改成直接走訪構詞自動機（Oflazer 的做法），介面不變。
+
+`search(query, { expanders })` 的查詢展開器（`src/fuzzy/expanders.js`）是較早的擴充點，仍然保留，但搜尋引擎改用 `morphology`。
 
 ## 11. API 摘要
 
@@ -281,6 +327,7 @@ const data = index.serialize() // FuzzyIndex.deserialize(data, metric)
 | `FuzzyIndex` | `add`、`addAll`、`lookup`、`search`、`searchWithStats`、`freeze`、`terms`、`payloads`、`dawg`、`serialize`／`deserialize` |
 | `createNormalizer(options)` | 建立正規化函式；`DEFAULT_CHAR_MAP` 是預設字元對應 |
 | `createMetricFromProfile`、`createRulesFromProfile`、`validateProfile` | 由語言設定檔建立 |
+| `createAnalyzer(spec, normalize)` | 構詞分析器：`analyze`（去詞綴）、`generate`（還原詞綴）、`coreForms` |
 
 搜尋引擎（`babizu/search`）在此之上處理記錄、斷詞、釋義搜尋與結果排序：
 

@@ -208,7 +208,25 @@
     "prefix": "Starts with",
     "prefixHint": "This word begins with what you typed",
     "substring": "Contains",
-    "substringHint": "This word contains what you typed"
+    "substringHint": "This word contains what you typed",
+    "lemma": "Root match",
+    "lemmaHint": "What you typed, with its affixes removed, is this word",
+    "derived": "Derived form",
+    "derivedHint": "This word is what you typed plus affixes"
+  },
+  "morph": {
+    "title": "Word structure",
+    "lemmaIntro": "“{query}” without its affixes is “{stem}”.",
+    "derivedIntro": "“{term}” is “{stem}” plus affixes.",
+    "note": "The affix list was compiled from the dictionary data and the analysis is an inference; check the entry itself for the meaning.",
+    "explainButton": "{label}: {summary}. Show word structure",
+    "type": {
+      "prefix": "Prefix",
+      "suffix": "Suffix",
+      "infix": "Infix",
+      "reduplication": "Reduplication",
+      "alternation": "Stem alternation"
+    }
   },
   "nav": {
     "about": "About",

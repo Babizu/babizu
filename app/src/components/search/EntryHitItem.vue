@@ -9,6 +9,7 @@ import DialectBadge from '@/components/common/DialectBadge.vue'
 import MatchExplanation from '@/components/common/MatchExplanation.vue'
 import MatchTypeTag from '@/components/common/MatchTypeTag.vue'
 import MetaTag from '@/components/common/MetaTag.vue'
+import MorphologyExplanation from '@/components/common/MorphologyExplanation.vue'
 import { t } from '@/i18n.js'
 import { matchKindLabel, recordRoute, roleLabel, unitLabel } from '@/lib/labels.js'
 import ResultCitation from './ResultCitation.vue'
@@ -44,7 +45,10 @@ const contextLabel = computed(() => {
         <MetaTag v-if="hit.kind !== 'head'" variant="soft">
           {{ matchKindLabel(hit.kind) }} <span class="native-text font-medium">{{ hit.term }}</span>
         </MetaTag>
-        <MatchTypeTag :match-type="hit.matchType" :term="hit.term" />
+        <span v-if="hit.analysis" class="relative z-10 min-w-0">
+          <MorphologyExplanation :analysis="hit.analysis" :match-type="hit.matchType" :query="query" :term="hit.term" />
+        </span>
+        <MatchTypeTag v-else :match-type="hit.matchType" :term="hit.term" />
         <span v-if="hit.matchType === 'fuzzy' && hit.distance > 0" class="relative z-10">
           <MatchExplanation :distance="hit.distance" :alignment="hit.alignment" :query="query" :term="hit.term" />
         </span>

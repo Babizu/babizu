@@ -208,7 +208,25 @@
     "prefix": "開頭相符",
     "prefixHint": "這個詞以你輸入的字串開頭",
     "substring": "包含",
-    "substringHint": "這個詞裡面含有你輸入的字串"
+    "substringHint": "這個詞裡面含有你輸入的字串",
+    "lemma": "詞根相符",
+    "lemmaHint": "你輸入的詞去掉詞綴後，就是這個詞",
+    "derived": "衍生形",
+    "derivedHint": "這個詞是你輸入的詞加上詞綴"
+  },
+  "morph": {
+    "title": "構詞分析",
+    "lemmaIntro": "「{query}」去掉詞綴後是「{stem}」。",
+    "derivedIntro": "「{term}」是「{stem}」加上詞綴。",
+    "note": "詞綴清單由辭典資料整理，分析是推定的；詞義請以詞條內容為準。",
+    "explainButton": "{label}：{summary}，查看構詞分析",
+    "type": {
+      "prefix": "前綴",
+      "suffix": "後綴",
+      "infix": "中綴",
+      "reduplication": "重疊",
+      "alternation": "詞幹交替"
+    }
   },
   "nav": {
     "about": "關於",

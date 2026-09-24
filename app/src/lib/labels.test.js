@@ -3,8 +3,11 @@ import { setLocale } from '@/i18n.js'
 import {
   dialectLabel,
   formatDistance,
+  formatMorphStep,
   formatStep,
   formatTimecode,
+  morphGloss,
+  morphSummary,
   orderedVarieties,
   recordRoute,
   unitLabel,
@@ -50,5 +53,28 @@ describe('labels', () => {
       name: 'record',
       params: { source: 'pan-dexing-wordlist', localId: 'pos-動' },
     })
+  })
+
+  it('構詞步驟與摘要：依詞形中的位置排列', () => {
+    expect(formatMorphStep({ type: 'prefix', form: 'mu' })).toBe('mu-')
+    expect(formatMorphStep({ type: 'suffix', form: 'an' })).toBe('-an')
+    expect(formatMorphStep({ type: 'infix', form: 'in' })).toBe('<in>')
+    expect(formatMorphStep({ type: 'alternation', form: 't>d' })).toBe('t→d')
+    // steps 由外而內：mu- 最外層、-an 次之、pa- 最內層
+    const steps = [
+      { type: 'prefix', form: 'mu' },
+      { type: 'suffix', form: 'an' },
+      { type: 'prefix', form: 'pa' },
+      { type: 'suffix', form: 'i' },
+    ]
+    expect(morphSummary({ stem: 'tuku', steps })).toBe('mu- + pa- + tuku + -i + -an')
+  })
+
+  it('詞綴說明依介面語系', () => {
+    setLocale('en')
+    expect(morphGloss({ 'zh-TW': '主事焦點', en: 'AF' })).toBe('AF')
+    setLocale('zh-TW')
+    expect(morphGloss({ 'zh-TW': '主事焦點', en: 'AF' })).toBe('主事焦點')
+    expect(morphGloss(null)).toBe('')
   })
 })

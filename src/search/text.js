@@ -8,6 +8,7 @@
  */
 
 import {
+  createAnalyzer,
   createMetricFromProfile,
   createNormalizer,
   normalizerOptionsFromProfile,
@@ -28,6 +29,9 @@ const MORPHEME_SEPARATORS = /[-=~<>]+/u
  * @property {(text: string) => string[]} tokenize 族語斷詞（含構詞部分）
  * @property {(text: string) => string[]} splitWords 只切整詞
  * @property {() => import('../fuzzy/distance.js').WeightedEditDistance} createSearchMetric
+ * @property {((key: string) => import('../fuzzy/morphology.js').Analysis[]) | null} analyze
+ *   去詞綴（輸入為搜尋鍵）；語言設定檔沒有 `morphology` 時為 null
+ * @property {import('../fuzzy/morphology.js').Analyzer | null} morphology
  */
 
 /**
@@ -90,7 +94,10 @@ export function createTextTools(profile) {
   /** 搜尋用的距離函式：設定檔的規則與成本，正規化使用 searchKey */
   const createSearchMetric = () => createMetricFromProfile(profile, { normalize: searchKey })
 
-  return { notationChars, baseNormalize, searchKey, tokenize, splitWords, createSearchMetric }
+  const morphology = profile.morphology ? createAnalyzer(profile.morphology, searchKey) : null
+  const analyze = morphology ? morphology.analyze : null
+
+  return { notationChars, baseNormalize, searchKey, tokenize, splitWords, createSearchMetric, analyze, morphology }
 }
 
 /** 是否含漢字 @param {string} text */

@@ -74,9 +74,18 @@ export const FUZZINESS = Object.freeze({
  * @property {MatchType} matchType 以哪一種方式命中
  * @property {import('./format.js').MatchKind} kind
  * @property {AlignmentNote[] | null} alignment
+ * @property {LemmaAnalysis | null} [analysis] 構詞分析：詞根相符（matchType 'lemma'）時是查詢的分析，
+ *   衍生形（matchType 'derived'）時是命中詞的分析
  */
 
-/** @typedef {'fuzzy' | 'prefix' | 'substring'} MatchType */
+/**
+ * @typedef {object} LemmaAnalysis
+ * @property {string} stem 分析出的詞幹
+ * @property {import('../fuzzy/morphology.js').MorphStep[]} steps 由外而內的構詞步驟
+ * @property {number} cost 構詞步驟的成本
+ */
+
+/** @typedef {'fuzzy' | 'prefix' | 'lemma' | 'derived' | 'substring'} MatchType */
 
 /**
  * @typedef {object} TermMatch 一個查詢詞在詞庫中的命中
@@ -84,6 +93,7 @@ export const FUZZINESS = Object.freeze({
  * @property {unknown[]} payloads
  * @property {number} distance
  * @property {MatchType} matchType
+ * @property {LemmaAnalysis} [analysis] 構詞命中（lemma、derived）的分析
  */
 
 /**
@@ -120,9 +130,20 @@ const KIND_RANK = { head: 0, alt: 1, variant: 2, root: 3, token: 4 }
  * 命中方式：
  * - fuzzy：加權編輯距離在門檻內（含完全相同、跨方言變體）
  * - prefix：詞庫中的詞以查詢開頭（查 pihi → pihilut）
+ * - lemma：查詢去詞綴後的詞幹命中詞庫的詞（查 mudaux → daux）
+ * - derived：詞庫的詞去詞綴後正好是查詢（查 baket → binaket、mubaket）
  * - substring：詞庫中的詞包含查詢（查 k → 所有含 k 的詞與句子）
+ * lemma 與 derived 只在語言設定檔有 `morphology` 時出現。
  */
-const MATCH_TYPE_RANK = { fuzzy: 0, prefix: 1, substring: 2 }
+const MATCH_TYPES = /** @type {const} */ (['fuzzy', 'prefix', 'lemma', 'derived', 'substring'])
+const MATCH_TYPE_RANK = { fuzzy: 0, prefix: 1, lemma: 2, derived: 3, substring: 4 }
+
+/**
+ * 構詞相關命中的基本等效距離：一層詞綴（成本 0.3）約 0.7，
+ * 排在完全相同、跨方言變體與短的前綴命中之後，包含命中之前。
+ */
+const MORPHOLOGY_BASE_SCORE = 0.4
+
 
 /**
  * 把前綴／包含命中換算成「等效距離」，好跟模糊命中一起排序。
@@ -137,6 +158,7 @@ const MATCH_TYPE_RANK = { fuzzy: 0, prefix: 1, substring: 2 }
  */
 function rankScore(matchType, distance, extraLength) {
   if (matchType === 'fuzzy') return distance
+  if (matchType === 'lemma' || matchType === 'derived') return MORPHOLOGY_BASE_SCORE + distance
   const base = matchType === 'prefix' ? 0.35 : 0.9
   return base + Math.min(extraLength, 12) * 0.05
 }
@@ -389,8 +411,9 @@ export class SearchEngine {
     for (const t of fullTerms) {
       for (const code of /** @type {number[]} */ (t.payloads)) {
         const { doc: k, kind } = decodePosting(code)
-        if (kind === 'token' || !accept(k)) continue
+        if (kind === 'token' || !accept(k) || !usablePosting(t.matchType, kind)) continue
         const prev = entries.get(k)
+        /** @type {EntryHit} */
         const hit = {
           doc: prev?.doc ?? this.doc(k),
           term: t.term,
@@ -399,6 +422,7 @@ export class SearchEngine {
           matchType: t.matchType,
           kind,
           alignment: null,
+          analysis: t.analysis ?? null,
         }
         if (!prev || compareHits(hit, prev) < 0) entries.set(k, hit)
       }
@@ -461,7 +485,7 @@ export class SearchEngine {
         terms: [...new Set(v.terms)],
         distance: Math.round(v.distance * 1e9) / 1e9,
         score: v.score,
-        matchType: /** @type {MatchType} */ (['fuzzy', 'prefix', 'substring'][v.rank]),
+        matchType: /** @type {MatchType} */ (MATCH_TYPES[v.rank]),
       }))
       .sort(
         (a, b) =>
@@ -524,8 +548,125 @@ export class SearchEngine {
     for (const m of this._substringTerms(key)) {
       if (!matches.has(m.term)) matches.set(m.term, m)
     }
+    if (fuzzy && this.text.morphology && level.maxDistance(Array.from(key).length) > 0) {
+      // 構詞命中：同一個詞若也是前綴或包含命中，構詞的說明更有用；模糊命中則保留原本的
+      for (const m of [...this._lemmaTerms(key, level, response), ...this._derivedTerms(key)]) {
+        const prev = matches.get(m.term)
+        if (!prev || prev.matchType === 'substring' || prev.matchType === 'prefix' || m.distance < prev.distance) {
+          if (prev?.matchType !== 'fuzzy') matches.set(m.term, m)
+        }
+      }
+    }
     return [...matches.values()]
   }
+
+  /**
+   * 衍生形（還原詞綴方向）：詞庫中去詞綴後正好是查詢的詞，包括語料句子裡的詞。
+   *
+   * 不必列舉所有詞綴組合：前綴、後綴只加在外面，所以衍生詞一定含有詞幹的某個「核心形式」
+   * （詞幹本身，或加了中綴、重疊、詞幹交替後的樣子）。先用「字元 → 詞」索引找出含核心形式的詞，
+   * 再用構詞分析驗證，分析結果的詞幹必須正好是查詢。
+   *
+   * @param {string} key
+   * @returns {TermMatch[]}
+   * @private
+   */
+  _derivedTerms(key) {
+    const morphology = /** @type {import('../fuzzy/morphology.js').Analyzer} */ (this.text.morphology)
+    if (Array.from(key).length < morphology.spec.minStem) return []
+    const { terms } = this._ensureTermIndex()
+    /** @type {TermMatch[]} */
+    const out = []
+    const seen = new Set()
+    for (const core of morphology.coreForms(key)) {
+      for (const id of this._termsContaining(core)) {
+        const term = terms[id]
+        if (term === key || seen.has(term)) continue
+        seen.add(term)
+        const a = morphology.analyze(term).find((x) => x.stem === key)
+        if (!a) continue
+        out.push({
+          term,
+          payloads: this.index.payloads[id],
+          distance: a.cost,
+          matchType: 'derived',
+          analysis: { stem: a.stem, steps: a.steps, cost: a.cost },
+        })
+      }
+    }
+    return out
+  }
+
+  /**
+   * 含有某個字串的所有詞編號（不設上限；取最少見字元的 posting 當候選再驗證）。
+   * @param {string} needle
+   * @returns {number[]}
+   * @private
+   */
+  _termsContaining(needle) {
+    const { terms, byChar } = this._ensureTermIndex()
+    /** @type {number[] | null} */
+    let candidates = null
+    for (const ch of new Set(Array.from(needle))) {
+      const list = byChar.get(ch)
+      if (!list) return []
+      if (!candidates || list.length < candidates.length) candidates = list
+    }
+    return (candidates ?? []).filter((id) => terms[id].includes(needle))
+  }
+
+  /**
+   * 詞根相符（去詞綴方向）：查詢經構詞分析去掉詞綴後，詞幹在詞庫中的命中。
+   *
+   * 預設詞幹必須正好是詞庫中的詞（直接查詞圖，O(詞長)）。構詞規格的 `stemDistance` 大於 0 時，
+   * 改以這個預算走一次模糊搜尋，距離＝構詞步驟成本＋詞幹距離，
+   * 「另一個方言的衍生詞 → 這個方言的詞根」也找得到，代價是較多巧合命中與較慢的查詢。
+   * 精確模式不做（精確只比對拼寫相同的詞）。
+   *
+   * @param {string} key
+   * @param {typeof FUZZINESS[Fuzziness]} level
+   * @param {SearchResponse} response
+   * @returns {TermMatch[]}
+   * @private
+   */
+  _lemmaTerms(key, level, response) {
+    /** @type {Map<string, TermMatch>} */
+    const out = new Map()
+    const morphology = /** @type {import('../fuzzy/morphology.js').Analyzer} */ (this.text.morphology)
+    for (const a of morphology.analyze(key)) {
+      const budget = Math.min(level.maxDistance(Array.from(a.stem).length), morphology.spec.stemDistance ?? 0)
+      /** @type {Array<{term: string, payloads: unknown[], distance: number}>} */
+      let results
+      if (budget > 0) {
+        const found = this.index.searchWithStats(a.stem, {
+          maxDistance: budget,
+          normalization: 'max',
+          maxNormalized: level.maxNormalized,
+        })
+        response.stats.visitedNodes += found.stats.visitedNodes
+        results = found.results
+      } else {
+        const payloads = this.index.lookup(a.stem)
+        results = payloads ? [{ term: a.stem, payloads, distance: 0 }] : []
+      }
+      for (const r of results) {
+        if (r.term === key) continue
+        const distance = Math.round((a.cost + r.distance) * 1e9) / 1e9
+        const prev = out.get(r.term)
+        if (prev && prev.distance <= distance) continue
+        out.set(r.term, {
+          term: r.term,
+          payloads: r.payloads,
+          distance,
+          matchType: 'lemma',
+          analysis: { stem: a.stem, steps: a.steps, cost: a.cost },
+        })
+      }
+    }
+    return [...out.values()]
+  }
+
+
 
   /**
    * 前綴與包含比對。
@@ -749,6 +890,17 @@ export class SearchEngine {
       return true
     }
   }
+}
+
+/**
+ * 構詞命中（lemma、derived）只取詞條本身的詞形、其他寫法、變體。
+ * 不沿用 root posting：查 mudaux 得到詞幹 daux 時，列出 daux 的所有衍生詞（兄弟詞）只會淹沒結果。
+ * @param {MatchType} matchType
+ * @param {import('./format.js').MatchKind} kind
+ */
+function usablePosting(matchType, kind) {
+  if (matchType === 'lemma' || matchType === 'derived') return kind !== 'root'
+  return true
 }
 
 /**

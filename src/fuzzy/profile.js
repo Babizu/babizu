@@ -26,6 +26,7 @@
 
 import { CostModel } from './costs.js'
 import { WeightedEditDistance } from './distance.js'
+import { validateMorphology } from './morphology.js'
 import { createNormalizer, DEFAULT_CHAR_MAP } from './normalize.js'
 import { RuleSet } from './rules.js'
 
@@ -48,6 +49,7 @@ export const PROFILE_VERSION = 1
  * @property {string[]} [boundaries] 詞邊界字元，決定「詞首」「詞尾」規則的範圍
  * @property {import('./costs.js').CostOptions} [costs] 基本編輯成本
  * @property {import('./rules.js').RuleGroup[]} [rules] 語音對應規則表（依分類分組）
+ * @property {import('./morphology.js').MorphologySpec} [morphology] 構詞規格（去詞綴／還原詞綴；選填）
  */
 
 /** 沒有提供時的預設值 */
@@ -79,6 +81,7 @@ export function validateProfile(profile) {
   if (p.notationChars !== undefined && typeof p.notationChars !== 'string') errors.push('notationChars 必須是字串')
   if (p.boundaries !== undefined && !Array.isArray(p.boundaries)) errors.push('boundaries 必須是陣列')
   if (p.rules !== undefined && !Array.isArray(p.rules)) errors.push('rules 必須是陣列')
+  errors.push(...validateMorphology(p.morphology))
   try {
     JSON.stringify(profile)
   } catch {

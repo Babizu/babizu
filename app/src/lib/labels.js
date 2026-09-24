@@ -89,6 +89,44 @@ export function formatStep(step) {
 }
 
 /**
+ * 構詞步驟的寫法：前綴 `mu-`、後綴 `-an`、中綴 `<in>`、重疊 `ba-`、詞幹交替 `t→d`。
+ * @param {{type: string, form: string}} step
+ */
+export function formatMorphStep(step) {
+  if (step.type === 'prefix' || step.type === 'reduplication') return `${step.form}-`
+  if (step.type === 'suffix') return `-${step.form}`
+  if (step.type === 'infix') return `<${step.form}>`
+  if (step.type === 'alternation') return step.form.replace('>', '→')
+  return step.form
+}
+
+/** 構詞步驟類型的名稱 @param {string} type */
+export const morphStepLabel = (type) => t(`morph.type.${type}`)
+
+/**
+ * 詞綴的語法說明（語言設定檔中可以是字串或依語系提供）。
+ * @param {string | Record<string, string> | null | undefined} gloss
+ */
+export function morphGloss(gloss) {
+  if (!gloss) return ''
+  return typeof gloss === 'string' ? gloss : tr(gloss)
+}
+
+/**
+ * 構詞分析的摘要，依詞形中的位置排列：前綴、重疊 ＋ 詞幹 ＋ 中綴、交替 ＋ 後綴，
+ * 例如「mu- + pa- + tuku + -an」。
+ * @param {{stem: string, steps: Array<{type: string, form: string}>}} analysis
+ */
+export function morphSummary(analysis) {
+  const outerFirst = analysis.steps
+  const before = outerFirst.filter((s) => s.type === 'prefix' || s.type === 'reduplication')
+  const inner = outerFirst.filter((s) => s.type === 'infix' || s.type === 'alternation')
+  // 後綴由外而內記錄，由左而右顯示要反過來
+  const after = outerFirst.filter((s) => s.type === 'suffix').reverse()
+  return [...before.map(formatMorphStep), analysis.stem, ...inner.map(formatMorphStep), ...after.map(formatMorphStep)].join(' + ')
+}
+
+/**
  * 秒數 → mm:ss.cc
  * @param {number} seconds
  */
