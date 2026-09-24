@@ -1,0 +1,27 @@
+<!doctype html>
+<!-- %babizu.*% 由 babizu 在建置時依站台設定代入（見 src/site/vite.js） -->
+<html lang="%babizu.lang%">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="description" content="%babizu.description%" />
+    <meta name="theme-color" content="%babizu.themeColor%" />
+    %babizu.icon%
+    <title>%babizu.title%</title>
+    <!-- 語言變體（方言）的顏色，每個變體一個 class；建置時換成樣式表（見 src/site/vite.js） -->
+    <!-- %babizu.varieties% -->
+    <script>
+      // 在載入 CSS 前套用深色模式，避免畫面閃爍（儲存鍵與 src/composables/useTheme.js 一致）
+      try {
+        const saved = localStorage.getItem('%babizu.storagePrefix%:theme')
+        const systemDark = matchMedia('(prefers-color-scheme: dark)').matches
+        const dark = saved === 'dark' || ((!saved || saved === 'auto') && systemDark)
+        if (dark) document.documentElement.classList.add('dark')
+      } catch {}
+    </script>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

@@ -1,0 +1,231 @@
+/*
+ * 全站樣式與設計 token。
+ *
+ * ## 設計語言：工具書，不是產品官網
+ *
+ * 這是一個資訊密度高、需要久讀的查詢工具，版面基調取自紙本辭典與學術工具介面：
+ *
+ * - **圓角小**（2–4px）。圓角大小要配合密度：密集的表格式版面用小圓角才顯得精準，
+ *   大圓角是給稀疏的消費性介面用的。全站只有三個尺寸，`rounded-full` 只留給
+ *   真正是圓點或藥丸的東西（計數泡泡、指示點）。
+ * - **深度靠界線，不靠陰影**。卡片一律是 1px 髮絲線 + 底色，沒有陰影；
+ *   陰影只用在真正浮起來的圖層（對話框、彈出層、抽屜），而且那些地方就不再加邊框，
+ *   避免兩種深度提示重複。
+ * - **不用漸層**，不用色塊當裝飾。
+ * - **字體分工**：襯線體（Gentium Book Plus，SIL 為語言學出版設計）用於族語詞形與刊頭，
+ *   介面文字用系統無襯線體。族語是這個網站的主角，讓它有自己的字體；
+ *   這個字體也剛好完整支援音標與附加符號。
+ *
+ * ## 色彩
+ *
+ * 語意化變數沿用 shadcn-vue（background、primary、muted…），另加：
+ * - 語言變體（方言）色：由站台設定的 varieties 產生，每個變體一個 `.variety-<代碼>` class，
+ *   提供 --variety-fg／--variety-bg（淺色與深色各一組，見 src/site/vite.js）。
+ *   從屬的變體用上層的色相、較低彩度，表示「包含於上層」。
+ * - 標記色：--mark（搜尋命中高亮）
+ *
+ * 深色模式：<html class="dark">（由 useTheme 切換）。
+ */
+
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+/*
+ * 明確登錄要掃描 class 的原始碼。框架安裝在站台的 node_modules 裡時，
+ * Tailwind 的自動偵測會略過 node_modules，所以必須寫明（路徑相對於本檔）。
+ */
+@source "../";
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  /* 圓角基準：工具書用小圓角（見檔頭）。三個尺寸就夠，不要再加。 */
+  --radius: 3px;
+
+  --background: oklch(0.992 0.002 90);
+  --foreground: oklch(0.2 0.012 60);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.2 0.012 60);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.2 0.012 60);
+  /* 主色：深靛藍，穩重、適合長時間閱讀的學術工具 */
+  --primary: oklch(0.42 0.09 262);
+  --primary-foreground: oklch(0.985 0.002 90);
+  --secondary: oklch(0.965 0.004 85);
+  --secondary-foreground: oklch(0.25 0.012 60);
+  --muted: oklch(0.965 0.004 85);
+  --muted-foreground: oklch(0.52 0.014 60);
+  --accent: oklch(0.955 0.012 262);
+  --accent-foreground: oklch(0.32 0.08 262);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.915 0.006 80);
+  --input: oklch(0.9 0.006 80);
+  --ring: oklch(0.6 0.08 262);
+
+
+  --mark: oklch(0.93 0.09 95);
+  --mark-foreground: oklch(0.25 0.04 80);
+}
+
+.dark {
+  --background: oklch(0.17 0.008 260);
+  --foreground: oklch(0.95 0.004 90);
+  --card: oklch(0.21 0.01 260);
+  --card-foreground: oklch(0.95 0.004 90);
+  --popover: oklch(0.23 0.01 260);
+  --popover-foreground: oklch(0.95 0.004 90);
+  --primary: oklch(0.78 0.09 262);
+  --primary-foreground: oklch(0.18 0.03 262);
+  --secondary: oklch(0.27 0.01 260);
+  --secondary-foreground: oklch(0.95 0.004 90);
+  --muted: oklch(0.26 0.01 260);
+  --muted-foreground: oklch(0.72 0.012 80);
+  --accent: oklch(0.3 0.04 262);
+  --accent-foreground: oklch(0.92 0.03 262);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 11%);
+  --input: oklch(1 0 0 / 16%);
+  --ring: oklch(0.62 0.07 262);
+
+
+  --mark: oklch(0.45 0.09 95);
+  --mark-foreground: oklch(0.97 0.02 95);
+}
+
+@theme inline {
+  /* 介面文字：交給系統字體，中文才不會被西文字體的替代字形拖累 */
+  --font-sans:
+    system-ui, -apple-system, 'Segoe UI', 'PingFang TC', 'Microsoft JhengHei', 'Noto Sans TC', sans-serif;
+  /* 族語詞形與刊頭：SIL Gentium Book Plus，音標與附加符號齊全 */
+  --font-serif: 'Gentium Book Plus', 'Charis SIL', 'Doulos SIL', Georgia, 'Noto Serif TC', serif;
+  --font-mono: ui-monospace, 'SFMono-Regular', 'Cascadia Mono', Consolas, monospace;
+
+  /* 圓角只有三階：控制項、面板、以及極小的內嵌標記 */
+  --radius-sm: 2px;
+  --radius-md: var(--radius);
+  --radius-lg: var(--radius);
+  --radius-xl: 4px;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-mark: var(--mark);
+  --color-mark-foreground: var(--mark-foreground);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    -webkit-text-size-adjust: 100%;
+    scroll-padding-top: 5rem;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    /* 行動裝置：避免點擊時的灰色高亮，並保留底部安全區 */
+    -webkit-tap-highlight-color: transparent;
+  }
+  mark {
+    @apply bg-mark text-mark-foreground rounded-sm px-0.5;
+  }
+  /* 陰影只留給真正浮起來的圖層，所以那些圖層不再加邊框（見檔頭「深度靠界線」） */
+  h1,
+  h2,
+  h3 {
+    text-wrap: pretty;
+  }
+}
+
+@layer components {
+  /*
+   * 族語文字：本站的主角，用襯線體與介面文字明確分開。
+   * 同時統一字距與斷行，長詞在窄螢幕可斷開而不撐破版面。
+   */
+  .native-text {
+    font-family: var(--font-serif);
+    font-feature-settings: 'kern' 1, 'liga' 1;
+    overflow-wrap: anywhere;
+  }
+  /* 中文釋義 */
+  .gloss-zh {
+    @apply leading-relaxed;
+  }
+  /*
+   * 面板：卡片、側欄、區塊容器共用的髮絲線容器。
+   * 刻意不給陰影——深度由邊框與底色區分（見檔頭）。
+   */
+  .panel {
+    @apply bg-card border-border rounded-md border;
+  }
+  /*
+   * 語言變體徽章：站台的 Markdown 內容也能用，和 DialectBadge 元件長得一樣。
+   * <span class="variety-badge variety-pazeh">巴宰</span>
+   */
+  .variety-badge {
+    @apply inline-flex h-5 items-center rounded-sm px-1.5 text-[11px] leading-none font-medium whitespace-nowrap;
+    background: var(--variety-bg, var(--muted));
+    color: var(--variety-fg, var(--muted-foreground));
+  }
+  /* 站台自己的說明文字（「關於」頁的 Markdown） */
+  .site-content {
+    @apply leading-relaxed;
+  }
+  .site-content h2 {
+    @apply mt-10 mb-3 text-xl font-semibold;
+  }
+  .site-content h2:first-child {
+    @apply mt-0;
+  }
+  .site-content h3 {
+    @apply mt-6 mb-2 font-semibold;
+  }
+  .site-content p,
+  .site-content ul,
+  .site-content ol {
+    @apply mt-3;
+  }
+  .site-content ul {
+    @apply list-disc space-y-1 pl-6;
+  }
+  .site-content ol {
+    @apply list-decimal space-y-1 pl-6;
+  }
+  .site-content a {
+    @apply text-primary hover:underline;
+  }
+  .site-content strong {
+    @apply font-semibold;
+  }
+  .site-content code {
+    @apply bg-muted rounded-sm px-1 font-mono text-[0.9em];
+  }
+  .site-content blockquote {
+    @apply text-muted-foreground border-l-2 pl-4;
+  }
+}
+
+@layer utilities {
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .scrollbar-thin {
+    scrollbar-width: thin;
+  }
+}

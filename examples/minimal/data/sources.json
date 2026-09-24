@@ -1,0 +1,35 @@
+[
+  {
+    "id": "demo-wordlist",
+    "title": "示範詞表",
+    "shortTitle": "示範詞表",
+    "type": "wordlist",
+    "description": "為了展示框架而虛構的小詞表：兩種方言與一種地方變體，附幾個例句。",
+    "authors": [],
+    "year": null,
+    "publisher": null,
+    "citation": null,
+    "url": null,
+    "license": "CC0-1.0",
+    "defaultDialects": [],
+    "orthography": "示範用的拉丁字母拼寫",
+    "browse": {
+      "mode": "list",
+      "shardLabel": "部分"
+    },
+    "reviewTracked": false,
+    "notes": [
+      "內容全部是虛構的，只用來測試與示範。"
+    ],
+    "stats": {
+      "records": 18,
+      "groups": 2,
+      "shards": 2,
+      "audio": 0,
+      "affix": 0,
+      "word": 15,
+      "phrase": 0,
+      "sentence": 3
+    }
+  }
+]

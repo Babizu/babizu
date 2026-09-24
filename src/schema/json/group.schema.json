@@ -1,0 +1,62 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/Babizu/babizu/schema/group.schema.json",
+  "title": "記錄群組 Group",
+  "description": "把相關記錄組成一個有順序的單位：辭典的一個詞條（含派生詞與例句）、一支錄音、一個分類。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "source",
+    "type",
+    "title",
+    "subtitle",
+    "citation",
+    "media"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]+:[^\\s]+$"
+    },
+    "source": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]+$"
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "entry",
+        "recording",
+        "category",
+        "list"
+      ]
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "subtitle": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "citation": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "record.schema.json#/definitions/citation"
+        }
+      ]
+    },
+    "media": {
+      "type": "array",
+      "items": {
+        "$ref": "record.schema.json#/definitions/media"
+      }
+    }
+  }
+}

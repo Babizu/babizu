@@ -1,0 +1,751 @@
+{
+  "source": "demo-wordlist",
+  "shard": "words",
+  "label": "詞",
+  "groups": [
+    {
+      "id": "demo-wordlist:words",
+      "source": "demo-wordlist",
+      "type": "list",
+      "title": "詞",
+      "subtitle": null,
+      "citation": null,
+      "media": []
+    }
+  ],
+  "records": [
+    {
+      "id": "demo-wordlist:w1",
+      "source": "demo-wordlist",
+      "localId": "w1",
+      "unit": "word",
+      "text": "ralan",
+      "altTexts": [],
+      "dialects": [
+        "north"
+      ],
+      "dialectRaw": null,
+      "senses": [
+        {
+          "zh": "路",
+          "en": "road",
+          "nan": null
+        }
+      ],
+      "pos": null,
+      "domain": null,
+      "morphology": null,
+      "interlinear": [],
+      "variants": [],
+      "related": [],
+      "group": {
+        "id": "demo-wordlist:words",
+        "role": "item",
+        "parent": null,
+        "seq": 0
+      },
+      "citation": {
+        "label": "示範詞表 w1",
+        "page": null,
+        "pages": [],
+        "row": null,
+        "code": "w1",
+        "file": null,
+        "timecode": null,
+        "scan": null
+      },
+      "media": [],
+      "attribution": null,
+      "speaker": null,
+      "quality": {
+        "status": "unreviewed",
+        "flags": []
+      },
+      "notes": []
+    },
+    {
+      "id": "demo-wordlist:w2",
+      "source": "demo-wordlist",
+      "localId": "w2",
+      "unit": "word",
+      "text": "lalan",
+      "altTexts": [],
+      "dialects": [
+        "south"
+      ],
+      "dialectRaw": null,
+      "senses": [
+        {
+          "zh": "路",
+          "en": "road",
+          "nan": null
+        }
+      ],
+      "pos": null,
+      "domain": null,
+      "morphology": null,
+      "interlinear": [],
+      "variants": [],
+      "related": [],
+      "group": {
+        "id": "demo-wordlist:words",
+        "role": "item",
+        "parent": null,
+        "seq": 1
+      },
+      "citation": {
+        "label": "示範詞表 w2",
+        "page": null,
+        "pages": [],
+        "row": null,
+        "code": "w2",
+        "file": null,
+        "timecode": null,
+        "scan": null
+      },
+      "media": [],
+      "attribution": null,
+      "speaker": null,
+      "quality": {
+        "status": "unreviewed",
+        "flags": []
+      },
+      "notes": []
+    },
+    {
+      "id": "demo-wordlist:w3",
+      "source": "demo-wordlist",
+      "localId": "w3",
+      "unit": "word",
+      "text": "bunan",
+      "altTexts": [],
+      "dialects": [
+        "north"
+      ],
+      "dialectRaw": null,
+      "senses": [
+        {
+          "zh": "月亮",
+          "en": "moon",
+          "nan": null
+        }
+      ],
+      "pos": null,
+      "domain": null,
+      "morphology": null,
+      "interlinear": [],
+      "variants": [],
+      "related": [],
+      "group": {
+        "id": "demo-wordlist:words",
+        "role": "item",
+        "parent": null,
+        "seq": 2
+      },
+      "citation": {
+        "label": "示範詞表 w3",
+        "page": null,
+        "pages": [],
+        "row": null,
+        "code": "w3",
+        "file": null,
+        "timecode": null,
+        "scan": null
+      },
+      "media": [],
+      "attribution": null,
+      "speaker": null,
+      "quality": {
+        "status": "unreviewed",
+        "flags": []
+      },
+      "notes": []
+    },
+    {
+      "id": "demo-wordlist:w4",
+      "source": "demo-wordlist",
+      "localId": "w4",
+      "unit": "word",
+      "text": "bunang",
+      "altTexts": [],
+      "dialects": [
+        "south"
+      ],
+      "dialectRaw": null,
+      "senses": [
+        {
+          "zh": "月亮",
+          "en": "moon",
+          "nan": null
+        }
+      ],
+      "pos": null,
+      "domain": null,
+      "morphology": null,
+      "interlinear": [],
+      "variants": [],
+      "related": [],
+      "group": {
+        "id": "demo-wordlist:words",
+        "role": "item",
+        "parent": null,
+        "seq": 3
+      },
+      "citation": {
+        "label": "示範詞表 w4",
+        "page": null,
+        "pages": [],
+        "row": null,
+        "code": "w4",
+        "file": null,
+        "timecode": null,
+        "scan": null
+      },
+      "media": [],
+      "attribution": null,
+      "speaker": null,
+      "quality": {
+        "status": "unreviewed",
+        "flags": []
+      },
+      "notes": []
+    },
+    {
+      "id": "demo-wordlist:w5",
+      "source": "demo-wordlist",
+      "localId": "w5",
+      "unit": "word",
+      "text": "tamoh",
+      "altTexts": [],
+      "dialects": [
+        "north"
+      ],
+      "dialectRaw": null,
+      "senses": [
+        {
+          "zh": "水",
+          "en": "water",
+          "nan": null
+        }
+      ],
+      "pos": null,
+      "domain": null,
+      "morphology": null,
+      "interlinear": [],
+      "variants": [],
+      "related": [],
+      "group": {
+        "id": "demo-wordlist:words",
+        "role": "item",
+        "parent": null,
+        "seq": 4
+      },
+      "citation": {
+        "label": "示範詞表 w5",
+        "page": null,
+        "pages": [],
+        "row": null,
+        "code": "w5",
+        "file": null,
+        "timecode": null,
+        "scan": null
+      },
+      "media": [],
+      "attribution": null,
+      "speaker": null,
+      "quality": {
+        "status": "unreviewed",
+        "flags": []
+      },
+      "notes": []
+    },
+    {
+      "id": "demo-wordlist:w6",
+      "source": "demo-wordlist",
+      "localId": "w6",
+      "unit": "word",
+      "text": "tamo",
+      "altTexts": [],
+      "dialects": [
+        "coast"
+      ],
+      "dialectRaw": null,
+      "senses": [
+        {
+          "zh": "水",
+          "en": "water",
+          "nan": null
+        }
+      ],
+      "pos": null,
+      "domain": null,
+      "morphology": null,
+      "interlinear": [],
+      "variants": [],
+      "related": [],
+      "group": {
+        "id": "demo-wordlist:words",
+        "role": "item",
+        "parent": null,
+        "seq": 5
+      },
+      "citation": {
+        "label": "示範詞表 w6",
+        "page": null,
+        "pages": [],
+        "row": null,
+        "code": "w6",
+        "file": null,
+        "timecode": null,
+        "scan": null
+      },
+      "media": [],
+      "attribution": null,
+      "speaker": null,
+      "quality": {
+        "status": "unreviewed",
+        "flags": []
+      },
+      "notes": []
+    },
+    {
+      "id": "demo-wordlist:w7",
+      "source": "demo-wordlist",
+      "localId": "w7",
+      "unit": "word",
+      "text": "keru",
+      "altTexts": [],
+      "dialects": [
+        "north"
+      ],
+      "dialectRaw": null,
+      "senses": [
+        {
+          "zh": "石頭",
+          "en": "stone",
+          "nan": null
+        }
+      ],
+      "pos": null,
+      "domain": null,
+      "morphology": null,
+      "interlinear": [],
+      "variants": [],
+      "related": [],
+      "group": {
+        "id": "demo-wordlist:words",
+        "role": "item",
+        "parent": null,
+        "seq": 6
+      },
+      "citation": {
+        "label": "示範詞表 w7",
+        "page": null,
+        "pages": [],
+        "row": null,
+        "code": "w7",
+        "file": null,
+        "timecode": null,
+        "scan": null
+      },
+      "media": [],
+      "attribution": null,
+      "speaker": null,
+      "quality": {
+        "status": "unreviewed",
+        "flags": []
+      },
+      "notes": []
+    },
+    {
+      "id": "demo-wordlist:w8",
+      "source": "demo-wordlist",
+      "localId": "w8",
+      "unit": "word",
+      "text": "kilu",
+      "altTexts": [],
+      "dialects": [
+        "south"
+      ],
+      "dialectRaw": null,
+      "senses": [
+        {
+          "zh": "石頭",
+          "en": "stone",
+          "nan": null
+        }
+      ],
+      "pos": null,
+      "domain": null,
+      "morphology": null,
+      "interlinear": [],
+      "variants": [],
+      "related": [],
+      "group": {
+        "id": "demo-wordlist:words",
+        "role": "item",
+        "parent": null,
+        "seq": 7
+      },
+      "citation": {
+        "label": "示範詞表 w8",
+        "page": null,
+        "pages": [],
+        "row": null,
+        "code": "w8",
+        "file": null,
+        "timecode": null,
+        "scan": null
+      },
+      "media": [],
+      "attribution": null,
+      "speaker": null,
+      "quality": {
+        "status": "unreviewed",
+        "flags": []
+      },
+      "notes": []
+    },
+    {
+      "id": "demo-wordlist:w9",
+      "source": "demo-wordlist",
+      "localId": "w9",
+      "unit": "word",
+      "text": "sapiʔ",
+      "altTexts": [],
+      "dialects": [
+        "north"
+      ],
+      "dialectRaw": null,
+      "senses": [
+        {
+          "zh": "火",
+          "en": "fire",
+          "nan": null
+        }
+      ],
+      "pos": null,
+      "domain": null,
+      "morphology": null,
+      "interlinear": [],
+      "variants": [],
+      "related": [],
+      "group": {
+        "id": "demo-wordlist:words",
+        "role": "item",
+        "parent": null,
+        "seq": 8
+      },
+      "citation": {
+        "label": "示範詞表 w9",
+        "page": null,
+        "pages": [],
+        "row": null,
+        "code": "w9",
+        "file": null,
+        "timecode": null,
+        "scan": null
+      },
+      "media": [],
+      "attribution": null,
+      "speaker": null,
+      "quality": {
+        "status": "unreviewed",
+        "flags": []
+      },
+      "notes": []
+    },
+    {
+      "id": "demo-wordlist:w10",
+      "source": "demo-wordlist",
+      "localId": "w10",
+      "unit": "word",
+      "text": "sapi",
+      "altTexts": [],
+      "dialects": [
+        "south"
+      ],
+      "dialectRaw": null,
+      "senses": [
+        {
+          "zh": "火",
+          "en": "fire",
+          "nan": null
+        }
+      ],
+      "pos": null,
+      "domain": null,
+      "morphology": null,
+      "interlinear": [],
+      "variants": [],
+      "related": [],
+      "group": {
+        "id": "demo-wordlist:words",
+        "role": "item",
+        "parent": null,
+        "seq": 9
+      },
+      "citation": {
+        "label": "示範詞表 w10",
+        "page": null,
+        "pages": [],
+        "row": null,
+        "code": "w10",
+        "file": null,
+        "timecode": null,
+        "scan": null
+      },
+      "media": [],
+      "attribution": null,
+      "speaker": null,
+      "quality": {
+        "status": "unreviewed",
+        "flags": []
+      },
+      "notes": []
+    },
+    {
+      "id": "demo-wordlist:w11",
+      "source": "demo-wordlist",
+      "localId": "w11",
+      "unit": "word",
+      "text": "arem",
+      "altTexts": [],
+      "dialects": [
+        "north"
+      ],
+      "dialectRaw": null,
+      "senses": [
+        {
+          "zh": "夜晚",
+          "en": "night",
+          "nan": null
+        }
+      ],
+      "pos": null,
+      "domain": null,
+      "morphology": null,
+      "interlinear": [],
+      "variants": [],
+      "related": [],
+      "group": {
+        "id": "demo-wordlist:words",
+        "role": "item",
+        "parent": null,
+        "seq": 10
+      },
+      "citation": {
+        "label": "示範詞表 w11",
+        "page": null,
+        "pages": [],
+        "row": null,
+        "code": "w11",
+        "file": null,
+        "timecode": null,
+        "scan": null
+      },
+      "media": [],
+      "attribution": null,
+      "speaker": null,
+      "quality": {
+        "status": "unreviewed",
+        "flags": []
+      },
+      "notes": []
+    },
+    {
+      "id": "demo-wordlist:w12",
+      "source": "demo-wordlist",
+      "localId": "w12",
+      "unit": "word",
+      "text": "alim",
+      "altTexts": [],
+      "dialects": [
+        "coast"
+      ],
+      "dialectRaw": null,
+      "senses": [
+        {
+          "zh": "夜晚",
+          "en": "night",
+          "nan": null
+        }
+      ],
+      "pos": null,
+      "domain": null,
+      "morphology": null,
+      "interlinear": [],
+      "variants": [],
+      "related": [],
+      "group": {
+        "id": "demo-wordlist:words",
+        "role": "item",
+        "parent": null,
+        "seq": 11
+      },
+      "citation": {
+        "label": "示範詞表 w12",
+        "page": null,
+        "pages": [],
+        "row": null,
+        "code": "w12",
+        "file": null,
+        "timecode": null,
+        "scan": null
+      },
+      "media": [],
+      "attribution": null,
+      "speaker": null,
+      "quality": {
+        "status": "unreviewed",
+        "flags": []
+      },
+      "notes": []
+    },
+    {
+      "id": "demo-wordlist:w13",
+      "source": "demo-wordlist",
+      "localId": "w13",
+      "unit": "word",
+      "text": "ma-ruza",
+      "altTexts": [],
+      "dialects": [
+        "north"
+      ],
+      "dialectRaw": null,
+      "senses": [
+        {
+          "zh": "跑",
+          "en": "to run",
+          "nan": null
+        }
+      ],
+      "pos": null,
+      "domain": null,
+      "morphology": null,
+      "interlinear": [],
+      "variants": [],
+      "related": [],
+      "group": {
+        "id": "demo-wordlist:words",
+        "role": "item",
+        "parent": null,
+        "seq": 12
+      },
+      "citation": {
+        "label": "示範詞表 w13",
+        "page": null,
+        "pages": [],
+        "row": null,
+        "code": "w13",
+        "file": null,
+        "timecode": null,
+        "scan": null
+      },
+      "media": [],
+      "attribution": null,
+      "speaker": null,
+      "quality": {
+        "status": "unreviewed",
+        "flags": []
+      },
+      "notes": []
+    },
+    {
+      "id": "demo-wordlist:w14",
+      "source": "demo-wordlist",
+      "localId": "w14",
+      "unit": "word",
+      "text": "ma-luza",
+      "altTexts": [],
+      "dialects": [
+        "south"
+      ],
+      "dialectRaw": null,
+      "senses": [
+        {
+          "zh": "跑",
+          "en": "to run",
+          "nan": null
+        }
+      ],
+      "pos": null,
+      "domain": null,
+      "morphology": null,
+      "interlinear": [],
+      "variants": [],
+      "related": [],
+      "group": {
+        "id": "demo-wordlist:words",
+        "role": "item",
+        "parent": null,
+        "seq": 13
+      },
+      "citation": {
+        "label": "示範詞表 w14",
+        "page": null,
+        "pages": [],
+        "row": null,
+        "code": "w14",
+        "file": null,
+        "timecode": null,
+        "scan": null
+      },
+      "media": [],
+      "attribution": null,
+      "speaker": null,
+      "quality": {
+        "status": "unreviewed",
+        "flags": []
+      },
+      "notes": []
+    },
+    {
+      "id": "demo-wordlist:w15",
+      "source": "demo-wordlist",
+      "localId": "w15",
+      "unit": "word",
+      "text": "tuxan",
+      "altTexts": [],
+      "dialects": [],
+      "dialectRaw": null,
+      "senses": [
+        {
+          "zh": "雨",
+          "en": "rain",
+          "nan": null
+        }
+      ],
+      "pos": null,
+      "domain": null,
+      "morphology": null,
+      "interlinear": [],
+      "variants": [],
+      "related": [],
+      "group": {
+        "id": "demo-wordlist:words",
+        "role": "item",
+        "parent": null,
+        "seq": 14
+      },
+      "citation": {
+        "label": "示範詞表 w15",
+        "page": null,
+        "pages": [],
+        "row": null,
+        "code": "w15",
+        "file": null,
+        "timecode": null,
+        "scan": null
+      },
+      "media": [],
+      "attribution": null,
+      "speaker": null,
+      "quality": {
+        "status": "unreviewed",
+        "flags": []
+      },
+      "notes": []
+    }
+  ]
+}

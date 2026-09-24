@@ -1,0 +1,23 @@
+{
+  "format": "babizu-dataset",
+  "version": 1,
+  "sources": [
+    {
+      "id": "demo-wordlist",
+      "shards": [
+        {
+          "key": "words",
+          "label": "詞",
+          "records": 15,
+          "groups": 1
+        },
+        {
+          "key": "sentences",
+          "label": "例句",
+          "records": 3,
+          "groups": 1
+        }
+      ]
+    }
+  ]
+}

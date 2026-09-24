@@ -1,0 +1,353 @@
+{
+  "about": {
+    "audio": {
+      "count": "{count} recordings",
+      "text": "Recorded sentences play right away, with interlinear glosses showing what each morpheme means.",
+      "title": "Recordings you can hear"
+    },
+    "features": "Features",
+    "fuzzy": {
+      "text": "Distances are weighted by systematic sound correspondences between dialects, so dialect and spelling differences count as very close — you don't need to know how the other side spells it.",
+      "title": "Cross-dialect fuzzy search"
+    },
+    "provenance": {
+      "text": "Page numbers, list rows and recording timecodes are shown; sources with scans let you open the original page, and citations copy in one click.",
+      "title": "Every entry is traceable"
+    },
+    "sources": {
+      "count": "{sources} sources · {records} records",
+      "text": "Dictionaries, word lists and recorded corpora are each converted into one standard format by their own adapter, so a single search covers them all.",
+      "title": "Many sources, one format"
+    },
+    "title": "About this dictionary"
+  },
+  "app": {
+    "darkMode": "Switch to dark mode",
+    "footer": "Rights to the data belong to the original sources. Please cite them (every entry lists its source).",
+    "home": "Back to search",
+    "language": "Interface language",
+    "lightMode": "Switch to light mode",
+    "skipToContent": "Skip to main content"
+  },
+  "audio": {
+    "error": "This recording cannot be played",
+    "play": "Play recording",
+    "playLabel": "Play: {label}",
+    "stop": "Stop recording",
+    "stopLabel": "Stop: {label}"
+  },
+  "browse": {
+    "empty": "Nothing in this {unit}.",
+    "hideScan": "Hide scan",
+    "next": "Next {unit}",
+    "option": "{label} ({count})",
+    "other": "Other",
+    "previous": "Previous {unit}",
+    "scanAlt": "Scan of {label}",
+    "select": "Choose a {unit}",
+    "shard": {
+      "category": "category",
+      "list": "section",
+      "page": "page",
+      "recording": "recording"
+    },
+    "showScan": "Show scan",
+    "zoom": "Zoom in"
+  },
+  "citation": {
+    "attribution": "Attributed to",
+    "browseShard": "Browse this {unit}",
+    "code": "Number",
+    "copied": "Citation copied",
+    "copy": "Copy citation",
+    "copyFailed": "Cannot access the clipboard — please copy it manually",
+    "file": "Original file",
+    "flags": "Notes",
+    "page": "Page",
+    "row": "Row",
+    "rowValue": "row {row}",
+    "speaker": "Speaker",
+    "status": "Proofreading",
+    "timecode": "Timecode",
+    "title": "Source",
+    "viewScan": "View the original page"
+  },
+  "common": {
+    "back": "Back",
+    "colon": ": ",
+    "listSeparator": ", ",
+    "loadFailed": "Failed to load",
+    "loading": "Loading…",
+    "retry": "Retry"
+  },
+  "filter": {
+    "field": {
+      "gloss": "Meanings",
+      "glossHint": "Chinese, English and Taiwanese glosses",
+      "native": "Language",
+      "nativeHint": "Word forms, variants, other spellings, and words inside sentences"
+    },
+    "fields": "Search in",
+    "fieldsRequired": "Choose at least one.",
+    "fuzziness": "Fuzziness",
+    "fuzzinessHint": "“Standard” finds cross-dialect sound correspondences and small spelling differences; “Exact” only matches identical normalised spellings. Either way, words that start with or contain your query are also listed.",
+    "noVariety": "Unmarked",
+    "reset": "Clear filters",
+    "sources": "Sources",
+    "units": "Unit",
+    "varieties": "Dialect",
+    "varietyNote": "{child} is a local variety of {parent}; selecting “{parent}” includes it."
+  },
+  "fuzziness": {
+    "exact": "Exact",
+    "loose": "Loose",
+    "normal": "Standard"
+  },
+  "gloss": {
+    "nanPrefix": "Tw.: "
+  },
+  "group": {
+    "windowed": "{total} in total; showing {window} on either side."
+  },
+  "hit": {
+    "underEntry": "{role} under “{entry}”"
+  },
+  "lab": {
+    "activeRules": "{count} active (reversed automatically)",
+    "addRule": "Add rule",
+    "alignment": "Alignment",
+    "bestAlignment": "Best alignment",
+    "candidateColumn": "Candidate (columns)",
+    "cellMeaningAfter": "”",
+    "cellMeaningBefore": "The minimum cost of turning “",
+    "cellMeaningMiddle": "” into “",
+    "cells": "{count} cells",
+    "cost": {
+      "delete": "Delete",
+      "insert": "Insert",
+      "space": "Space (all three)",
+      "substitute": "Substitute"
+    },
+    "costs": "Base costs",
+    "customCategory": "Custom",
+    "customRules": "Custom rules",
+    "dawgHelp": "Each node shows “subtree lower bound / allowed upper bound”. When the lower bound exceeds the upper bound the branch is pruned (red) and nothing below it is computed (grey). Green words are within the threshold. The lower bound accounts for multi-character rules that can skip several levels at once, so no result is missed. The graph merges shared suffixes, so the same node number can appear under different paths.",
+    "dawgSize": "Word graph: {nodes} nodes, {edges} edges (a trie of the same words would need many more nodes)",
+    "dawgTab": "Word-graph search",
+    "dawgTrace": "Word-graph traversal",
+    "deleteRule": "Delete rule {rule}",
+    "distance": "Weighted edit distance",
+    "enableCategory": "Enable {category}",
+    "finalColumn": "Word-final position: word-final rules apply",
+    "from": "from {cell}",
+    "intro": "See how the cross-dialect weighted edit distance is computed: ordinary substitutions, deletions and insertions are expensive, while systematic sound correspondences between dialects cost only {rule}. Change the rules and costs and the table and word-graph search update instantly.",
+    "introNoRules": "See how the weighted edit distance is computed. Change the rules and costs and the table and word-graph search update instantly.",
+    "legend": "Corner arrows: ↖ match or substitute, ↑ delete, ← insert, ⤡ sound rule (may span several cells). A dot on a column header marks a word-final position where word-final rules apply. Darker cells cost more; highlighted cells form the best path.",
+    "matrix": "Dynamic programming table",
+    "matrixCorner": "Query / candidate",
+    "maxDistance": "Maximum distance",
+    "nextCell": "Next cell",
+    "normalized": "Length-normalised",
+    "notComputed": "not computed yet",
+    "notVisited": "not visited",
+    "origin": "Starting point; cost 0.",
+    "pause": "Pause",
+    "play": "Play step by step",
+    "position": {
+      "any": "Anywhere",
+      "final": "Word-final",
+      "initial": "Word-initial",
+      "label": "Position"
+    },
+    "pruned": "Pruned",
+    "query": "Query",
+    "queryRow": "Query (rows)",
+    "reset": "Reset",
+    "results": "Results",
+    "reversed": "reversed",
+    "rulePosition": "Position of {rule}",
+    "ruleSource": "Rule source string",
+    "ruleTarget": "Rule target string",
+    "ruleWeight": "Weight of {rule}",
+    "rules": "Sound correspondence rules",
+    "settings": "Rules and costs",
+    "showAll": "Show all",
+    "sourcePlaceholder": "From (may be empty)",
+    "step": {
+      "delete": "delete “{x}”",
+      "insert": "insert “{y}”",
+      "match": "“{x}” matches",
+      "rule": "“{x}” corresponds to “{y}”",
+      "substitute": "“{x}” → “{y}”"
+    },
+    "stepTitle": "{op}, cost {cost}",
+    "targetPlaceholder": "To (may be empty)",
+    "visited": "Visited",
+    "weight": "Weight",
+    "words": "Words (space-separated, up to 200)"
+  },
+  "locale": {
+    "name": "English"
+  },
+  "match": {
+    "costs": "Each sound-correspondence rule costs only {rule}; an ordinary substitution, deletion or insertion costs {substitute} / {delete} / {insert}.",
+    "costsNoRules": "A substitution, deletion or insertion costs {substitute} / {delete} / {insert}.",
+    "distance": "Weighted edit distance {distance}.",
+    "explainButton": "Similar spelling, distance {distance} — explain",
+    "openLab": "See the calculation in the algorithm lab →",
+    "whyTitle": "Why is this similar?"
+  },
+  "matchKind": {
+    "alt": "Other spelling",
+    "head": "Form",
+    "root": "Derived from",
+    "token": "In sentence",
+    "variant": "Variant"
+  },
+  "matchType": {
+    "prefix": "Starts with",
+    "prefixHint": "This word begins with what you typed",
+    "substring": "Contains",
+    "substringHint": "This word contains what you typed"
+  },
+  "nav": {
+    "about": "About",
+    "main": "Main menu",
+    "search": "Search",
+    "sources": "Sources"
+  },
+  "neighbors": {
+    "sameSpelling": "Same spelling"
+  },
+  "notFound": {
+    "hint": "The address may be mistyped, or the page has moved.",
+    "home": "Back to the home page",
+    "title": "Page not found"
+  },
+  "op": {
+    "delete": "Delete",
+    "insert": "Insert",
+    "match": "Match",
+    "rule": "Sound rule",
+    "substitute": "Substitute"
+  },
+  "page": {
+    "browse": "Browse",
+    "lab": "Algorithm lab",
+    "notFound": "Page not found",
+    "record": "Entry",
+    "sourceList": "Word list"
+  },
+  "record": {
+    "derivedFrom": "Derived from",
+    "dialectRaw": "Marked {raw}",
+    "dialectRawHint": "Dialect marking as written in the source",
+    "domain": "Domain {domain}",
+    "entryGroup": "Entry “{title}”",
+    "goSearch": "Go to search",
+    "interlinear": "Interlinear gloss",
+    "morphemeGloss": "Morpheme gloss",
+    "morphology": "Morphology and variants",
+    "nan": "Taiwanese: ",
+    "neighbors": "Similar forms in other sources",
+    "neighborsHint": "Similar spellings across dialects and writing systems, for comparison — not necessarily the same word.",
+    "noNeighbors": "No similar forms found.",
+    "notFound": "Entry not found",
+    "notFoundHint": "Record {id} does not exist — its number may have changed in a data update.",
+    "notes": "Notes",
+    "pos": "POS {pos}",
+    "recordingGroup": "Recording {title}",
+    "related": "See also",
+    "segmentation": "Segmentation",
+    "senses": "Meanings",
+    "variants": "Variants"
+  },
+  "role": {
+    "example": "Example",
+    "form": "Derived form",
+    "head": "Headword",
+    "item": "Item",
+    "segment": "Corpus sentence"
+  },
+  "scan": {
+    "description": "Zoom in to compare with the digitised text.",
+    "loading": "Loading scan…",
+    "openInNewTab": "Open in new tab",
+    "zoomIn": "Zoom in",
+    "zoomOut": "Zoom out"
+  },
+  "search": {
+    "all": "All",
+    "clear": "Clear",
+    "filters": "Filters",
+    "filtersHint": "Adjust fuzziness, or limit by source, dialect or unit.",
+    "insertChar": "Insert {char}",
+    "loadFailed": "Cannot load the search data",
+    "loaded": "{records} records and {terms} word forms loaded",
+    "loadingIndex": "Loading the dictionary index…",
+    "noFieldsHint": "Tick “Language”, “Meanings”, or both.",
+    "noFieldsTitle": "Choose what to search",
+    "noResults": "No matching words",
+    "noResultsFor": "No results for “{query}”",
+    "noResultsHint": "Try another spelling, fewer filters, or search in Chinese or English.",
+    "noResultsHintLoose": "Try setting fuzziness to “Loose”, or remove some filters.",
+    "placeholder": "Search a word, or its Chinese or English meaning",
+    "recent": "Recent searches",
+    "resultCountAfter": "”: {count} results",
+    "resultCountBefore": "“",
+    "searchBoth": "Search both",
+    "searching": "Searching…",
+    "section": {
+      "entries": "Entries",
+      "glosses": "Meanings",
+      "occurrences": "Examples"
+    },
+    "seeAll": "See all →",
+    "showMore": "Show more ({count} left)",
+    "similarSpellings": "Including similar spellings:",
+    "specialChars": "Insert special characters",
+    "truncated": "Only the first {count} are shown — add filters or a more specific query.",
+    "tryThese": "Try these",
+    "useLoose": "Search loosely"
+  },
+  "sourceList": {
+    "summary": "{count} records, sorted by form",
+    "summaryUnit": "{count} records ({unit}), sorted by form"
+  },
+  "sourceType": {
+    "corpus": "Corpus",
+    "dictionary": "Dictionary",
+    "wordlist": "Word list"
+  },
+  "sources": {
+    "all": "All sources",
+    "audio": "Recordings",
+    "browse": "Browse ({count} × {unit})",
+    "cite": "Suggested citation: ",
+    "intro": "Each source is converted into one common format by its own adapter, keeping the original spelling and provenance intact. Below is what each source contains and how it was processed; click a number to see the full list.",
+    "loadFailed": "Cannot load the sources",
+    "loading": "Reading the source list.",
+    "notFound": "Source not found",
+    "notFoundHint": "There is no source “{id}”.",
+    "orthography": "Writing system: {value}",
+    "records": "Records",
+    "scans": "Scanned pages",
+    "totals": "All {count} sources combined"
+  },
+  "status": {
+    "reviewed": "Proofread",
+    "title": "Proofreading status: {label}",
+    "unreviewed": "Not proofread",
+    "verified": "Double-checked"
+  },
+  "unit": {
+    "affix": "Affix / bound root",
+    "phrase": "Phrase",
+    "sentence": "Sentence",
+    "word": "Word"
+  },
+  "writingSystem": {
+    "phonetic": "Phonetic notation",
+    "segmented": "Segmented form"
+  }
+}

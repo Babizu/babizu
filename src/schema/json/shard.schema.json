@@ -1,0 +1,40 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/Babizu/babizu/schema/shard.schema.json",
+  "title": "資料分片 Shard",
+  "description": "網站按需載入的單位：一個來源的一部分（例如辭典的一頁、分類辭典的一章、一個錄音場次）。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "source",
+    "shard",
+    "label",
+    "groups",
+    "records"
+  ],
+  "properties": {
+    "source": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]+$"
+    },
+    "shard": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]+$"
+    },
+    "label": {
+      "type": "string"
+    },
+    "groups": {
+      "type": "array",
+      "items": {
+        "$ref": "group.schema.json"
+      }
+    },
+    "records": {
+      "type": "array",
+      "items": {
+        "$ref": "record.schema.json"
+      }
+    }
+  }
+}

@@ -1,0 +1,145 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/Babizu/babizu/schema/source.schema.json",
+  "title": "資料來源 Source",
+  "description": "一個資料來源的後設資料。不確定的資訊一律留 null，不得臆測。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "title",
+    "shortTitle",
+    "type",
+    "description",
+    "authors",
+    "year",
+    "publisher",
+    "citation",
+    "url",
+    "license",
+    "defaultDialects",
+    "orthography",
+    "browse",
+    "reviewTracked",
+    "notes"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]+$"
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "shortTitle": {
+      "type": "string",
+      "minLength": 1
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "dictionary",
+        "wordlist",
+        "corpus"
+      ]
+    },
+    "description": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "authors": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "year": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "publisher": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "citation": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "建議引用格式"
+    },
+    "url": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "license": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "defaultDialects": {
+      "type": "array",
+      "items": {
+        "$ref": "record.schema.json#/definitions/dialect"
+      }
+    },
+    "orthography": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "書寫系統說明"
+    },
+    "browse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "shardLabel"
+      ],
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "page",
+            "category",
+            "recording",
+            "list"
+          ],
+          "description": "網站瀏覽頁的呈現方式"
+        },
+        "shardLabel": {
+          "type": "string",
+          "description": "分片的顯示名稱，例如「頁」「章」「場次」"
+        }
+      }
+    },
+    "reviewTracked": {
+      "type": "boolean",
+      "description": "這個來源是否有校對流程。false 時網站不顯示校對狀態欄位（沒有流程就沒有狀態可言）。"
+    },
+    "notes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "stats": {
+      "type": "object",
+      "description": "建置時填入的統計",
+      "additionalProperties": {
+        "type": "integer"
+      }
+    }
+  }
+}

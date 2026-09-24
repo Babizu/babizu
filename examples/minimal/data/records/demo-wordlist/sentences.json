@@ -1,0 +1,165 @@
+{
+  "source": "demo-wordlist",
+  "shard": "sentences",
+  "label": "例句",
+  "groups": [
+    {
+      "id": "demo-wordlist:sentences",
+      "source": "demo-wordlist",
+      "type": "list",
+      "title": "例句",
+      "subtitle": null,
+      "citation": null,
+      "media": []
+    }
+  ],
+  "records": [
+    {
+      "id": "demo-wordlist:s1",
+      "source": "demo-wordlist",
+      "localId": "s1",
+      "unit": "sentence",
+      "text": "ma-ruza a tamoh",
+      "altTexts": [],
+      "dialects": [
+        "north"
+      ],
+      "dialectRaw": null,
+      "senses": [
+        {
+          "zh": "水在流",
+          "en": "The water flows.",
+          "nan": null
+        }
+      ],
+      "pos": null,
+      "domain": null,
+      "morphology": null,
+      "interlinear": [],
+      "variants": [],
+      "related": [],
+      "group": {
+        "id": "demo-wordlist:sentences",
+        "role": "item",
+        "parent": null,
+        "seq": 0
+      },
+      "citation": {
+        "label": "示範詞表 s1",
+        "page": null,
+        "pages": [],
+        "row": null,
+        "code": "s1",
+        "file": null,
+        "timecode": null,
+        "scan": null
+      },
+      "media": [],
+      "attribution": null,
+      "speaker": null,
+      "quality": {
+        "status": "unreviewed",
+        "flags": []
+      },
+      "notes": []
+    },
+    {
+      "id": "demo-wordlist:s2",
+      "source": "demo-wordlist",
+      "localId": "s2",
+      "unit": "sentence",
+      "text": "sapi ka alim",
+      "altTexts": [],
+      "dialects": [
+        "coast"
+      ],
+      "dialectRaw": null,
+      "senses": [
+        {
+          "zh": "夜晚的火",
+          "en": "A fire at night.",
+          "nan": null
+        }
+      ],
+      "pos": null,
+      "domain": null,
+      "morphology": null,
+      "interlinear": [],
+      "variants": [],
+      "related": [],
+      "group": {
+        "id": "demo-wordlist:sentences",
+        "role": "item",
+        "parent": null,
+        "seq": 1
+      },
+      "citation": {
+        "label": "示範詞表 s2",
+        "page": null,
+        "pages": [],
+        "row": null,
+        "code": "s2",
+        "file": null,
+        "timecode": null,
+        "scan": null
+      },
+      "media": [],
+      "attribution": null,
+      "speaker": null,
+      "quality": {
+        "status": "unreviewed",
+        "flags": []
+      },
+      "notes": []
+    },
+    {
+      "id": "demo-wordlist:s3",
+      "source": "demo-wordlist",
+      "localId": "s3",
+      "unit": "sentence",
+      "text": "bunang ka lalan!",
+      "altTexts": [],
+      "dialects": [
+        "south"
+      ],
+      "dialectRaw": null,
+      "senses": [
+        {
+          "zh": "路上有月亮！",
+          "en": "The moon is over the road!",
+          "nan": null
+        }
+      ],
+      "pos": null,
+      "domain": null,
+      "morphology": null,
+      "interlinear": [],
+      "variants": [],
+      "related": [],
+      "group": {
+        "id": "demo-wordlist:sentences",
+        "role": "item",
+        "parent": null,
+        "seq": 2
+      },
+      "citation": {
+        "label": "示範詞表 s3",
+        "page": null,
+        "pages": [],
+        "row": null,
+        "code": "s3",
+        "file": null,
+        "timecode": null,
+        "scan": null
+      },
+      "media": [],
+      "attribution": null,
+      "speaker": null,
+      "quality": {
+        "status": "unreviewed",
+        "flags": []
+      },
+      "notes": []
+    }
+  ]
+}

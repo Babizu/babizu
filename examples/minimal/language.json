@@ -1,0 +1,44 @@
+{
+  "format": "babizu-language-profile",
+  "version": 1,
+  "name": { "zh-TW": "示範語", "en": "Demo language" },
+  "normalizer": {
+    "lowercase": true,
+    "charMap": { "ʔ": "'" },
+    "stripDiacritics": true,
+    "preserve": []
+  },
+  "notationChars": "-=<>…~*",
+  "boundaries": [" "],
+  "costs": {
+    "substitute": 1.5,
+    "delete": 1,
+    "insert": 0.8,
+    "overrides": { " ": { "substitute": 0.1, "delete": 0.1, "insert": 0.1 } }
+  },
+  "rules": [
+    {
+      "category": "流音",
+      "label": { "en": "Liquids" },
+      "description": "北部說 r、南部說 l",
+      "rules": [["r", "l", 0.1]]
+    },
+    {
+      "category": "詞尾",
+      "label": { "en": "Word-final" },
+      "position": "final",
+      "rules": [
+        ["n", "ng", 0.1],
+        ["h", "", 0.1]
+      ]
+    },
+    {
+      "category": "元音",
+      "label": { "en": "Vowels" },
+      "rules": [
+        ["e", "i", 0.2],
+        ["o", "u", 0.2]
+      ]
+    }
+  ]
+}

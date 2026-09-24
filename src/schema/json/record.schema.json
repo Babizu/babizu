@@ -1,0 +1,647 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/Babizu/babizu/schema/record.schema.json",
+  "title": "標準語料記錄 Record",
+  "description": "系統中每一筆詞、詞綴、片語或句子。所有來源的轉接器都輸出這個格式。欄位說明見 docs/corpus-schema.md。所有欄位一律出現，空值用 null 或 []。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "source",
+    "localId",
+    "unit",
+    "text",
+    "altTexts",
+    "dialects",
+    "dialectRaw",
+    "senses",
+    "pos",
+    "domain",
+    "morphology",
+    "interlinear",
+    "variants",
+    "related",
+    "group",
+    "citation",
+    "media",
+    "attribution",
+    "speaker",
+    "quality",
+    "notes"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]+:[^\\s]+$",
+      "description": "全系統唯一：{source}:{localId}"
+    },
+    "source": {
+      "$ref": "#/definitions/sourceId"
+    },
+    "localId": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[^\\s]+$",
+      "description": "來源內的編號，例如 p085-01-x01、01A-001、r0012"
+    },
+    "unit": {
+      "type": "string",
+      "enum": [
+        "affix",
+        "word",
+        "phrase",
+        "sentence"
+      ],
+      "description": "語言單位：詞綴／詞／片語／句子（判定規則見 docs/corpus-schema.md）"
+    },
+    "text": {
+      "type": "string",
+      "minLength": 1,
+      "description": "原始拼寫，照來源抄錄，不做任何修正"
+    },
+    "altTexts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/altText"
+      }
+    },
+    "dialects": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/definitions/dialect"
+      },
+      "description": "標準方言代碼；無法判定時為空陣列"
+    },
+    "dialectRaw": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "來源上的原始方言標記，例如 [K]、Sek-hwan"
+    },
+    "senses": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/sense"
+      }
+    },
+    "pos": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "來源上的詞性標記，照抄"
+    },
+    "domain": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/definitions/domain"
+        }
+      ]
+    },
+    "morphology": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/definitions/morphology"
+        }
+      ]
+    },
+    "interlinear": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/glossPair"
+      },
+      "description": "逐詞（詞素）對譯，主要用於語料句子"
+    },
+    "variants": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/variant"
+      }
+    },
+    "related": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/relatedLink"
+      }
+    },
+    "group": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/definitions/groupRef"
+        }
+      ]
+    },
+    "citation": {
+      "$ref": "#/definitions/citation"
+    },
+    "media": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/media"
+      }
+    },
+    "attribution": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "來源內部標示的原始出處（如 Ogawa、潘、書目）"
+    },
+    "speaker": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "quality": {
+      "$ref": "#/definitions/quality"
+    },
+    "notes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "definitions": {
+    "sourceId": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]+$"
+    },
+    "dialect": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$",
+      "description": "語言變體（方言）代碼。允許的代碼由站台設定的 varieties 提供，驗證時注入（見 src/schema/validate.js）"
+    },
+    "altText": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "system",
+        "text"
+      ],
+      "properties": {
+        "system": {
+          "type": "string",
+          "description": "書寫系統代碼，例如 pan-yongli（潘永歷標記法）、segmented（分詞形式）"
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "sense": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "zh",
+        "en",
+        "nan"
+      ],
+      "properties": {
+        "zh": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "en": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "nan": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "description": "臺語譯解"
+        },
+        "note": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "domain": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "label"
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "label": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "morphology": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "formType",
+        "segmentation",
+        "gloss",
+        "derivedFrom"
+      ],
+      "properties": {
+        "formType": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "free",
+            "bound-initial",
+            "bound-final",
+            "circumfix",
+            "infix",
+            null
+          ]
+        },
+        "segmentation": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "分詞形式，例如 ma-des、ha=ka"
+        },
+        "gloss": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "詞素對譯，例如 狀態-久"
+        },
+        "grammaticalNote": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "語法標記，例如 自由格、祈使"
+        },
+        "derivedFrom": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/derivation"
+          }
+        }
+      }
+    },
+    "derivation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "relation",
+        "text"
+      ],
+      "properties": {
+        "relation": {
+          "type": "string",
+          "enum": [
+            "<",
+            ">",
+            "+"
+          ]
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1
+        },
+        "via": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "衍生方式的代碼，依來源體例原樣記錄；沒有則為 null"
+        },
+        "attribution": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "glossPair": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "form",
+        "gloss"
+      ],
+      "properties": {
+        "form": {
+          "type": "string"
+        },
+        "gloss": {
+          "type": "string"
+        }
+      }
+    },
+    "variant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "relation",
+        "text"
+      ],
+      "properties": {
+        "relation": {
+          "type": "string",
+          "enum": [
+            "=",
+            "~"
+          ]
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1
+        },
+        "attribution": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "dialects": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/dialect"
+          }
+        },
+        "dialectRaw": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "relatedLink": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "target"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "see-also",
+            "same-as",
+            "derived-from",
+            "variant-of"
+          ]
+        },
+        "target": {
+          "type": "string",
+          "pattern": "^[a-z0-9-]+:[^\\s]+$",
+          "description": "目標記錄 id"
+        },
+        "label": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "groupRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "role",
+        "parent",
+        "seq"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9-]+:[^\\s]+$"
+        },
+        "role": {
+          "type": "string",
+          "enum": [
+            "head",
+            "form",
+            "example",
+            "segment",
+            "item"
+          ],
+          "description": "head 詞條本身、form 派生詞、example 例句、segment 錄音中的一句、item 清單項目"
+        },
+        "parent": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "原書排在哪一筆底下（記錄 id）；null 表示直接在群組下"
+        },
+        "seq": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        }
+      }
+    },
+    "timecode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "start",
+        "end"
+      ],
+      "properties": {
+        "start": {
+          "type": "number",
+          "minimum": 0
+        },
+        "end": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "citation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "label",
+        "page",
+        "pages",
+        "row",
+        "code",
+        "file",
+        "timecode",
+        "scan"
+      ],
+      "properties": {
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "description": "給人看的完整出處說明"
+        },
+        "page": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "起始頁碼"
+        },
+        "pages": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          },
+          "description": "跨頁時列出所有頁碼"
+        },
+        "row": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "試算表／清單中的列號（與原檔的列號一致，含表頭列）"
+        },
+        "code": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "來源自己的編號，例如語詞編號 01A-001"
+        },
+        "file": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "原始檔案，例如影片 IMG_2659.MOV"
+        },
+        "timecode": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/definitions/timecode"
+            }
+          ]
+        },
+        "scan": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "掃描圖路徑（相對於網站資料根目錄）"
+        }
+      }
+    },
+    "media": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "src",
+        "start",
+        "end",
+        "available"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "audio",
+            "video"
+          ]
+        },
+        "src": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "相對於網站資料根目錄的路徑；檔案未提供時為 null"
+        },
+        "start": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "在媒體檔中的起始秒數（整檔即為本句時為 null）"
+        },
+        "end": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "available": {
+          "type": "boolean",
+          "description": "檔案是否實際可播放"
+        },
+        "label": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "quality": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "flags"
+      ],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "unreviewed",
+            "reviewed",
+            "verified"
+          ],
+          "description": "三級校對狀態：unreviewed 未校對（紅）、reviewed 初步校對（黃）、verified 二審校對（綠）"
+        },
+        "flags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

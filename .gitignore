@@ -1,0 +1,16 @@
+# 依賴
+node_modules/
+
+# 站台建置產物（示範站台與任何在框架目錄下建置的站台）
+.babizu/
+dist/
+
+# 測試輸出
+coverage/
+test-results/
+playwright-report/
+
+# 編輯器與系統
+.DS_Store
+Thumbs.db
+*.log

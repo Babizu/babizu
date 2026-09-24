@@ -1,0 +1,353 @@
+{
+  "about": {
+    "audio": {
+      "count": "{count} 段錄音",
+      "text": "有錄音的句子可以直接播放，並附逐詞對譯，看得出每個詞素的意思。",
+      "title": "聽得到的語料"
+    },
+    "features": "特色",
+    "fuzzy": {
+      "text": "依方言間系統性的語音對應加權計算距離，對應關係與書寫系統差異都算成極近的距離，不必先知道對方怎麼拼。",
+      "title": "跨方言模糊搜尋"
+    },
+    "provenance": {
+      "text": "標示辭典頁碼、詞表列號、語料時間碼；有掃描圖的來源可以直接開原書頁面對照，引用格式一鍵複製。",
+      "title": "每筆資料都查得到出處"
+    },
+    "sources": {
+      "count": "{sources} 個來源 · {records} 筆記錄",
+      "text": "辭典、詞表與錄音語料各自由獨立的轉接器轉成同一套標準格式，一次查詢就能橫跨全部來源比對。",
+      "title": "多個來源，一套格式"
+    },
+    "title": "關於本辭典"
+  },
+  "app": {
+    "darkMode": "切換為深色模式",
+    "footer": "資料版權屬各原始來源，引用時請註明出處（每筆詞條皆附「出處」資訊）。",
+    "home": "回到搜尋頁",
+    "language": "介面語言",
+    "lightMode": "切換為淺色模式",
+    "skipToContent": "跳到主要內容"
+  },
+  "audio": {
+    "error": "音檔無法播放",
+    "play": "播放錄音",
+    "playLabel": "播放：{label}",
+    "stop": "停止錄音",
+    "stopLabel": "停止：{label}"
+  },
+  "browse": {
+    "empty": "這個{unit}沒有資料。",
+    "hideScan": "隱藏掃描頁",
+    "next": "下一{unit}",
+    "option": "{label}（{count} 筆）",
+    "other": "其他",
+    "previous": "上一{unit}",
+    "scanAlt": "{label} 原書掃描頁",
+    "select": "選擇{unit}",
+    "shard": {
+      "category": "類",
+      "list": "部分",
+      "page": "頁",
+      "recording": "場次"
+    },
+    "showScan": "顯示掃描頁",
+    "zoom": "放大檢視"
+  },
+  "citation": {
+    "attribution": "原始出處",
+    "browseShard": "瀏覽{unit}",
+    "code": "編號",
+    "copied": "已複製引用資訊",
+    "copy": "複製引用",
+    "copyFailed": "無法存取剪貼簿，請手動複製",
+    "file": "原始檔案",
+    "flags": "備註",
+    "page": "頁碼",
+    "row": "列號",
+    "rowValue": "第 {row} 列",
+    "speaker": "講者",
+    "status": "校對狀態",
+    "timecode": "時間碼",
+    "title": "出處",
+    "viewScan": "查看原書掃描頁"
+  },
+  "common": {
+    "back": "返回",
+    "colon": "：",
+    "listSeparator": "、",
+    "loadFailed": "載入失敗",
+    "loading": "載入中…",
+    "retry": "重試"
+  },
+  "filter": {
+    "field": {
+      "gloss": "釋義",
+      "glossHint": "中文、英文、臺語譯解",
+      "native": "族語",
+      "nativeHint": "詞形、變體、其他書寫系統，以及句子中的詞"
+    },
+    "fields": "搜尋範圍",
+    "fieldsRequired": "請至少選擇一個搜尋範圍。",
+    "fuzziness": "模糊程度",
+    "fuzzinessHint": "「標準」會找出方言間的語音對應與少量拼寫差異；「精確」只比對拼寫正規化後相同的詞。不論哪一種，都會另外列出「開頭相符」與「包含」查詢字串的詞。",
+    "noVariety": "未標方言",
+    "reset": "清除篩選",
+    "sources": "資料來源",
+    "units": "語言單位",
+    "varieties": "方言",
+    "varietyNote": "{child}是{parent}的地方變體，勾「{parent}」時會一併出現。"
+  },
+  "fuzziness": {
+    "exact": "精確",
+    "loose": "寬鬆",
+    "normal": "標準"
+  },
+  "gloss": {
+    "nanPrefix": "臺："
+  },
+  "group": {
+    "windowed": "共 {total} 筆，只顯示前後各 {window} 筆。"
+  },
+  "hit": {
+    "underEntry": "{entry} 條下{role}"
+  },
+  "lab": {
+    "activeRules": "啟用 {count} 條（皆自動補反向）",
+    "addRule": "新增規則",
+    "alignment": "對齊結果",
+    "bestAlignment": "最佳對齊",
+    "candidateColumn": "候選（欄）",
+    "cellMeaningAfter": "」的最小成本",
+    "cellMeaningBefore": "把「",
+    "cellMeaningMiddle": "」轉成「",
+    "cells": "{count} 格",
+    "cost": {
+      "delete": "刪除",
+      "insert": "插入",
+      "space": "空白（三種操作）",
+      "substitute": "替換"
+    },
+    "costs": "基本成本",
+    "customCategory": "自訂",
+    "customRules": "自訂規則",
+    "dawgHelp": "每個節點顯示「子樹距離下界 ／ 允許上界」。下界超過上界時剪枝（紅色），其下所有節點都不必計算（灰色）。綠色是符合門檻的詞。下界同時考慮「多字元規則可能一次跨越好幾層」，所以不會漏掉結果。詞圖合併了共同後綴，同一個節點編號可能在不同路徑下重複出現。",
+    "dawgSize": "詞圖：{nodes} 個節點、{edges} 條邊（同樣的詞用 Trie 會多出不少節點）",
+    "dawgTab": "詞圖搜尋",
+    "dawgTrace": "詞圖走訪結果",
+    "deleteRule": "刪除規則 {rule}",
+    "distance": "加權編輯距離",
+    "enableCategory": "啟用{category}",
+    "finalColumn": "詞尾位置：可套用詞尾規則",
+    "from": "從 {cell}",
+    "intro": "觀察跨方言加權編輯距離怎麼算：一般的替換、刪除、插入成本較高，方言間系統性的語音對應只算 {rule}。調整「規則與成本設定」，表格與詞圖搜尋會即時重新計算。",
+    "introNoRules": "觀察加權編輯距離怎麼算。調整「規則與成本設定」，表格與詞圖搜尋會即時重新計算。",
+    "legend": "格角箭頭：↖ 相同或替換、↑ 刪除、← 插入、⤡ 語音規則（可能跨越多格）。欄標題的圓點表示該位置是詞尾，可以套用「詞尾」規則。格子顏色越深代表成本越高；主色格子是最佳路徑。",
+    "matrix": "動態規劃表",
+    "matrixCorner": "查詢＼候選",
+    "maxDistance": "最大距離",
+    "nextCell": "下一格",
+    "normalized": "依長度正規化",
+    "notComputed": "尚未計算",
+    "notVisited": "未走訪",
+    "origin": "起點，成本為 0。",
+    "pause": "暫停",
+    "play": "逐格播放",
+    "position": {
+      "any": "任何位置",
+      "final": "詞尾",
+      "initial": "詞首",
+      "label": "適用位置"
+    },
+    "pruned": "剪枝",
+    "query": "查詢",
+    "queryRow": "查詢（列）",
+    "reset": "恢復預設",
+    "results": "結果",
+    "reversed": "反向",
+    "rulePosition": "{rule} 的適用位置",
+    "ruleSource": "規則來源字串",
+    "ruleTarget": "規則目標字串",
+    "ruleWeight": "{rule} 的權重",
+    "rules": "語音對應規則",
+    "settings": "規則與成本設定",
+    "showAll": "顯示全部",
+    "sourcePlaceholder": "來源（可空）",
+    "step": {
+      "delete": "刪除「{x}」",
+      "insert": "插入「{y}」",
+      "match": "「{x}」相同",
+      "rule": "「{x}」對應「{y}」",
+      "substitute": "「{x}」換成「{y}」"
+    },
+    "stepTitle": "{op}，成本 {cost}",
+    "targetPlaceholder": "目標（可空）",
+    "visited": "走訪",
+    "weight": "權重",
+    "words": "詞庫（以空白分隔，最多 200 詞）"
+  },
+  "locale": {
+    "name": "中文"
+  },
+  "match": {
+    "costs": "方言對應規則每條只算 {rule}，一般的替換、刪除、插入則是 {substitute}／{delete}／{insert}。",
+    "costsNoRules": "替換、刪除、插入的成本分別是 {substitute}／{delete}／{insert}。",
+    "distance": "加權編輯距離 {distance}。",
+    "explainButton": "相近拼寫，距離 {distance}，查看說明",
+    "openLab": "在演算法實驗室查看計算過程 →",
+    "whyTitle": "為什麼算相近？"
+  },
+  "matchKind": {
+    "alt": "其他寫法",
+    "head": "詞形",
+    "root": "衍生自",
+    "token": "句中",
+    "variant": "變體"
+  },
+  "matchType": {
+    "prefix": "開頭相符",
+    "prefixHint": "這個詞以你輸入的字串開頭",
+    "substring": "包含",
+    "substringHint": "這個詞裡面含有你輸入的字串"
+  },
+  "nav": {
+    "about": "關於",
+    "main": "主選單",
+    "search": "搜尋",
+    "sources": "資料來源"
+  },
+  "neighbors": {
+    "sameSpelling": "拼寫相同"
+  },
+  "notFound": {
+    "hint": "網址可能打錯了，或頁面已經移動。",
+    "home": "回到首頁",
+    "title": "找不到這個頁面"
+  },
+  "op": {
+    "delete": "刪除",
+    "insert": "插入",
+    "match": "相同",
+    "rule": "語音規則",
+    "substitute": "替換"
+  },
+  "page": {
+    "browse": "瀏覽",
+    "lab": "演算法實驗室",
+    "notFound": "找不到頁面",
+    "record": "詞條",
+    "sourceList": "詞彙清單"
+  },
+  "record": {
+    "derivedFrom": "衍生自",
+    "dialectRaw": "原標記 {raw}",
+    "dialectRawHint": "來源上的原始方言標記",
+    "domain": "分類 {domain}",
+    "entryGroup": "「{title}」詞條",
+    "goSearch": "前往搜尋",
+    "interlinear": "逐詞對譯",
+    "morphemeGloss": "詞素對譯",
+    "morphology": "構詞與變體",
+    "nan": "臺語：",
+    "neighbors": "其他來源的相近詞形",
+    "neighborsHint": "跨方言、跨書寫系統的相似拼寫，供比對參考，不代表必為同一詞。",
+    "noNeighbors": "沒有找到相近的詞形。",
+    "notFound": "找不到這筆資料",
+    "notFoundHint": "記錄 {id} 不存在，可能是資料更新後編號改變了。",
+    "notes": "備註",
+    "pos": "詞性 {pos}",
+    "recordingGroup": "錄音 {title}",
+    "related": "參見",
+    "segmentation": "分詞",
+    "senses": "釋義",
+    "variants": "變體"
+  },
+  "role": {
+    "example": "例句",
+    "form": "派生詞",
+    "head": "詞條",
+    "item": "條目",
+    "segment": "語料句"
+  },
+  "scan": {
+    "description": "可放大檢視，與電子化文字對照。",
+    "loading": "載入掃描圖…",
+    "openInNewTab": "在新分頁開啟",
+    "zoomIn": "放大",
+    "zoomOut": "縮小"
+  },
+  "search": {
+    "all": "全部",
+    "clear": "清除",
+    "filters": "搜尋條件",
+    "filtersHint": "調整模糊程度，或限定來源、方言、語言單位。",
+    "insertChar": "插入 {char}",
+    "loadFailed": "無法載入搜尋資料",
+    "loaded": "已載入 {records} 筆記錄、{terms} 個詞形",
+    "loadingIndex": "正在載入辭典索引…",
+    "noFieldsHint": "至少要勾選「族語」或「釋義」其中一項。",
+    "noFieldsTitle": "請選擇搜尋範圍",
+    "noResults": "找不到相符的詞",
+    "noResultsFor": "「{query}」沒有結果",
+    "noResultsHint": "試試換個拼寫、減少篩選條件，或改用中文、英文查詢。",
+    "noResultsHintLoose": "試試把模糊程度調成「寬鬆」，或減少篩選條件。",
+    "placeholder": "輸入族語、中文或英文",
+    "recent": "最近搜尋",
+    "resultCountAfter": "」共 {count} 筆",
+    "resultCountBefore": "「",
+    "searchBoth": "兩者都搜尋",
+    "searching": "搜尋中…",
+    "section": {
+      "entries": "詞條",
+      "glosses": "釋義",
+      "occurrences": "例句"
+    },
+    "seeAll": "查看全部 →",
+    "showMore": "顯示更多（還有 {count} 筆）",
+    "similarSpellings": "含相近拼寫：",
+    "specialChars": "插入特殊字元",
+    "truncated": "只顯示前 {count} 筆，請加上篩選條件或更精確的查詢。",
+    "tryThese": "試試這些查詢",
+    "useLoose": "改用寬鬆搜尋"
+  },
+  "sourceList": {
+    "summary": "共 {count} 筆，依詞形排序",
+    "summaryUnit": "共 {count} 筆（{unit}），依詞形排序"
+  },
+  "sourceType": {
+    "corpus": "語料",
+    "dictionary": "辭典",
+    "wordlist": "詞表"
+  },
+  "sources": {
+    "all": "所有來源",
+    "audio": "錄音",
+    "browse": "瀏覽（{count} {unit}）",
+    "cite": "建議引用：",
+    "intro": "每個來源都由獨立的轉接器轉成統一格式，原始拼寫與出處資訊完整保留。以下列出各來源的收錄內容與處理說明；點統計數字可以看該類別的完整清單。",
+    "loadFailed": "無法載入來源資訊",
+    "loading": "正在讀取來源資訊。",
+    "notFound": "找不到這個來源",
+    "notFoundHint": "來源 {id} 不存在。",
+    "orthography": "書寫系統：{value}",
+    "records": "總筆數",
+    "scans": "掃描頁",
+    "totals": "全部 {count} 個來源合計"
+  },
+  "status": {
+    "reviewed": "初步校對",
+    "title": "校對狀態：{label}",
+    "unreviewed": "未校對",
+    "verified": "二審校對"
+  },
+  "unit": {
+    "affix": "詞綴／詞根",
+    "phrase": "片語",
+    "sentence": "句子",
+    "word": "詞"
+  },
+  "writingSystem": {
+    "phonetic": "語音標記",
+    "segmented": "分詞形式"
+  }
+}
