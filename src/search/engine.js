@@ -200,7 +200,7 @@ export class SearchEngine {
     this.text = createTextTools(profile)
     this.metric = this.text.createSearchMetric()
     this.index = FuzzyIndex.deserialize(lexicon, this.metric)
-    /** 構詞搜尋（語言設定檔有 morphology 時才有），見 babizu/fuzzy 的 morph-search.js */
+    /** 構詞搜尋 BCDP（語言設定檔有 morphology 時才有），見 babizu/fuzzy 的 morph-search.js 與 docs/bcdp.md */
     this.morphSearch = this.text.morphology
       ? createMorphSearch({ analyzer: this.text.morphology, metric: this.metric, index: this.index })
       : null
@@ -672,7 +672,7 @@ export class SearchEngine {
   }
 
   /**
-   * 詞根相符（去詞綴方向）：音變 ∘ 構詞 ∘ 詞庫的聯合搜尋（babizu/fuzzy 的 morph-search.js）。
+   * 詞根相符（去詞綴方向）：音變 ∘ 構詞 ∘ 詞庫的聯合搜尋 BCDP（babizu/fuzzy 的 morph-search.js）。
    *
    * 前綴鏈、後綴鏈的成本先算成兩張圖表，當作詞圖 DP 的起始列與詞尾附加成本，一次走訪就同時處理
    * 「詞綴＋詞幹＋方言音變」，詞綴本身的音變（mine-／minu-）也在內。

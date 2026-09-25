@@ -1,5 +1,5 @@
 /**
- * @file 構詞搜尋：音變 ∘ 構詞 ∘ 詞庫的聯合模糊搜尋（以邊界條件耦合的詞圖 DP）。
+ * @file 構詞搜尋：音變 ∘ 構詞 ∘ 詞庫的聯合模糊搜尋——BCDP（Boundary-Coupled DP，邊界耦合 DP）。
  *
  * 問題：查詢 q 是某個詞庫詞 t 的衍生形，而且可能帶著方言音變（詞幹或詞綴裡都可能有）。要求
  *
@@ -17,7 +17,8 @@
  * 3. 中綴、重疊、詞幹交替不是「加在外面」的，先在查詢上產生少數還原變體（在前綴鏈的終點拿掉中綴…），
  *    每個變體各跑一次步驟 2。
  *
- * 正確性（定理 1、2）與上界性質見 docs/fuzzy-search.md 第 10 節；性質測試見 test/fuzzy/boundary.test.js。
+ * 模型的正式定義、正確性（定理 1–3）與它和 FST 聯合最佳解 W* 的關係見 docs/bcdp.md；
+ * 性質測試見 test/fuzzy/boundary.test.js、test/fuzzy/morph-search.test.js。
  */
 
 import { EPSILON, roundCost } from './dp.js'
