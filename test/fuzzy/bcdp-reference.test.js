@@ -155,6 +155,54 @@ describe('參考實作：BCDP 分段模型', () => {
   })
 })
 
+describe('explain：實驗室用的說明與搜尋結果一致', () => {
+  it.each([1, 2, 3])('種子 %i：explain(q, t).hit 等於 search 對 t 的命中；找不到時有原因；計價格網的最佳格等於命中的成本', (seed) => {
+    const random = createRandom(seed * 7717)
+    let explained = 0
+    let found = 0
+    for (let round = 0; round < 8; round++) {
+      const setup = randomMorphSetup(random)
+      const { metric, analyzer, roots } = setup
+      const index = new FuzzyIndex(metric).addAll(roots.map((w) => [w, w]))
+      const search = createMorphSearch({ analyzer, metric, index })
+      for (let k = 0; k < 6; k++) {
+        const query = derive(random, setup)
+        const maxDistance = pick(random, [0.8, 1, 1.2])
+        const hits = search.search(query, { maxDistance })
+        for (const term of roots) {
+          const e = /** @type {any} */ (search.explain(query, term, { maxDistance }))
+          explained++
+          expect(structuredClone(e)).toEqual(e) // 可以從 Web Worker 傳回
+          if (e.tooShort) continue
+          expect(e.hits).toEqual(hits)
+          const want = hits.find((h) => h.term === term) ?? null
+          expect(e.hit, `${query} → ${term}`).toEqual(want)
+          if (want) {
+            found++
+            expect(e.reason).toBeNull()
+            const best = Math.min(...e.pricing.filter((p) => p.best).map((p) => p.best.total))
+            expect(best).toBeCloseTo(want.distance, 9)
+          } else {
+            expect(e.reason, `${query} → ${term}`).toMatch(/^(same|short|notCandidate|lambda|bound|spread)$/)
+          }
+        }
+      }
+    }
+    expect(explained).toBeGreaterThan(300)
+    expect(found).toBeGreaterThan(20)
+  })
+
+  it('explainChars 與 explain 相同；帶邊界向量時第 0 列就是 start', () => {
+    const metric = new WeightedEditDistance({ rules: new RuleSet().add('au', 'o', 0.1), normalize: (s) => s })
+    expect(metric.explainChars(Array.from('dox'), Array.from('daux'))).toEqual(metric.explain('dox', 'daux'))
+    const x = Array.from('minudox')
+    const start = [0, Infinity, Infinity, Infinity, 0.3, Infinity, Infinity, Infinity]
+    const e = metric.explainChars(x, Array.from('daux'), { start, extraInitial: start.map((c) => c < Infinity) })
+    expect(e.matrix[4][0]).toBeCloseTo(0.3, 9)
+    expect(e.matrix[7][4]).toBeCloseTo(0.4, 9) // 0.3（前綴鏈）＋ 0.1（dox ≈ daux）
+  })
+})
+
 describe('固定案例：bcdp.md 1.6 修正過的項目與 1.7 的語意', () => {
   /** 與網站相同的空白處理：連續空白合併、去掉頭尾空白（createNormalizer 的 collapseWhitespace） */
   const collapse = (/** @type {string} */ s) => s.replace(/\s+/gu, ' ').trim()

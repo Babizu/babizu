@@ -162,14 +162,25 @@ export class WeightedEditDistance {
    * @returns {Explanation}
    */
   explain(query, candidate) {
-    const x = this.prepare(query)
-    const y = this.prepare(candidate)
+    return this.explainChars(this.prepare(query), this.prepare(candidate))
+  }
+
+  /**
+   * 與 explain 相同，但輸入是已正規化的 code point 陣列（不再正規化），並可以帶邊界條件：
+   * start 取代第 0 列的起點成本，extraInitial／extraFinal 把某些位置也當作詞首、詞尾（docs/bcdp.md 第 4 節）。
+   * 演算法實驗室用它顯示構詞搜尋中詞幹片段的計算。
+   * @param {string[]} x
+   * @param {string[]} y
+   * @param {import('./dp.js').QueryOptions} [options]
+   * @returns {Explanation}
+   */
+  explainChars(x, y, options = {}) {
     const n = x.length
     const m = y.length
 
     /** @type {CellCandidate[][][]} */
     const candidates = Array.from({ length: n + 1 }, () => Array.from({ length: m + 1 }, () => []))
-    const rows = this._matrix(x, y, (t) => {
+    const rows = this._rows(this.compiled.compileQuery(x, this.costs, options), y, (t) => {
       candidates[t.i][t.j].push({
         op: t.op,
         cost: roundCost(t.cost),

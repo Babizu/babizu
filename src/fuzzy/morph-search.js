@@ -157,8 +157,9 @@ export function createMorphSearch({ analyzer, metric, index }) {
    * P[i] = min 前綴鏈成本，q[0..i) 被切成至多 maxSteps 個詞綴；S[k] 對稱。
    * 依相依方向填表：P 由左而右、S 由右而左，每一格只依賴已經填好的格子。
    * @param {string[]} chars
+   * @param {((r: Relaxation) => void) | null} [trace] 說明用：逐一回報每一次鬆弛（不影響結果）
    */
-  function charts(chars) {
+  function charts(chars, trace = null) {
     const n = chars.length
     const slots = spec.maxSteps
     const minStemSurface = Math.max(1, spec.minStem - 1)
@@ -176,10 +177,12 @@ export function createMorphSearch({ analyzer, metric, index }) {
         for (const e of prefixEdges[k]) {
           if (e.to > n - minStemSurface) continue
           const c = P[s][k] + e.affix.cost + e.distance
-          if (c < P[s + 1][e.to] - EPSILON) {
+          const improved = c < P[s + 1][e.to] - EPSILON
+          if (improved) {
             P[s + 1][e.to] = roundCost(c)
             backP[s + 1][e.to] = e
           }
+          trace?.({ table: 'P', slot: s + 1, from: k, to: e.to, form: e.affix.form, distance: e.distance, cost: roundCost(c), improved })
         }
       }
     }
@@ -196,10 +199,12 @@ export function createMorphSearch({ analyzer, metric, index }) {
         for (const e of suffixEdges[k]) {
           if (S[s][e.to] === Infinity) continue
           const c = S[s][e.to] + e.affix.cost + e.distance
-          if (c < S[s + 1][k] - EPSILON) {
+          const improved = c < S[s + 1][k] - EPSILON
+          if (improved) {
             S[s + 1][k] = roundCost(c)
             backS[s + 1][k] = e
           }
+          trace?.({ table: 'S', slot: s + 1, from: k, to: e.to, form: e.affix.form, distance: e.distance, cost: roundCost(c), improved })
         }
       }
     }
@@ -225,7 +230,7 @@ export function createMorphSearch({ analyzer, metric, index }) {
     // 片語中每個詞的構詞，交給搜尋引擎的逐詞搜尋。
     for (let i = 1; i < n; i++) if (isBoundary(chars[i])) bestP.cost[i] = Infinity
     for (let k = 1; k < n; k++) if (isBoundary(chars[k - 1])) bestS.cost[k] = Infinity
-    return { P: bestP, S: bestS, backP, backS, suffixEdges }
+    return { P: bestP, S: bestS, Pslots: P, Sslots: S, backP, backS, prefixEdges, suffixEdges }
   }
 
   /**
@@ -427,7 +432,17 @@ export function createMorphSearch({ analyzer, metric, index }) {
   function prepare(query) {
     const chars = Array.from(query)
     if (chars.length < spec.minStem + 1) return null
-    const c = charts(chars)
+    return prepareFrom(query, chars, charts(chars))
+  }
+
+  /**
+   * prepare 的本體：圖表已經算好（explain 以帶紀錄的圖表呼叫）。
+   * @param {string} query
+   * @param {string[]} chars
+   * @param {ReturnType<typeof charts>} c
+   * @returns {Prepared}
+   */
+  function prepareFrom(query, chars, c) {
     const zero = (/** @type {Float64Array} */ vec) => Float64Array.from(vec, (x) => (x < Infinity ? 0 : Infinity))
     /** @type {Prepared['variants']} */
     const list = []
@@ -470,8 +485,7 @@ export function createMorphSearch({ analyzer, metric, index }) {
    * @returns {MorphHit[]} 依成本排序，只保留「最佳 ＋ lemmaSpread」之內
    */
   function finish(prepared, resultsPerChannel, maxDistance) {
-    const { query, chars, charts: c } = prepared
-    const lambda = spec.lemmaDistance
+    const { query } = prepared
     /** @type {Map<string, MorphHit>} */
     const best = new Map()
     /**
@@ -480,7 +494,6 @@ export function createMorphSearch({ analyzer, metric, index }) {
      */
     const termChars = new Map()
     prepared.variants.forEach((v, vi) => {
-      const m = v.chars.length
       /**
        * 查詢片段 v.chars[i..k) 的編譯結果（成本表與規則表），依 i·(m+1)+k 索引。
        * 同一個片段要和很多候選詞比較，編譯一次、共用給所有候選詞。
@@ -491,54 +504,13 @@ export function createMorphSearch({ analyzer, metric, index }) {
       const plans = new Map()
       for (const r of resultsPerChannel[vi] ?? []) {
         const term = r.term
-        const termLength = Array.from(term).length
-        if (term === query || termLength < spec.minStem) continue
-        let bestTotal = Infinity
-        let bestI = -1
-        let bestK = -1
-        let bestStem = Infinity
-        for (const i of v.starts) {
-          for (const k of v.ends) {
-            if (k <= i) continue
-            // 原查詢上「從頭到尾都是詞幹」的路徑是普通模糊命中，不算構詞命中
-            if (!v.op && i === 0 && k === m) continue
-            // 長度差太多的切法不可能在 λ 以內（每個字元的增刪至少要付 minLengthStepCost）
-            if (Math.abs(k - i - termLength) > maxLengthChange) continue
-            // 詞幹片段直接以 code point 陣列切出（不再正規化：再正規化會截掉頭尾空白、
-            // UTF-16 切片會切壞非 BMP 字元，docs/bcdp.md 1.6）；片段當作一個完整的詞計算距離
-            const key = i * (m + 1) + k
-            let plan = plans.get(key)
-            if (plan === undefined) plans.set(key, (plan = metric.prepareQuery(v.chars.slice(i, k))))
-            let y = termChars.get(term)
-            if (y === undefined) termChars.set(term, (y = metric.prepare(term)))
-            const d = metric.distancePrepared(plan, y)
-            if (d > lambda + EPSILON) continue
-            const total = v.start[i] + d + v.end[k]
-            // 同分時取詞幹較短的切法（詞綴說明較完整）
-            if (total < bestTotal - EPSILON || (Math.abs(total - bestTotal) <= EPSILON && k - i < bestK - bestI)) {
-              bestTotal = total
-              bestI = i
-              bestK = k
-              bestStem = d
-            }
-          }
-        }
-        if (bestI < 0 || bestTotal > maxDistance + EPSILON) continue
-        const originalStart = v.op && v.op.type !== 'alternation' ? v.at : bestI
-        const steps = [
-          ...prefixSteps(c, chars, originalStart),
-          ...(v.op ? [v.op] : []),
-          ...(v.op?.type === 'alternation' ? alternationSuffix(c, chars, v.at, v.before ?? null) : suffixSteps(c, chars, v.map(bestK))),
-        ]
-        if (steps.length === 0) continue
-        const hit = {
-          term,
-          payloads: r.payloads,
-          distance: roundCost(bestTotal),
-          stemSurface: v.chars.slice(bestI, bestK).join(''),
-          stemDistance: roundCost(bestStem),
-          steps,
-        }
+        if (term === query || Array.from(term).length < spec.minStem) continue
+        let y = termChars.get(term)
+        if (y === undefined) termChars.set(term, (y = metric.prepare(term)))
+        const priced = priceTerm(v, plans, y)
+        if (priced.i < 0 || priced.total > maxDistance + EPSILON) continue
+        const hit = buildHit(prepared, v, r, priced)
+        if (!hit) continue
         const prev = best.get(term)
         if (!prev || hit.distance < prev.distance - EPSILON) best.set(term, hit)
       }
@@ -547,6 +519,97 @@ export function createMorphSearch({ analyzer, metric, index }) {
     if (hits.length === 0) return hits
     const cutoff = hits[0].distance + spec.lemmaSpread + EPSILON
     return hits.filter((h) => h.distance <= cutoff)
+  }
+
+  /**
+   * @typedef {object} PricingCell 計價格網的一格（說明用）
+   * @property {number} i 詞幹在變體上的起點
+   * @property {number} k 詞幹在變體上的終點
+   * @property {'whole' | 'length' | 'lambda' | null} skip 略過的原因：整段都是詞幹（普通模糊命中）、
+   *   長度差太多、詞幹音變超過 λ；null 表示有計價
+   * @property {number} [distance] E(v[i..k), t)
+   * @property {number} [start] start[i]
+   * @property {number} [end] end[k]
+   * @property {number} [total] start[i] ＋ distance ＋ end[k]
+   */
+
+  /**
+   * 一個候選詞在一個還原變體上的計價（finish 與 explain 共用）：在所有有限的起點 i、終點 k 上算
+   * start[i] ＋ E(v[i..k), t) ＋ end[k]，取 E ≤ λ 者的最小值；同分時取詞幹較短的切法（詞綴說明較完整）。
+   * @param {Prepared['variants'][number]} v
+   * @param {Map<number, import('./dp.js').QueryPlan>} plans 片段的編譯結果（同一個變體的所有候選共用）
+   * @param {string[]} y 候選詞（已正規化的字元）
+   * @param {PricingCell[] | null} [grid] 說明用：逐格記下計算過程
+   * @returns {{total: number, i: number, k: number, stem: number}} 找不到時 i ＝ −1
+   */
+  function priceTerm(v, plans, y, grid = null) {
+    const m = v.chars.length
+    const lambda = spec.lemmaDistance
+    let total = Infinity
+    let bestI = -1
+    let bestK = -1
+    let stem = Infinity
+    for (const i of v.starts) {
+      for (const k of v.ends) {
+        if (k <= i) continue
+        // 原查詢上「從頭到尾都是詞幹」的路徑是普通模糊命中，不算構詞命中
+        if (!v.op && i === 0 && k === m) {
+          grid?.push({ i, k, skip: 'whole' })
+          continue
+        }
+        // 長度差太多的切法不可能在 λ 以內（每個字元的增刪至少要付 minLengthStepCost）
+        if (Math.abs(k - i - y.length) > maxLengthChange) {
+          grid?.push({ i, k, skip: 'length' })
+          continue
+        }
+        // 詞幹片段直接以 code point 陣列切出（不再正規化：再正規化會截掉頭尾空白、
+        // UTF-16 切片會切壞非 BMP 字元，docs/bcdp.md 第 11 節）；片段當作一個完整的詞計算距離
+        const key = i * (m + 1) + k
+        let plan = plans.get(key)
+        if (plan === undefined) plans.set(key, (plan = metric.prepareQuery(v.chars.slice(i, k))))
+        const d = metric.distancePrepared(plan, y)
+        if (d > lambda + EPSILON) {
+          grid?.push({ i, k, skip: 'lambda', distance: d })
+          continue
+        }
+        const t = v.start[i] + d + v.end[k]
+        grid?.push({ i, k, skip: null, distance: d, start: v.start[i], end: v.end[k], total: roundCost(t) })
+        if (t < total - EPSILON || (Math.abs(t - total) <= EPSILON && k - i < bestK - bestI)) {
+          total = t
+          bestI = i
+          bestK = k
+          stem = d
+        }
+      }
+    }
+    return { total, i: bestI, k: bestK, stem }
+  }
+
+  /**
+   * 由計價結果組出命中：回溯前綴鏈、非串接步驟與後綴鏈（finish 與 explain 共用）。
+   * @param {Prepared} prepared
+   * @param {Prepared['variants'][number]} v
+   * @param {import('./fuzzy-index.js').SearchResult} r
+   * @param {ReturnType<typeof priceTerm>} priced
+   * @returns {MorphHit | null} 沒有任何構詞步驟時為 null
+   */
+  function buildHit(prepared, v, r, priced) {
+    const { chars, charts: c } = prepared
+    const originalStart = v.op && v.op.type !== 'alternation' ? v.at : priced.i
+    const steps = [
+      ...prefixSteps(c, chars, originalStart),
+      ...(v.op ? [v.op] : []),
+      ...(v.op?.type === 'alternation' ? alternationSuffix(c, chars, v.at, v.before ?? null) : suffixSteps(c, chars, v.map(priced.k))),
+    ]
+    if (steps.length === 0) return null
+    return {
+      term: r.term,
+      payloads: r.payloads,
+      distance: roundCost(priced.total),
+      stemSurface: v.chars.slice(priced.i, priced.k).join(''),
+      stemDistance: roundCost(priced.stem),
+      steps,
+    }
   }
 
   /**
@@ -589,7 +652,135 @@ export function createMorphSearch({ analyzer, metric, index }) {
     return [...(first.to === chars.length ? [] : suffixSteps(c, chars, first.to)), affixStep('suffix', first, chars)]
   }
 
-  return { search, prepare, finish, charts, clearCache: () => scanCache.clear() }
+  /**
+   * @typedef {object} Relaxation 詞綴圖表的一次鬆弛（說明用）
+   * @property {'P' | 'S'} table
+   * @property {number} slot 經過這條邊之後用了幾個詞綴（1 … maxSteps）
+   * @property {number} from 邊的起點（P 由左而右；S 的邊由 from 指向 to，鏈由右而左累加）
+   * @property {number} to
+   * @property {string} form 詞綴（規格中的寫法）
+   * @property {number} distance 查詢片段與詞綴的距離
+   * @property {number} cost 經由這條邊的鏈成本
+   * @property {boolean} improved 是否更新了圖表
+   */
+
+  /**
+   * 說明一次構詞搜尋：各階段的中間結果，給演算法實驗室逐步展示（docs/lab-design.md）。
+   *
+   * 與 search 走同一套程式（prepare、searchChannels、priceTerm、buildHit），所以 hit 一定等於搜尋對
+   * 這個詞的結果（測試逐一比對）。回傳值只含可以結構化複製的資料，∞ 寫成 null，可以從 Web Worker 傳回。
+   *
+   * @param {string} query 已正規化的查詢（搜尋鍵）
+   * @param {string | null} [term] 要逐格計價的詞根（省略時只列出命中）
+   * @param {{maxDistance?: number}} [options] 總成本上限（與 search 相同）
+   */
+  function explain(query, term = null, { maxDistance = 1 } = {}) {
+    const chars = Array.from(query)
+    const params = {
+      lemmaDistance: spec.lemmaDistance,
+      affixDistance: spec.affixDistance,
+      maxSteps: spec.maxSteps,
+      minStem: spec.minStem,
+      lemmaSpread: spec.lemmaSpread,
+      maxDistance,
+    }
+    if (chars.length < spec.minStem + 1) return { query, chars, params, tooShort: true, term, reason: term === null ? null : 'short' }
+
+    /** @type {Relaxation[]} */
+    const relaxations = []
+    const c = charts(chars, (r) => relaxations.push(r))
+    const prepared = prepareFrom(query, chars, c)
+    /** 每個通道的詞圖走訪紀錄 @type {Array<Array<Record<string, unknown>>>} */
+    const walks = prepared.channels.map(() => [])
+    const results = index.searchChannels(
+      prepared.channels.map((ch, vi) => ({ query: ch.query, options: { ...ch.options, onNode: (/** @type {any} */ e) => walks[vi].push(e) } })),
+    )
+    const hits = finish(prepared, results, maxDistance)
+    const cutoff = hits.length ? roundCost(hits[0].distance + spec.lemmaSpread) : null
+
+    /** @type {Array<{variant: number, candidate: boolean, cells: PricingCell[], best: {i: number, k: number, total: number, stem: number} | null}> | null} */
+    let pricing = null
+    /** @type {MorphHit | null} */
+    let hit = null
+    /** 找不到 term 的原因 @type {string | null} */
+    let reason = null
+    if (term !== null) {
+      const y = metric.prepare(term)
+      pricing = prepared.variants.map((v, vi) => {
+        const candidate = (results[vi] ?? []).some((r) => r.term === term)
+        if (!candidate) return { variant: vi, candidate, cells: [], best: null }
+        /** @type {PricingCell[]} */
+        const cells = []
+        const priced = priceTerm(v, new Map(), y, cells)
+        const best = priced.i < 0 ? null : { i: priced.i, k: priced.k, total: roundCost(priced.total), stem: roundCost(priced.stem) }
+        return { variant: vi, candidate, cells, best }
+      })
+      hit = hits.find((h) => h.term === term) ?? null
+      if (!hit) {
+        const priced = pricing.filter((p) => p.best).map((p) => /** @type {NonNullable<typeof p.best>} */ (p.best).total)
+        if (term === query) reason = 'same'
+        else if (Array.from(term).length < spec.minStem) reason = 'short'
+        else if (!pricing.some((p) => p.candidate)) reason = 'notCandidate'
+        else if (priced.length === 0) reason = 'lambda'
+        else if (Math.min(...priced) > maxDistance + EPSILON) reason = 'bound'
+        else reason = 'spread'
+      }
+    }
+
+    const finite = (/** @type {number} */ x) => (x === Infinity ? null : x)
+    const edges = (/** @type {Array<ChartEdge[] | undefined>} */ list) =>
+      Array.from({ length: chars.length + 1 }, (_, k) =>
+        (list[k] ?? []).map((e) => ({
+          from: e.from,
+          to: e.to,
+          form: e.affix.form,
+          surface: chars.slice(e.from, e.to).join(''),
+          distance: e.distance,
+          cost: e.affix.cost,
+        })),
+      )
+    return {
+      query,
+      chars,
+      params,
+      tooShort: false,
+      charts: {
+        P: Array.from(c.P.cost, finite),
+        S: Array.from(c.S.cost, finite),
+        Pslot: Array.from(c.P.slotAt),
+        Sslot: Array.from(c.S.slotAt),
+        Pslots: c.Pslots.map((row) => Array.from(row, finite)),
+        Sslots: c.Sslots.map((row) => Array.from(row, finite)),
+        prefixEdges: edges(c.prefixEdges),
+        suffixEdges: edges(c.suffixEdges),
+        relaxations,
+      },
+      variants: prepared.variants.map((v) => ({
+        text: v.text,
+        chars: [...v.chars],
+        op: v.op,
+        at: v.at,
+        before: v.before ?? null,
+        start: Array.from(v.start, finite),
+        end: Array.from(v.end, finite),
+        starts: [...v.starts],
+        ends: [...v.ends],
+        /** 變體上的位置 j → 原查詢上的位置 */
+        origin: Array.from({ length: v.chars.length + 1 }, (_, j) => v.map(j)),
+      })),
+      truncated: prepared.truncated,
+      candidates: results.map((list) => list.map((r) => ({ term: r.term, distance: r.distance, endAt: r.endAt ?? null }))),
+      walks: walks.map((events) => events.map((e) => ({ ...e, lowerBound: finite(/** @type {number} */ (e.lowerBound)) }))),
+      hits,
+      cutoff,
+      term,
+      pricing,
+      hit,
+      reason,
+    }
+  }
+
+  return { search, prepare, finish, charts, explain, clearCache: () => scanCache.clear() }
 }
 
 /**
