@@ -288,6 +288,19 @@ describe('固定案例：bcdp.md 1.6 修正過的項目與 1.7 的語意', () =>
     expect(got.get('baz')).toBeCloseTo(0.6, 9)
   })
 
+  it('最大測試：還原變體超過上限 64 時標記 truncated，保留前面的變體，不會當掉', () => {
+    // 70 種交替（底層字元各不相同、表面都是 d）：badan 的 d 可以還原成 70 種詞幹
+    const underlying = Array.from({ length: 70 }, (_, k) => String.fromCodePoint(0x100 + k))
+    const setup = fixed({ alternations: underlying.map((u) => ({ underlying: u, surface: 'd' })) })
+    const index = new FuzzyIndex(setup.metric).addAll([['baz', 'baz']])
+    const search = createMorphSearch({ analyzer: setup.analyzer, metric: setup.metric, index })
+    const prepared = /** @type {NonNullable<ReturnType<typeof search.prepare>>} */ (search.prepare('badan'))
+    expect(prepared.truncated).toBe(true)
+    expect(prepared.variants).toHaveLength(64)
+    expect(prepared.variants[0].op).toBeNull() // 原查詢永遠是第一個
+    expect(() => search.search('badan', { maxDistance: 1 })).not.toThrow()
+  })
+
   it('重疊部分可以超過 4 個字元（Ca：首輔音群 4 個字元＋a）', () => {
     const setup = fixed({ reduplication: [{ pattern: 'Ca' }] })
     const { got, want } = compare(setup, ['bdknaku'], 'bdknabdknaku')

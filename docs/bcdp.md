@@ -14,6 +14,8 @@ flowchart LR
   F --> H[詞根命中＋構詞說明]
 ```
 
+演算法實驗室的「構詞 BCDP」分頁可以逐步觀察整個過程：詞綴圖表、還原變體、詞圖走訪、計價格網與最終分析（設計見 [lab-design.md](lab-design.md)）。網站上的網址是 `#/lab?tab=bcdp&q=查詢&t=詞根`，例如巴宰–噶哈巫語數位辭典的 `#/lab?tab=bcdp&q=minubaket&t=baket`。
+
 閱讀順序：第 1 節是模型的正式定義；第 2–9 節一步步推出演算法；第 10 節整理正確性與複雜度；第 11–12 節是實作與驗證；第 13–15 節是實測、與 FST 的關係和常見誤區。語言設定檔的寫法（詞綴、重疊、交替怎麼寫）見 [language-profile.md](language-profile.md#morphology-構詞選填)。
 
 ## 1. 問題
