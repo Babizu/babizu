@@ -271,7 +271,7 @@ export function createMorphSearch({ analyzer, metric, index }) {
     const n = chars.length
     const P = c.P.cost
     const S = c.S.cost
-    /** @type {Array<{chars: string[], start: Float64Array, end: Float64Array, map: (i: number) => number, op: MorphStepHit | null, at: number}>} */
+    /** @type {Array<{chars: string[], start: Float64Array, end: Float64Array, map: (i: number) => number, op: MorphStepHit | null, at: number, before?: string[] | null}>} */
     const out = [{ chars, start: P, end: S, map: (i) => i, op: null, at: -1 }]
 
     for (let k = 0; k < n; k++) {
@@ -324,9 +324,9 @@ export function createMorphSearch({ analyzer, metric, index }) {
     for (const a of spec.alternations) {
       const surface = Array.from(a.surface)
       for (let l = spec.minStem; l < n; l++) {
-        if (S[l] === Infinity) continue
         if (chars.slice(l - surface.length, l).join('') !== a.surface) continue
-        // 緊接的第一個後綴必須在 before 清單中
+        // 緊接的第一個後綴必須在 before 清單中；其後至多再 maxSteps 個後綴（S[e.to]）。
+        // 不要求 S[l] 有限：交替後面的後綴鏈可以有 maxSteps ＋ 1 個（docs/bcdp.md 1.2 限制 3）
         let endCost = Infinity
         for (const e of c.suffixEdges[l] ?? []) {
           if (a.before && !a.before.includes(e.affix.form)) continue
@@ -349,6 +349,8 @@ export function createMorphSearch({ analyzer, metric, index }) {
           map: (i) => (i <= cut ? i : i - underlying.length + surface.length),
           op: { type: 'alternation', form: `${a.underlying}>${a.surface}`, gloss: null, cost: a.cost },
           at: l,
+          // 說明時挑第一個後綴也要遵守同一個限制（alternationSuffix）
+          before: a.before,
         })
       }
     }
@@ -502,7 +504,7 @@ export function createMorphSearch({ analyzer, metric, index }) {
         const steps = [
           ...prefixSteps(c, chars, originalStart),
           ...(v.op ? [v.op] : []),
-          ...(v.op?.type === 'alternation' ? alternationSuffix(c, chars, v.at) : suffixSteps(c, chars, v.map(bestK))),
+          ...(v.op?.type === 'alternation' ? alternationSuffix(c, chars, v.at, v.before ?? null) : suffixSteps(c, chars, v.map(bestK))),
         ]
         if (steps.length === 0) continue
         const hit = {
@@ -540,15 +542,18 @@ export function createMorphSearch({ analyzer, metric, index }) {
 
   /**
    * 詞幹交替之後的後綴鏈：第一個後綴要在 before 清單中，所以不能直接用 S 的回溯。
+   * 挑選的條件與 variants() 計算 endCost 時完全相同，所以說明中各步驟的成本加起來等於命中的成本。
    * @param {ReturnType<typeof charts>} c
    * @param {string[]} chars
    * @param {number} l 後綴鏈的起點
+   * @param {string[] | null} before 第一個後綴允許的形式（null 表示不限）
    */
-  function alternationSuffix(c, chars, l) {
+  function alternationSuffix(c, chars, l, before) {
     /** @type {ChartEdge | null} */
     let first = null
     let firstCost = Infinity
     for (const e of c.suffixEdges[l] ?? []) {
+      if (before && !before.includes(e.affix.form)) continue
       const tail = e.to === chars.length ? 0 : c.S.cost[e.to]
       const cost = e.affix.cost + e.distance + tail
       if (cost < firstCost) {

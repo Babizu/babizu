@@ -187,7 +187,15 @@ describe('已知與定義不一致的地方（docs/bcdp.md 1.6；修正後改回
     expect(got.get('b𝔞d')).toBeCloseTo(0.3, 9)
   })
 
-  it.fails('詞幹交替的說明：交替後面的第一個後綴必須在 before 清單中', () => {
+  it('詞幹交替：後面的後綴鏈可以有 maxSteps ＋ 1 個（第一個在 before 中，其後至多 maxSteps 個）', () => {
+    // maxSteps = 1：badani ＝ bat ＋ 交替 t>d ＋ -an ＋ -i
+    const setup = fixed({ maxSteps: 1, suffixes: [{ form: 'an' }, { form: 'i' }], alternations: [{ underlying: 't', surface: 'd', before: ['an'] }] })
+    const { got, want } = compare(setup, ['bat'], 'badani')
+    expect(want.get('bat')).toBeCloseTo(0.9, 9)
+    expect(got.get('bat')).toBeCloseTo(0.9, 9)
+  })
+
+  it('詞幹交替的說明：交替後面的第一個後綴必須在 before 清單中', () => {
     // n→m 是方言規則，所以 "am" 在 δ 內也對應到後綴 -am（成本較低），但 -am 不在 before 中
     const rules = new RuleSet().add('n', 'm', 0.1)
     const setup = fixed({ suffixes: [{ form: 'an' }, { form: 'am', cost: 0.1 }], affixDistance: 0.2, alternations: [{ underlying: 't', surface: 'd', before: ['an'] }] }, rules)
