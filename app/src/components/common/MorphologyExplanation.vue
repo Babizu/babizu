@@ -95,6 +95,14 @@ const hasSoundChange = computed(() => !!stemChange.value || props.analysis.steps
         </li>
       </ul>
       <p class="text-muted-foreground mt-3 text-xs">{{ t('morph.note') }}</p>
+      <!-- 詞根相符是構詞搜尋（BCDP）找到的：連到實驗室的構詞分頁逐步觀察 -->
+      <RouterLink
+        v-if="matchType === 'lemma' && query && term"
+        :to="{ name: 'lab', query: { tab: 'bcdp', q: query, t: term } }"
+        class="text-primary mt-2 inline-flex min-h-8 items-center text-xs underline-offset-2 hover:underline"
+      >
+        {{ t('morph.labLink') }}
+      </RouterLink>
     </PopoverContent>
   </Popover>
 </template>

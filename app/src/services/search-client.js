@@ -88,6 +88,18 @@ export class SearchClient {
   }
 
   /**
+   * 構詞搜尋（BCDP）的完整說明（演算法實驗室用）。
+   * @param {string} query
+   * @param {string | null} [term]
+   * @param {{fuzziness?: string}} [options]
+   * @returns {Promise<any>} 語言設定檔沒有構詞規格時為 null
+   */
+  async explainMorphology(query, term = null, options) {
+    await this.ready()
+    return this._call('explainMorphology', { query, term, options })
+  }
+
+  /**
    * @param {string} method
    * @param {unknown} params
    * @private

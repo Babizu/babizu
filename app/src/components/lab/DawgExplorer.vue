@@ -5,11 +5,18 @@
  *
  * 注意：DAWG 會合併共同後綴，所以同一個節點可能出現在清單的好幾個位置
  * （例如 -an 結尾的詞共用同一個節點）。走訪是依「路徑」進行的，因此仍然正確。
+ *
+ * 逐步播放：每個走訪的節點一步（src/fuzzy/steps.js 的 dawgSteps），依深度優先的走訪順序。
  */
 import { FuzzyIndex } from '@babizu/fuzzy/index.js'
+import { dawgStateAt, dawgSteps } from '@babizu/fuzzy/steps.js'
+import { useEventListener } from '@vueuse/core'
 import { computed, ref } from 'vue'
+import PlaybackControls from '@/components/lab/PlaybackControls.vue'
+import StepNote from '@/components/lab/StepNote.vue'
 import { Input } from '@/components/ui/input'
 import { Slider } from '@/components/ui/slider'
+import { usePlayback } from '@/composables/usePlayback.js'
 import { t } from '@/i18n.js'
 import { formatDistance, site } from '@/lib/labels.js'
 import { cn } from '@/lib/utils'
@@ -31,12 +38,14 @@ const words = computed(() => [...new Set(wordsText.value.split(/[\s,，、]+/u).
 
 const run = computed(() => {
   const index = new FuzzyIndex(props.metric).addAll(words.value)
-  /** @type {Map<string, import('@babizu/fuzzy/fuzzy-index.js').NodeVisit>} */
-  const visits = new Map()
+  /** 依走訪順序的事件 @type {any[]} */
+  const events = []
   const { results, stats } = index.searchWithStats(query.value, {
     maxDistance: maxDistance.value[0],
-    onNode: (event) => visits.set(event.prefix, event),
+    onNode: (event) => events.push(event),
   })
+  /** 路徑 → 事件（與走訪順序的序號） */
+  const visits = new Map(events.map((ev, k) => [ev.prefix, { ...ev, order: k }]))
 
   // 依路徑攤平整個詞圖（依字元排序），標上走訪結果
   const dawg = index.dawg
@@ -53,8 +62,20 @@ const run = computed(() => {
     }
   }
   walk(dawg.root, '', 0)
-  return { results, stats, rows, nodeCount: dawg.nodeCount - 1, edgeCount: dawg.edgeCount }
+  return { results, stats, rows, events, nodeCount: dawg.nodeCount - 1, edgeCount: dawg.edgeCount }
 })
+
+const steps = computed(() => dawgSteps(run.value.events))
+const total = computed(() => steps.value.length)
+const playback = usePlayback(total)
+const state = computed(() => dawgStateAt(steps.value, playback.index.value))
+const step = computed(() => (playback.index.value >= 0 ? steps.value[playback.index.value] : null))
+useEventListener(window, 'keydown', playback.onKeydown)
+
+/** 這一列在目前這一步是否已走訪 @param {any} row */
+const shown = (row) => row.visit && row.visit.order < state.value.visited
+/** @param {any} row */
+const isFocus = (row) => state.value.focus?.prefix === row.prefix && playback.index.value < total.value - 1
 </script>
 
 <template>
@@ -109,6 +130,10 @@ const run = computed(() => {
     </div>
 
     <div class="min-w-0">
+      <div class="mb-3 space-y-3">
+        <PlaybackControls :playback="playback" :total="total" />
+        <StepNote :step="step" :playing="playback.playing.value" :idle="t('lab.playback.idleDawg')" />
+      </div>
       <p class="text-muted-foreground mb-3 text-xs leading-relaxed">
         {{ t('lab.dawgHelp') }}
       </p>
@@ -118,26 +143,26 @@ const run = computed(() => {
           :key="k"
           :class="
             cn(
-              'flex items-center gap-2 py-0.5 pr-3',
-              !row.visit && 'text-muted-foreground/50',
-              row.visit?.pruned && 'bg-destructive/10',
-              row.visit?.accepted && 'bg-emerald-500/10',
+              'lab-cell flex min-h-7 items-center gap-2 py-0.5 pr-3',
+              !shown(row) && 'text-muted-foreground/50',
+              shown(row) && row.visit.pruned && 'text-muted-foreground',
+              isFocus(row) && 'ring-primary ring-2 ring-inset',
             )
           "
           :style="{ paddingLeft: `${0.75 + row.depth * 1.1}rem` }"
         >
-          <span class="w-4 text-center font-semibold" :class="row.visit && 'text-foreground'">{{ row.label === ' ' ? '␣' : row.label }}</span>
-          <span v-if="row.terminal" class="native-text text-xs" :class="row.visit?.accepted && 'font-semibold text-emerald-700 dark:text-emerald-400'">
+          <span class="w-4 text-center font-semibold" :class="shown(row) && !row.visit.pruned && 'text-foreground'">{{ row.label === ' ' ? '␣' : row.label }}</span>
+          <span v-if="row.terminal" class="native-text text-xs" :class="shown(row) && row.visit.accepted && 'text-primary font-semibold'">
             {{ row.prefix }}
           </span>
           <span class="text-muted-foreground/60 text-[10px]">#{{ row.node }}</span>
           <span class="ml-auto flex shrink-0 items-center gap-2 text-xs tabular-nums">
-            <template v-if="row.visit">
-              <span v-if="row.visit.distance !== null" :class="row.visit.accepted ? 'text-emerald-700 dark:text-emerald-400' : 'text-muted-foreground'">
+            <template v-if="shown(row)">
+              <span v-if="row.visit.distance !== null" :class="row.visit.accepted ? 'text-primary font-semibold' : 'text-muted-foreground'">
                 d={{ formatDistance(row.visit.distance) }}
               </span>
               <span class="text-muted-foreground">{{ formatDistance(row.visit.lowerBound) }}／{{ formatDistance(row.visit.bound) }}</span>
-              <span v-if="row.visit.pruned" class="text-destructive font-sans font-medium">{{ t('lab.pruned') }}</span>
+              <span v-if="row.visit.pruned" class="font-sans font-medium">{{ t('lab.prunedReason') }}</span>
             </template>
             <span v-else class="font-sans">{{ t('lab.notVisited') }}</span>
           </span>

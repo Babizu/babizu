@@ -56,6 +56,8 @@ const methods = {
   list: (p) => requireEngine().list(p),
   /** @param {{query: string, term: string}} p */
   explainNotes: (p) => requireEngine().explainNotes(p.query, p.term),
+  /** @param {{query: string, term?: string | null, options?: object}} p */
+  explainMorphology: (p) => requireEngine().explainMorphology(p.query, p.term ?? null, p.options),
 }
 
 function requireEngine() {

@@ -71,6 +71,45 @@ test('演算法實驗室：預設詞對來自站台設定', async ({ page }) => 
   await expectNoHorizontalOverflow(page)
 })
 
+test('演算法實驗室：DP 表是 ARIA grid，逐步播放可以用按鈕、鍵盤與網址控制', async ({ page }) => {
+  await page.goto('./#/lab')
+  const grid = page.getByRole('grid', { name: '動態規劃表' })
+  await expect(grid).toBeVisible()
+  // 整張表只有一個 tab stop；方向鍵在格子間移動
+  await expect(grid.locator('[role="gridcell"][tabindex="0"]')).toHaveCount(1)
+  await grid.locator('[role="gridcell"][tabindex="0"]').focus()
+  await page.keyboard.press('ArrowUp')
+  await expect(grid.locator('[role="gridcell"][tabindex="0"]')).toBeFocused()
+  // 回到開頭再前進一步：說明文字換成第一格的計算
+  await page.getByRole('button', { name: '回到開頭' }).click()
+  await expect(page.getByText(/按「播放」/)).toBeVisible()
+  await page.getByRole('button', { name: '下一步' }).click()
+  await expect(page.getByText(/^D\(\d+, \d+\) ＝/)).toBeVisible()
+  await expect(page).toHaveURL(/step=0/)
+  // 焦點不在輸入框時，→ 也是下一步
+  await page.getByRole('heading', { level: 1 }).click()
+  await page.keyboard.press('ArrowRight')
+  await expect(page).toHaveURL(/step=1/)
+  // 網址的 step 可以重現同一個畫面
+  await page.reload()
+  await expect(page.getByRole('slider', { name: '步驟' })).toHaveAttribute('aria-valuetext', /第 2 步/)
+  // 示範語言沒有構詞規格：沒有構詞分頁
+  await expect(page.getByRole('tab', { name: /構詞/ })).toHaveCount(0)
+  await expectNoHorizontalOverflow(page)
+})
+
+test('演算法實驗室：詞圖搜尋逐節點播放，分頁互不影響', async ({ page }) => {
+  await page.goto('./#/lab')
+  await page.getByRole('tab', { name: '詞圖搜尋' }).click()
+  await page.getByRole('button', { name: '回到開頭' }).click()
+  await page.getByRole('button', { name: '下一步' }).click()
+  await expect(page.getByText(/^走訪「」/)).toBeVisible()
+  // 切回動態規劃表：它的狀態不受影響（停在完整結果）
+  await page.getByRole('tab', { name: '動態規劃表' }).click()
+  await expect(page.getByRole('button', { name: '跳到結尾' })).toBeDisabled()
+  await expectNoHorizontalOverflow(page)
+})
+
 test('詞條頁與資料來源', async ({ page }) => {
   await page.goto('./#/r/demo-wordlist/w1')
   await expect(page.getByRole('heading', { level: 1, name: 'ralan' })).toBeVisible()

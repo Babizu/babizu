@@ -60,8 +60,10 @@ import { BUILTIN_LOCALES, FRAMEWORK_ROOT, loadBuiltinMessages } from './paths.js
  * @property {Array<{q: string, note?: Localized}>} [examples] 首頁的搜尋範例
  * @property {Localized} [about] 「關於」頁內容：Markdown 檔路徑（可依語系分開）
  * @property {Localized} [footer] 頁尾文字
- * @property {{pairs?: Array<[string, string]>, words?: string}} [lab] 演算法實驗室的預設輸入：
- *   `pairs` 是可以一鍵帶入的詞對（第一組是預設值），`words` 是詞圖示範的詞庫（以空白分隔）
+ * @property {{pairs?: Array<[string, string]>, words?: string, morph?: {examples?: Array<[string, string]>, failures?: Array<[string, string]>}}} [lab]
+ *   演算法實驗室的預設輸入：`pairs` 是可以一鍵帶入的詞對（第一組是預設值），`words` 是詞圖示範的詞庫（以空白分隔），
+ *   `morph` 是構詞（BCDP）分頁的例子：`examples` 是 [查詢, 詞根]（第一組是預設值），`failures` 是找不到的例子
+ *   （分頁會說明原因）。只有語言設定檔有 `morphology` 時才能設定
  * @property {string} [messages] 介面字串覆寫與額外語系的目錄，預設 `locales`
  */
 
@@ -174,6 +176,17 @@ export async function loadSiteConfig(siteDir) {
     for (const e of validateProfile(profile)) errors.push(`語言設定檔：${e}`)
   }
 
+  // 演算法實驗室的構詞例子
+  const morphLab = input.lab?.morph
+  if (morphLab !== undefined) {
+    if (profile && !profile.morphology) errors.push('lab.morph 只能在語言設定檔有 morphology 時設定')
+    for (const key of /** @type {const} */ (['examples', 'failures'])) {
+      const list = morphLab?.[key] ?? []
+      const ok = Array.isArray(list) && list.every((p) => Array.isArray(p) && p.length === 2 && p.every((w) => typeof w === 'string' && w.trim()))
+      if (!ok) errors.push(`lab.morph.${key} 必須是 [查詢, 詞根] 的陣列，兩者都是非空字串`)
+    }
+  }
+
   // 語言變體
   const varietyInput = input.varieties ?? []
   const codes = new Set()
@@ -264,7 +277,11 @@ export async function loadSiteConfig(siteDir) {
       specialChars: input.specialChars ?? [],
       examples: (input.examples ?? []).map((e) => ({ q: e.q, note: localize(e.note, locales, defaultLocale) })),
       about,
-      lab: { pairs: input.lab?.pairs ?? [], words: input.lab?.words ?? null },
+      lab: {
+        pairs: input.lab?.pairs ?? [],
+        words: input.lab?.words ?? null,
+        morph: { examples: input.lab?.morph?.examples ?? [], failures: input.lab?.morph?.failures ?? [] },
+      },
       messages,
       profile,
     },

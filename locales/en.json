@@ -121,7 +121,6 @@
     "cellMeaningAfter": "”",
     "cellMeaningBefore": "The minimum cost of turning “",
     "cellMeaningMiddle": "” into “",
-    "cells": "{count} cells",
     "cost": {
       "delete": "Delete",
       "insert": "Insert",
@@ -131,7 +130,7 @@
     "costs": "Base costs",
     "customCategory": "Custom",
     "customRules": "Custom rules",
-    "dawgHelp": "Each node shows “subtree lower bound / allowed upper bound”. When the lower bound exceeds the upper bound the branch is pruned (red) and nothing below it is computed (grey). Green words are within the threshold. The lower bound accounts for multi-character rules that can skip several levels at once, so no result is missed. The graph merges shared suffixes, so the same node number can appear under different paths.",
+    "dawgHelp": "Each node shows “subtree lower bound / allowed limit”. When the lower bound exceeds the limit the node is pruned and nothing below it is computed. Words in the primary colour are results within the threshold. The bound also accounts for multi-character rules that can span several levels at once, so no result is missed. The DAWG merges shared suffixes, so the same node number may appear under different paths.",
     "dawgSize": "Word graph: {nodes} nodes, {edges} edges (a trie of the same words would need many more nodes)",
     "dawgTab": "Word-graph search",
     "dawgTrace": "Word-graph traversal",
@@ -146,13 +145,10 @@
     "matrix": "Dynamic programming table",
     "matrixCorner": "Query / candidate",
     "maxDistance": "Maximum distance",
-    "nextCell": "Next cell",
     "normalized": "Length-normalised",
     "notComputed": "not computed yet",
     "notVisited": "not visited",
     "origin": "Starting point; cost 0.",
-    "pause": "Pause",
-    "play": "Play step by step",
     "position": {
       "any": "Anywhere",
       "final": "Word-final",
@@ -171,7 +167,6 @@
     "ruleWeight": "Weight of {rule}",
     "rules": "Sound correspondence rules",
     "settings": "Rules and costs",
-    "showAll": "Show all",
     "sourcePlaceholder": "From (may be empty)",
     "step": {
       "delete": "delete “{x}”",
@@ -229,6 +224,65 @@
           "spread": "The cost of “{term}” is above the cutoff {cutoff} (best hit + lemmaSpread), so it is not listed."
         }
       }
+    },
+    "prunedReason": "Pruned: lower bound over the limit",
+    "morphTab": "Morphology (BCDP)",
+    "playback": {
+      "label": "Step-by-step playback",
+      "first": "Back to start",
+      "prev": "Previous step",
+      "play": "Play",
+      "pause": "Pause",
+      "next": "Next step",
+      "last": "Jump to end",
+      "progress": "Step",
+      "progressValue": "Step {step} of {total}",
+      "speed": "Speed",
+      "why": "Why?",
+      "idleDp": "Press Play or → to fill the table cell by cell; each cell takes the cheapest of its candidate transitions.",
+      "idleDawg": "Press Play or → to walk the DAWG node by node; subtrees whose lower bound exceeds the limit are skipped.",
+      "idleMorph": "Press Play or → to follow the morphological search: affix charts first, then restored infixes and reduplication, the DAWG walk for candidates, and finally pricing."
+    },
+    "morph": {
+      "query": "Query (derived word)",
+      "term": "Root",
+      "termPlaceholder": "Optional: a root to price cell by cell",
+      "failures": "Examples that fail:",
+      "error": "Could not get the explanation (is the search index still loading?).",
+      "empty": "Enter a derived word to see how morphological search finds its root.",
+      "hits": "Roots found ({count}); pick one to see its pricing",
+      "cutoff": "Only roots with cost up to {cutoff} are listed (best hit + lemmaSpread); whether other roots appear depends on the best hit of the same query.",
+      "charts": "① Affix charts",
+      "position": "Position",
+      "chartP": "P prefix chain",
+      "chartS": "S suffix chain",
+      "variants": "② Restored variants and DAWG walk",
+      "original": "Original query",
+      "start": "Start",
+      "end": "End",
+      "startsLabel": "The stem may start at {count} position(s)",
+      "endsLabel": "The stem may end at {count} position(s)",
+      "candidates": "{count} candidate(s)",
+      "truncated": "Too many restored variants; the rest were truncated.",
+      "pricing": "③ Pricing: {term}",
+      "notCandidate": "“{term}” is not a candidate in any channel: no split brings the stem within λ of it.",
+      "skip": {
+        "whole": "whole",
+        "length": "length",
+        "lambda": ">λ"
+      },
+      "pricingLegend": "Rows are stem starts i and columns stem ends k; each cell is P[i] + stem distance + S[k]. “whole” is a plain fuzzy match, “length” means the lengths differ too much, “>λ” means the stem’s sound change exceeds the limit; the primary colour marks the best split.",
+      "analysis": "④ Analysis",
+      "stemAlignment": "Sound changes from the stem “{stem}” to the root “{term}”",
+      "pickTerm": "Pick a root above to see its pricing and analysis.",
+      "settingsNote": "The morphology tab uses the site’s actual dialect rules and morphology spec; the rule settings only affect the first two tabs.",
+      "spec": {
+        "prefixes": "Prefixes",
+        "suffixes": "Suffixes",
+        "infixes": "Infixes",
+        "reduplication": "Reduplication patterns",
+        "alternations": "Morphophonemic alternations"
+      }
     }
   },
   "locale": {
@@ -273,7 +327,8 @@
       "alternation": "Stem alternation"
     },
     "surface": "written {surface} in your query (dialect or spelling difference)",
-    "stemChange": "Sound change in the stem"
+    "stemChange": "Sound change in the stem",
+    "labLink": "Step through it in the Algorithm Lab →"
   },
   "nav": {
     "about": "About",

@@ -65,6 +65,14 @@
 
   --mark: oklch(0.93 0.09 95);
   --mark-foreground: oklch(0.25 0.04 80);
+
+  /* 演算法實驗室的編輯操作（docs/lab-design.md 第 2 節）：低彩度，永遠搭配符號（≠ − ＋），不單靠顏色 */
+  --op-substitute: oklch(0.94 0.035 85);
+  --op-substitute-foreground: oklch(0.32 0.05 80);
+  --op-delete: oklch(0.94 0.03 25);
+  --op-delete-foreground: oklch(0.35 0.07 25);
+  --op-insert: oklch(0.94 0.03 230);
+  --op-insert-foreground: oklch(0.33 0.06 235);
 }
 
 .dark {
@@ -90,6 +98,13 @@
 
   --mark: oklch(0.45 0.09 95);
   --mark-foreground: oklch(0.97 0.02 95);
+
+  --op-substitute: oklch(0.32 0.04 85);
+  --op-substitute-foreground: oklch(0.93 0.04 85);
+  --op-delete: oklch(0.32 0.05 25);
+  --op-delete-foreground: oklch(0.93 0.04 25);
+  --op-insert: oklch(0.32 0.04 235);
+  --op-insert-foreground: oklch(0.93 0.035 235);
 }
 
 @theme inline {
@@ -127,6 +142,12 @@
 
   --color-mark: var(--mark);
   --color-mark-foreground: var(--mark-foreground);
+  --color-op-substitute: var(--op-substitute);
+  --color-op-substitute-foreground: var(--op-substitute-foreground);
+  --color-op-delete: var(--op-delete);
+  --color-op-delete-foreground: var(--op-delete-foreground);
+  --color-op-insert: var(--op-insert);
+  --color-op-insert-foreground: var(--op-insert-foreground);
 }
 
 @layer base {
@@ -227,5 +248,17 @@
   }
   .scrollbar-thin {
     scrollbar-width: thin;
+  }
+}
+
+/* 演算法實驗室：格子與列只有背景色與焦點環的過渡（docs/lab-design.md 第 7 節） */
+.lab-cell {
+  transition:
+    background-color 120ms,
+    box-shadow 120ms;
+}
+@media (prefers-reduced-motion: reduce) {
+  .lab-cell {
+    transition: none;
   }
 }

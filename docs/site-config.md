@@ -68,6 +68,8 @@ export default defineSite({
 | `footer` | Localized | 網站名稱＋引用提醒 | 頁尾文字 |
 | `lab.pairs` | `[string, string][]` | `[]` | 演算法實驗室可以一鍵帶入的詞對，第一組是預設值；第一組也會出現在「關於」頁的特色介紹 |
 | `lab.words` | string | 由 `lab.pairs` 組成 | 詞圖示範的詞庫（以空白分隔） |
+| `lab.morph.examples` | `[string, string][]` | `[]` | 構詞（BCDP）分頁的例子：[查詢, 詞根]，第一組是預設值。只有語言設定檔有 `morphology` 時才能設定 |
+| `lab.morph.failures` | `[string, string][]` | `[]` | 找不到的例子（例如需要框架不支援的構詞），分頁會說明原因 |
 | `messages` | string | `locales` | 介面字串目錄 |
 
 ## 語言變體 `varieties`

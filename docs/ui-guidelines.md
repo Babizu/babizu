@@ -33,6 +33,7 @@
 | 校對狀態 | `StatusBadge`：未校對＝紅、初步校對＝黃、二審校對＝綠 |
 | 語言變體色 | `.variety-<代碼>` 提供 `--variety-fg`／`--variety-bg`（由站台設定產生，見下） |
 | 髮絲線面板 | `.panel`（＝`bg-card border rounded-md`，不加陰影） |
+| 編輯操作（演算法實驗室） | `bg-op-substitute`、`bg-op-delete`、`bg-op-insert`（各有 `-foreground`）；一律搭配符號 ≠ − ＋，不單靠顏色 |
 
 語言變體（方言）的顏色由站台設定決定（`varieties[].hue` 或 `colors`），建置時寫進 `index.html`，淺色與深色各一組。
 下層變體（`parent`）用上層的同色相、較低彩度，表達從屬關係——篩選上層時下層會一併出現。
@@ -60,6 +61,8 @@
   - 搜尋結果詞形 `text-lg font-semibold`
   - 釋義 `text-[15px]`
   - 出處 `text-xs text-muted-foreground`
+
+演算法實驗室另有自己的設計規格：[lab-design.md](lab-design.md)（一個強調色只給最佳路徑與目前焦點、逐步播放、鍵盤操作）。
 
 ## 資訊呈現順序
 

@@ -152,3 +152,14 @@ describe('第二版：派生詞列表與音變 ∘ 構詞的聯合搜尋', () =>
   })
 })
 
+describe('explainMorphology：實驗室用的構詞說明', () => {
+  it('與搜尋的詞根相符命中一致（同一個總成本上限）；沒有構詞規格時為 null', () => {
+    const hit = withMorphology.search('mudaux', { fields: ['native'] }).entries.find((h) => h.doc.id === 'dict:daux')
+    const e = /** @type {any} */ (withMorphology.explainMorphology('Mu-daux', 'daux'))
+    expect(e.query).toBe('mudaux')
+    expect(e.hit.distance).toBe(hit?.analysis?.cost)
+    expect(e.hit.steps.map((/** @type {any} */ s) => s.form)).toEqual(hit?.analysis?.steps.map((s) => s.form))
+    expect(structuredClone(e)).toEqual(e)
+    expect(without.explainMorphology('mudaux', 'daux')).toBeNull()
+  })
+})

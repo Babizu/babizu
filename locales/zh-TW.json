@@ -121,7 +121,6 @@
     "cellMeaningAfter": "」的最小成本",
     "cellMeaningBefore": "把「",
     "cellMeaningMiddle": "」轉成「",
-    "cells": "{count} 格",
     "cost": {
       "delete": "刪除",
       "insert": "插入",
@@ -131,7 +130,7 @@
     "costs": "基本成本",
     "customCategory": "自訂",
     "customRules": "自訂規則",
-    "dawgHelp": "每個節點顯示「子樹距離下界 ／ 允許上界」。下界超過上界時剪枝（紅色），其下所有節點都不必計算（灰色）。綠色是符合門檻的詞。下界同時考慮「多字元規則可能一次跨越好幾層」，所以不會漏掉結果。詞圖合併了共同後綴，同一個節點編號可能在不同路徑下重複出現。",
+    "dawgHelp": "每個節點顯示「子樹距離下界 ／ 允許上界」。下界超過上界時剪枝，其下所有節點都不必計算。主色的詞是符合門檻的結果。下界同時考慮「多字元規則可能一次跨越好幾層」，所以不會漏掉結果。詞圖合併了共同後綴，同一個節點編號可能在不同路徑下重複出現。",
     "dawgSize": "詞圖：{nodes} 個節點、{edges} 條邊（同樣的詞用 Trie 會多出不少節點）",
     "dawgTab": "詞圖搜尋",
     "dawgTrace": "詞圖走訪結果",
@@ -146,13 +145,10 @@
     "matrix": "動態規劃表",
     "matrixCorner": "查詢＼候選",
     "maxDistance": "最大距離",
-    "nextCell": "下一格",
     "normalized": "依長度正規化",
     "notComputed": "尚未計算",
     "notVisited": "未走訪",
     "origin": "起點，成本為 0。",
-    "pause": "暫停",
-    "play": "逐格播放",
     "position": {
       "any": "任何位置",
       "final": "詞尾",
@@ -171,7 +167,6 @@
     "ruleWeight": "{rule} 的權重",
     "rules": "語音對應規則",
     "settings": "規則與成本設定",
-    "showAll": "顯示全部",
     "sourcePlaceholder": "來源（可空）",
     "step": {
       "delete": "刪除「{x}」",
@@ -229,6 +224,65 @@
           "spread": "「{term}」的成本超過截斷線 {cutoff}（最佳命中 ＋ lemmaSpread），所以沒有列出。"
         }
       }
+    },
+    "prunedReason": "剪枝：下界超過上界",
+    "morphTab": "構詞 BCDP",
+    "playback": {
+      "label": "逐步播放",
+      "first": "回到開頭",
+      "prev": "上一步",
+      "play": "播放",
+      "pause": "暫停",
+      "next": "下一步",
+      "last": "跳到結尾",
+      "progress": "步驟",
+      "progressValue": "第 {step} 步，共 {total} 步",
+      "speed": "速度",
+      "why": "為什麼？",
+      "idleDp": "按「播放」或 → 逐格計算；每一格取所有候選轉移中成本最低的一個。",
+      "idleDawg": "按「播放」或 → 逐個節點走訪詞圖；下界超過上限的子樹直接略過。",
+      "idleMorph": "按「播放」或 → 逐步觀察構詞搜尋：先算詞綴圖表，再還原中綴與重疊、走訪詞圖找候選，最後計價。"
+    },
+    "morph": {
+      "query": "查詢（衍生詞）",
+      "term": "詞根",
+      "termPlaceholder": "選填：要逐格計價的詞根",
+      "failures": "找不到的例子：",
+      "error": "無法取得構詞搜尋的說明（搜尋索引還沒載入完成？）。",
+      "empty": "輸入一個衍生詞，看構詞搜尋怎麼找到它的詞根。",
+      "hits": "找到的詞根（{count} 個），點選一個看它的計價",
+      "cutoff": "只列出成本在 {cutoff} 以內的詞根（最佳命中 ＋ lemmaSpread）；其他詞根是否出現，取決於同一次查詢的最佳命中。",
+      "charts": "① 詞綴圖表",
+      "position": "位置",
+      "chartP": "P 前綴鏈",
+      "chartS": "S 後綴鏈",
+      "variants": "② 還原變體與詞圖走訪",
+      "original": "原查詢",
+      "start": "起點",
+      "end": "終點",
+      "startsLabel": "詞幹可以從 {count} 個位置開始",
+      "endsLabel": "詞幹可以在 {count} 個位置結束",
+      "candidates": "{count} 個候選",
+      "truncated": "還原變體超過上限，後面的已截斷。",
+      "pricing": "③ 計價：{term}",
+      "notCandidate": "「{term}」不是任何通道的候選：沒有切法讓詞幹在 λ 以內對到它。",
+      "skip": {
+        "whole": "整詞",
+        "length": "長度",
+        "lambda": "＞λ"
+      },
+      "pricingLegend": "列是詞幹的起點 i、欄是終點 k；格內是 P[i] ＋ 詞幹距離 ＋ S[k]。「整詞」是普通模糊命中、「長度」是長度差太多、「＞λ」是詞幹音變超過上限；主色是最佳切法。",
+      "analysis": "④ 分析",
+      "stemAlignment": "詞幹「{stem}」對詞根「{term}」的音變",
+      "pickTerm": "在上方選一個詞根，看它的計價與分析。",
+      "settingsNote": "構詞分頁使用網站實際的方言規則與構詞規格，不受左側規則設定影響（規則設定只影響前兩個分頁）。",
+      "spec": {
+        "prefixes": "前綴",
+        "suffixes": "後綴",
+        "infixes": "中綴",
+        "reduplication": "重疊型式",
+        "alternations": "構詞音變"
+      }
     }
   },
   "locale": {
@@ -273,7 +327,8 @@
       "alternation": "詞幹交替"
     },
     "surface": "查詢中寫作 {surface}（方言或拼寫差異）",
-    "stemChange": "詞幹的音變"
+    "stemChange": "詞幹的音變",
+    "labLink": "在演算法實驗室逐步觀察 →"
   },
   "nav": {
     "about": "關於",

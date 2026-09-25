@@ -227,6 +227,22 @@ export class SearchEngine {
   }
 
   /**
+   * 構詞搜尋（BCDP）的完整說明，給演算法實驗室逐步展示（docs/lab-design.md）。
+   * 查詢與詞根都先轉成搜尋鍵；總成本上限與搜尋相同，所以 hit 就是搜尋對這個詞根的結果。
+   * @param {string} query
+   * @param {string | null} [term] 要逐格計價的詞根（省略時只列出命中）
+   * @param {{fuzziness?: Fuzziness}} [options]
+   * @returns {ReturnType<NonNullable<SearchEngine['morphSearch']>['explain']> | null} 語言設定檔沒有構詞規格時為 null
+   */
+  explainMorphology(query, term = null, { fuzziness = 'normal' } = {}) {
+    if (!this.morphSearch) return null
+    const key = this.text.searchKey(query)
+    const level = FUZZINESS[fuzziness] ?? FUZZINESS.normal
+    const maxDistance = Math.min(LEMMA_MAX_DISTANCE, level.maxDistance(Array.from(key).length) + LEMMA_EXTRA_DISTANCE)
+    return this.morphSearch.explain(key, term === null ? null : this.text.searchKey(term), { maxDistance })
+  }
+
+  /**
    * 清掉跨查詢的快取（構詞分析的備忘、詞綴掃描），不影響結果。量測「沒有快取」的耗時時用。
    */
   clearCaches() {

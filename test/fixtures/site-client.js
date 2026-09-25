@@ -41,7 +41,7 @@ export default {
   specialChars: ['é'],
   examples: [],
   about: null,
-  lab: { pairs: [['semer', 'semee']], words: null },
+  lab: { pairs: [['semer', 'semee']], words: null, morph: { examples: [], failures: [] } },
   messages: { 'zh-TW': flattenMessages(zhTW), en: flattenMessages(en) },
   profile: PAZEH_PROFILE,
 }
