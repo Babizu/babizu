@@ -4,7 +4,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { createAnalyzer, validateMorphology, validateProfile } from '../../src/fuzzy/index.js'
+import { createAnalyzer, REDUPLICATION_PATTERNS, validateMorphology, validateProfile } from '../../src/fuzzy/index.js'
 
 const SPEC = {
   cost: 0.3,
@@ -74,6 +74,9 @@ describe('analyze：去詞綴', () => {
         if (alt >= 0) expect(types.slice(alt + 1), `${w} → ${a.stem}`).not.toContain('suffix')
         const op = types.findIndex((t) => t === 'infix' || t === 'reduplication')
         if (op >= 0) expect(types.slice(op + 1), `${w} → ${a.stem}`).not.toContain('prefix')
+        // 重疊的模板只套用在詞幹上：重疊是最內層的步驟
+        const red = types.indexOf('reduplication')
+        if (red >= 0) expect(red, `${w} → ${a.stem}`).toBe(types.length - 1)
       }
     }
   })
@@ -90,8 +93,76 @@ describe('analyze：去詞綴', () => {
   })
 })
 
+describe('重疊模板（docs/bcdp.md 1.7 第 2 項）', () => {
+  // 例子取自 Lim & Zeitoun (2024) §51.3.2.2 的歸類，詞見公開資料集
+  const red = createAnalyzer({ vowels: 'aeiou' }).reduplicant
+  it.each(/** @type {Array<[any, string, string | null]>} */ ([
+    ['Ca', 'dius', 'da'],
+    ['Ca', 'luzuk', 'la'],
+    ['Ca', 'alep', 'a'], // 元音開頭：首輔音是空的
+    ['CV', 'suzuk', 'su'],
+    ['CVV', 'depex', 'dee'],
+    ['CVV', 'kita', 'kii'],
+    ['CVCV', 'kiput', 'kipu'],
+    ['CVCV', 'lubahing', 'luba'],
+    ['CVCV', 'kudung', 'kudu'],
+    ['CVCVC', 'kudung', 'kudung'],
+    ['CVCVC', 'lubahing', 'lubah'],
+    ['full', 'kita', 'kita'],
+    // 元音核是連續的元音：dius 的第一個元音核是 iu
+    ['CVCV', 'diusan', 'diusa'],
+    // 不在 vowels 中的字元（滑音、喉塞音）都當作輔音
+    ['CV', "'aula", "'a"],
+    ['CVCV', 'yawa', 'yawa'],
+    // 不適用：沒有元音，或只有一個音節
+    ['CV', 'ngb', null],
+    ['CVCV', 'kan', null],
+    ['CVCVC', 'bdk', null],
+  ]))('%s(%s) ＝ %s', (pattern, base, want) => {
+    expect(red(pattern, base)).toBe(want)
+  })
+
+  it('穩定引理：L ≥ |w| 時，模板套用在 base 開頭 L 個字元上的結果仍是 w；reduplicantStems 等於逐一檢查', () => {
+    const analyzer = createAnalyzer({ vowels: 'aiu' })
+    let seed = 7
+    const rnd = (/** @type {number} */ n) => (seed = (seed * 16807) % 2147483647) % n
+    const letters = 'aiubdkn y'
+    let checked = 0
+    for (let t = 0; t < 3000; t++) {
+      const base = Array.from({ length: 1 + rnd(9) }, () => letters[rnd(letters.length)])
+      for (const pattern of REDUPLICATION_PATTERNS) {
+        const w = analyzer.reduplicant(pattern, base.join(''))
+        if (w !== null && pattern !== 'full') {
+          for (let l = Array.from(w).length; l <= base.length; l++) {
+            expect(analyzer.reduplicant(pattern, base.slice(0, l).join('')), `${pattern} ${base.join('')} L=${l}`).toBe(w)
+            checked++
+          }
+        }
+        // reduplicantStems 對「每個可能的重疊部分」都要等於逐一檢查
+        const candidates = new Set([w, ...base.map((_, l) => analyzer.reduplicant(pattern, base.slice(0, l + 1).join('')))])
+        for (const r of candidates) {
+          if (r === null) continue
+          const brute = base.map((_, l) => l + 1).filter((l) => analyzer.reduplicant(pattern, base.slice(0, l).join('')) === r)
+          expect(analyzer.reduplicantStems(pattern, base, r), `${pattern} ${base.join('')} ${r}`).toEqual(brute)
+        }
+      }
+    }
+    expect(checked).toBeGreaterThan(5000)
+  })
+
+  it('analyze：模板只套用在詞幹上（不含後綴）', () => {
+    const analyzer = createAnalyzer({ vowels: 'aiu', minStem: 3, suffixes: [{ form: 'an' }, { form: 'i' }], reduplication: [{ pattern: 'CVCV' }] })
+    // kipu~kiput-i：重疊部分由詞幹 kiput 產生
+    expect(analyzer.analyze('kipukiputi').find((a) => a.stem === 'kiput')?.steps.map((s) => s.type)).toEqual(['suffix', 'reduplication'])
+    // kanakanan：kan 只有一個音節，不是 kan-an 的重疊（模板套用在 kanan 上才會得到 kana）
+    expect(analyzer.analyze('kanakanan').map((a) => a.stem)).not.toContain('kan')
+    expect(analyzer.analyze('kanakanan').map((a) => a.stem)).toContain('kanan')
+  })
+})
+
 describe('generate：還原詞綴', () => {
-  it('每個分析都能還原成原詞形（隨機詞形的性質測試）', () => {
+  it('每個分析都能還原成原詞形（隨機詞形的性質測試，含所有重疊型式）', () => {
+    const everyPattern = createAnalyzer({ ...SPEC, reduplication: REDUPLICATION_PATTERNS.map((pattern) => ({ pattern })) })
     let seed = 42
     const rnd = (/** @type {number} */ n) => (seed = (seed * 16807) % 2147483647) % n
     const letters = 'abdiklmnpstuxz'
@@ -107,15 +178,15 @@ describe('generate：還原詞綴', () => {
         if (type === 'prefix') steps.push({ type, form: SPEC.prefixes[rnd(3)].form, gloss: null, cost: 0.3 })
         if (type === 'suffix') steps.push({ type, form: SPEC.suffixes[rnd(3)].form, gloss: null, cost: 0.3 })
         if (type === 'infix') steps.push({ type, form: SPEC.infixes[rnd(2)].form, gloss: null, cost: 0.3 })
-        if (type === 'reduplication') steps.push({ type, form: '', pattern: 'Ca', gloss: null, cost: 0.3 })
+        if (type === 'reduplication') steps.push({ type, form: '', pattern: REDUPLICATION_PATTERNS[rnd(REDUPLICATION_PATTERNS.length)], gloss: null, cost: 0.3 })
       }
-      words.push(analyzer.generate(stem, steps))
+      words.push(everyPattern.generate(stem, steps))
     }
     let analyses = 0
     for (const w of words) {
-      for (const a of analyzer.analyze(w)) {
+      for (const a of everyPattern.analyze(w)) {
         analyses++
-        expect(analyzer.generate(a.stem, a.steps), `${w} ← ${a.stem}`).toBe(w)
+        expect(everyPattern.generate(a.stem, a.steps), `${w} ← ${a.stem}`).toBe(w)
       }
     }
     expect(analyses).toBeGreaterThan(300)

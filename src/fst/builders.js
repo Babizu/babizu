@@ -10,7 +10,8 @@
  * 限制（與 babizu 的 DP 相同或更寬）：
  * - 只處理單詞（詞中的空白不當作詞邊界）
  * - 詞幹交替只支援單一字元的 underlying／surface
- * - 完整重疊（ww）不是正規語言，不支援（見 docs/fuzzy-search.md 第 10 節）
+ * - 重疊只支援 Ca；CV、CVV、CVCV、CVCVC 在有限詞庫上雖然可以展開，但這個參考實作沒有做，
+ *   完整重疊（ww）更不是正規語言。遇到這些型式會丟出 RangeError，不會默默略過（呼叫端要先去掉它們）
  *
  * 這是評估用的參考實作，不追求速度：狀態以字串為鍵、以雜湊表記錄。
  */
@@ -137,8 +138,18 @@ export function surfaceLexicon({ dawg, accept = () => true, spec, requireStep = 
   const infixTrie = buildTrie(spec.infixes)
   const vowels = new Set(Array.from(spec.vowels))
   const slots = spec.maxSteps
+  // 只支援 Ca 重疊與單一字元的詞幹交替。其他型式（CV、CVV、CVCV、CVCVC、full）與多字元交替
+  // 若默默略過，求得的 W* 就與 BCDP 的語意不同而不自知，所以明確丟出錯誤，由呼叫端決定是否先去掉它們。
+  for (const r of spec.reduplication) {
+    if (r.pattern !== 'Ca') throw new RangeError(`surfaceLexicon 不支援重疊型式 ${r.pattern}（只支援 Ca）`)
+  }
+  for (const a of spec.alternations) {
+    if (Array.from(a.underlying).length !== 1 || Array.from(a.surface).length !== 1) {
+      throw new RangeError(`surfaceLexicon 只支援單一字元的詞幹交替（${a.underlying}>${a.surface}）`)
+    }
+  }
   const ca = spec.reduplication.find((r) => r.pattern === 'Ca')
-  const alternations = spec.alternations.filter((a) => Array.from(a.underlying).length === 1 && Array.from(a.surface).length === 1)
+  const alternations = spec.alternations
   /** @type {Map<string, import('./wfst.js').Arc[]>} 出弧的快取（同一個狀態常被組合重複詢問） */
   const cache = new Map()
 

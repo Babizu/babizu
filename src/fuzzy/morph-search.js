@@ -293,7 +293,7 @@ export function createMorphSearch({ analyzer, metric, index }) {
         if (reduced.length - k < spec.minStem) continue
         if (analyzer.onset(reduced.slice(k).join('')) !== head) continue
         out.push(
-          shifted(chars, reduced, P, S, k, at, xs.length, x.cost, {
+          shifted(chars, reduced, P, S, k, at, xs.length, x.cost, null, {
             type: 'infix',
             form: x.form,
             gloss: x.gloss,
@@ -302,17 +302,20 @@ export function createMorphSearch({ analyzer, metric, index }) {
         )
       }
 
-      // 重疊：詞幹前面的重疊部分
+      // 重疊：詞幹前面的重疊部分。試每一種長度（沒有上限）。模板只套用在詞幹上（不含後綴），
+      // 而且詞幹取自查詢，所以複製的是查詢（方言）的形式；詞幹的長度只能是模板正好產生 red 的那些
+      // （reduplicantStems；full 時就是 red 本身的長度）
       for (const r of spec.reduplication) {
-        for (let len = 1; len <= 4 && k + len < n; len++) {
+        for (let len = 1; k + len < n; len++) {
           const red = chars.slice(k, k + len).join('')
           const base = chars.slice(k + len)
           if (base.length < spec.minStem) break
           if (isBoundary(chars[k + len - 1])) break // 重疊部分不跨越空白
-          if (analyzer.reduplicant(r.pattern, base.join('')) !== red) continue
+          const lengths = analyzer.reduplicantStems(r.pattern, base, red)
+          if (!lengths.length) continue
           const reduced = [...chars.slice(0, k), ...base]
           out.push(
-            shifted(chars, reduced, P, S, k, k, len, r.cost, {
+            shifted(chars, reduced, P, S, k, k, len, r.cost, lengths, {
               type: 'reduplication',
               form: red,
               pattern: r.pattern,
@@ -363,6 +366,7 @@ export function createMorphSearch({ analyzer, metric, index }) {
 
   /**
    * 在位置 at 拿掉 len 個字元（中綴或重疊）後的變體：詞幹只能從 k 開始，邊界向量跟著位移。
+   * stemLengths 不為 null 時（重疊），詞幹的長度只能是其中之一（遞增；以 at 起算）。
    * @returns {{chars: string[], start: Float64Array, end: Float64Array, map: (i: number) => number, op: MorphStepHit, at: number}}
    */
   function shifted(
@@ -374,17 +378,22 @@ export function createMorphSearch({ analyzer, metric, index }) {
     /** @type {number} */ at,
     /** @type {number} */ len,
     /** @type {number} */ cost,
+    /** @type {number[] | null} */ stemLengths,
     /** @type {MorphStepHit} */ op,
   ) {
     const m = reduced.length
     const start = new Float64Array(m + 1).fill(Infinity)
     start[k] = roundCost(P[k] + cost)
     const end = new Float64Array(m + 1).fill(Infinity)
-    for (let i = 0; i <= chars.length; i++) {
-      if (i > at && i < at + len) continue
-      const j = i <= at ? i : i - len
-      // 詞幹必須越過中綴（或重疊）所在的位置
-      if (j > at) end[j] = S[i]
+    if (stemLengths) {
+      // 重疊：詞幹 reduced[at..at+L)，對應原查詢的終點 at + L + len
+      for (const l of stemLengths) end[at + l] = S[at + l + len]
+    } else {
+      for (let i = 0; i <= chars.length; i++) {
+        if (i > at && i < at + len) continue
+        const j = i <= at ? i : i - len
+        if (j > at) end[j] = S[i] // 詞幹必須越過中綴所在的位置
+      }
     }
     return { chars: reduced, start, end, map: (j) => (j <= at ? j : j + len), op, at: k }
   }

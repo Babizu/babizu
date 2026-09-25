@@ -36,9 +36,25 @@
  */
 
 /**
+ * @typedef {'Ca' | 'CV' | 'CVV' | 'CVCV' | 'CVCVC' | 'full'} ReduplicationPattern
+ * 重疊的型式（docs/bcdp.md 1.7）。重疊部分放在詞幹前面，由詞幹 base 依模板產生：
+ * - Ca：首輔音（群）＋ a（`da~dius`、`la~luzuk`）
+ * - CV：首輔音＋第一個元音（`su~suzuk`）
+ * - CVV：首輔音＋第一個元音重複兩次，即元音加長（`dee~depex`、`kii~kita`）
+ * - CVCV：base 從頭到第二個元音核為止，即「兩音節、去掉韻尾」（`kipu~kipud-i`、`luba~lubahing`）
+ * - CVCVC：CVCV 再加上其後連續的輔音，即「兩音節、含韻尾」（噶哈巫語 `kudung~kudung`）
+ * - full：整個詞幹重疊
+ * 「首輔音」是第一個元音之前的字元；「元音核」是連續的元音字元（`aa`、`au` 算一個）。
+ * 不在 `vowels` 中的字元（包括滑音 y、w 與喉塞音 '）都當作輔音。元音由規格決定，所以模板與語言無關。
+ * 模板只套用在**詞幹**上，不含後綴：`kipu~kipud-i` 的重疊部分由 kipud 產生（docs/bcdp.md 1.4）。
+ */
+
+/** 支援的重疊型式 */
+export const REDUPLICATION_PATTERNS = Object.freeze(['Ca', 'CV', 'CVV', 'CVCV', 'CVCVC', 'full'])
+
+/**
  * @typedef {object} ReduplicationSpec
- * @property {'Ca' | 'CV' | 'full'} pattern
- *   Ca：詞幹首輔音＋a（`a-alep`、`sa-suzuk`）；CV：詞幹首輔音＋首元音；full：整個詞幹重疊
+ * @property {ReduplicationPattern} pattern
  * @property {Gloss} [gloss]
  * @property {number} [cost]
  */
@@ -72,7 +88,7 @@
  * @typedef {object} MorphStep 一個構詞步驟（由外而內，也就是剝除的順序）
  * @property {'prefix' | 'suffix' | 'infix' | 'reduplication' | 'alternation'} type
  * @property {string} form 詞綴；重疊為實際的重疊部分；交替為 `underlying>surface`
- * @property {string} [pattern] 重疊的模式（Ca／CV／full）
+ * @property {ReduplicationPattern} [pattern] 重疊的型式
  * @property {Gloss} gloss
  * @property {number} cost
  */
@@ -157,7 +173,7 @@ export function validateMorphology(spec) {
     else
       s.reduplication.forEach((/** @type {any} */ r, /** @type {number} */ i) => {
         const path = `morphology.reduplication[${i}]`
-        if (!['Ca', 'CV', 'full'].includes(r?.pattern)) errors.push(`${path}.pattern 必須是 Ca、CV 或 full`)
+        if (!REDUPLICATION_PATTERNS.includes(r?.pattern)) errors.push(`${path}.pattern 必須是 ${REDUPLICATION_PATTERNS.join('、')} 之一`)
         if (r?.cost !== undefined && !isCost(r.cost)) errors.push(`${path}.cost 必須是非負的有限數`)
         unknownKeys(r, ENTRY_KEYS.reduplication, path)
       })
@@ -188,7 +204,9 @@ export function validateMorphology(spec) {
  * @property {(stem: string, steps: MorphStep[]) => string} generate 還原詞綴
  * @property {(stem: string) => string[]} coreForms 詞幹在衍生詞中可能的核心形式（找衍生詞時用）
  * @property {(w: string) => string} onset 詞首的輔音（群）
- * @property {(pattern: 'Ca' | 'CV' | 'full', base: string) => string | null} reduplicant 詞幹 base 套用重疊模式時前面要加的字串
+ * @property {(pattern: ReduplicationPattern, base: string) => string | null} reduplicant 詞幹 base 套用重疊模式時前面要加的字串
+ * @property {(pattern: ReduplicationPattern, rest: string[], red: string) => number[]} reduplicantStems
+ *   重疊部分後面的字元 rest 中，哪些長度 L 的開頭 rest[0..L) 當作詞幹時，重疊部分正好是 red（遞增）
  * @property {MorphologySpec} spec 正規化後的規格
  */
 
@@ -238,19 +256,62 @@ export function createAnalyzer(spec, normalize = (s) => s) {
     while (k < chars.length && !vowels.has(chars[k])) k++
     return chars.slice(0, k).join('')
   }
-  /** 首元音 @param {string} w */
-  const firstVowel = (w) => Array.from(w).find((c) => vowels.has(c)) ?? ''
-
   /**
    * 重疊部分：pattern 套用在詞幹 base 上時，前面要加的字串（不適用時為 null）。
-   * @param {'Ca' | 'CV' | 'full'} pattern
+   * 模板的定義見 ReduplicationPattern。重疊複製的是 base 本身的形式：搜尋時 base 取自查詢，
+   * 所以複製的是查詢的（方言）形式（docs/bcdp.md 1.4）。
+   * @param {ReduplicationPattern} pattern
    * @param {string} base
+   * @returns {string | null}
    */
   const reduplicant = (pattern, base) => {
     if (pattern === 'full') return base
-    if (pattern === 'Ca') return `${onset(base)}a`
-    const v = firstVowel(base)
-    return v ? onset(base) + v : null
+    const chars = Array.from(base)
+    const isVowel = (/** @type {string} */ c) => vowels.has(c)
+    const v1 = chars.findIndex(isVowel)
+    if (pattern === 'Ca') return `${(v1 < 0 ? chars : chars.slice(0, v1)).join('')}a`
+    if (v1 < 0) return null
+    if (pattern === 'CV') return chars.slice(0, v1 + 1).join('')
+    if (pattern === 'CVV') return chars.slice(0, v1 + 1).join('') + chars[v1]
+    // CVCV／CVCVC：第一個元音核之後，跳過輔音，找第二個元音核
+    let k = v1
+    while (k < chars.length && isVowel(chars[k])) k++ // 第一個元音核結束
+    while (k < chars.length && !isVowel(chars[k])) k++ // 第二個音節的首輔音
+    if (k >= chars.length) return null // 只有一個音節
+    while (k < chars.length && isVowel(chars[k])) k++ // 第二個元音核結束
+    if (pattern === 'CVCVC') while (k < chars.length && !isVowel(chars[k])) k++ // 其後的輔音（韻尾）
+    return chars.slice(0, k).join('')
+  }
+
+  /**
+   * rest 是重疊部分後面的字元（詞幹＋後綴），回傳所有使 reduplicant(pattern, rest[0..L)) === red 的詞幹長度 L。
+   *
+   * 不必逐一試每個 L：令 w ＝ reduplicant(pattern, rest)。w 只由 rest 開頭 |w| 個字元決定——模板在
+   * 位置 |w| 停下，不論那裡是字串結尾還是另一類字元（元音串、輔音串在兩種情況下都結束）——所以
+   * L ≥ |w| 時 reduplicant(pattern, rest[0..L)) ＝ w（穩定引理，以 test/fuzzy/morphology.test.js 的
+   * 性質測試檢查）。只有 L < |w| 需要逐一計算；
+   * w 為 null（沒有元音，或只有一個音節）時，較短的開頭也一定是 null。
+   * full 的重疊部分就是詞幹本身，只可能是 L ＝ |red|。
+   * @param {ReduplicationPattern} pattern
+   * @param {string[]} rest
+   * @param {string} red
+   * @returns {number[]}
+   */
+  const reduplicantStems = (pattern, rest, red) => {
+    if (pattern === 'full') {
+      const l = len(red)
+      return l <= rest.length && rest.slice(0, l).join('') === red ? [l] : []
+    }
+    const whole = reduplicant(pattern, rest.join(''))
+    if (whole === null) return []
+    const stable = len(whole)
+    /** @type {number[]} */
+    const out = []
+    for (let l = 1; l < Math.min(stable, rest.length + 1); l++) {
+      if (reduplicant(pattern, rest.slice(0, l).join('')) === red) out.push(l)
+    }
+    if (whole === red) for (let l = stable; l <= rest.length; l++) out.push(l)
+    return out
   }
 
   /**
@@ -264,6 +325,7 @@ export function createAnalyzer(spec, normalize = (s) => s) {
      * 步數預算與 BCDP 相同（docs/bcdp.md 1.2、1.7）：
      * - 前綴、後綴各自至多 maxSteps 個；另加至多一個非串接步驟（中綴、重疊或詞幹交替）
      * - 中綴與重疊位在「前綴鏈之內」的詞幹開頭：做了之後不能再剝前綴
+     * - 重疊的模板只套用在詞幹上（不含後綴）：做了之後也不能再剝後綴
      * - 詞幹交替位在詞幹結尾、緊接最內層的後綴：做了之後不能再剝後綴；
      *   與它一起剝掉的那個後綴可以是第 maxSteps ＋ 1 個
      * @param {string} w 目前剩下的詞形
@@ -273,7 +335,7 @@ export function createAnalyzer(spec, normalize = (s) => s) {
      * @param {number} suf 已剝的後綴數
      * @param {boolean} op 已用掉非串接步驟
      * @param {boolean} preClosed 前綴端已封閉（做過中綴或重疊）
-     * @param {boolean} sufClosed 後綴端已封閉（做過詞幹交替）
+     * @param {boolean} sufClosed 後綴端已封閉（做過詞幹交替或重疊）
      */
     const visit = (w, steps, total, pre, suf, op, preClosed, sufClosed) => {
       if (steps.length > 0) {
@@ -317,12 +379,13 @@ export function createAnalyzer(spec, normalize = (s) => s) {
       }
       const chars = reduplication.length ? Array.from(w) : []
       for (const r of reduplication) {
-        // 重疊部分在最前面：試每一種切法，看剩下的詞幹套用同一模式是否正好得到這個重疊部分
+        // 重疊部分在最前面：試每一種切法，看剩下的詞幹套用同一模式是否正好得到這個重疊部分。
+        // 模板只看詞幹，所以重疊是最內層的步驟，剩下的就是詞幹（兩端都封閉）
         for (let k = 1; k <= n - minStem; k++) {
           const red = chars.slice(0, k).join('')
           const base = chars.slice(k).join('')
           if (reduplicant(r.pattern, base) !== red) continue
-          visit(base, [...steps, { type: 'reduplication', form: red, pattern: r.pattern, gloss: r.gloss, cost: r.cost }], total + r.cost, pre, suf, true, true, sufClosed)
+          visit(base, [...steps, { type: 'reduplication', form: red, pattern: r.pattern, gloss: r.gloss, cost: r.cost }], total + r.cost, pre, suf, true, true, true)
         }
       }
     }
@@ -345,7 +408,7 @@ export function createAnalyzer(spec, normalize = (s) => s) {
         const head = onset(w)
         w = head + s.form + w.slice(head.length)
       } else if (s.type === 'reduplication') {
-        w = (reduplicant(/** @type {'Ca' | 'CV' | 'full'} */ (s.pattern), w) ?? '') + w
+        w = (reduplicant(/** @type {ReduplicationPattern} */ (s.pattern), w) ?? '') + w
       } else if (s.type === 'alternation') {
         const [underlying, surface] = s.form.split('>')
         if (w.endsWith(underlying)) w = w.slice(0, w.length - underlying.length) + surface
@@ -380,6 +443,7 @@ export function createAnalyzer(spec, normalize = (s) => s) {
     coreForms,
     onset,
     reduplicant,
+    reduplicantStems,
     spec: {
       cost,
       minStem,

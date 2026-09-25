@@ -4,12 +4,12 @@
  * - refDistance：由定義直接寫成的加權編輯距離，不共用 fillRow。先確認它與 metric.distance 逐一相同，
  *   之後就能當作其他測試的仲裁者（其他測試過去都以 metric.distance 為準，與被測程式共用同一個 DP）。
  * - refMorph：窮舉 BCDP 分段模型的所有分析（docs/bcdp.md 第 1 節）。
- * - 正式實作尚未符合定義的地方（bcdp.md 1.6）以 it.fails 標示：測試描述的是「應該怎樣」，
- *   目前會失敗；修正之後 it.fails 會轉為失敗，提醒把它改回 it。
+ * - 正式實作曾經不符合定義的地方（bcdp.md 1.6）先以 it.fails 寫成「應該怎樣」，修正後改回 it，
+ *   留作回歸測試。
  */
 
 import { describe, expect, it } from 'vitest'
-import { createAnalyzer, createMorphSearch, EPSILON, FuzzyIndex, roundCost, RuleSet, WeightedEditDistance } from '../../src/fuzzy/index.js'
+import { createAnalyzer, createMorphSearch, EPSILON, FuzzyIndex, REDUPLICATION_PATTERNS, roundCost, RuleSet, WeightedEditDistance } from '../../src/fuzzy/index.js'
 import { createRandom, pick, randomString } from './helpers.js'
 import { refContext, refDistance } from './reference/ref-distance.js'
 import { refMorph } from './reference/ref-morph.js'
@@ -70,11 +70,20 @@ function randomMorphSetup(random) {
     prefixes: affixes(3, 2),
     suffixes: [...affixes(2, 2), { form: 'an' }],
     infixes: random() < 0.7 ? [{ form: 'in' }] : [],
-    reduplication: random() < 0.7 ? [{ pattern: pick(random, ['Ca', 'CV']) }] : [],
+    // 一至兩種重疊型式（可能相同，createAnalyzer 照單全收；重複的型式也要與窮舉一致）
+    reduplication: random() < 0.8 ? Array.from({ length: 1 + Math.floor(random() * 2) }, () => ({ pattern: pick(random, [...REDUPLICATION_PATTERNS]) })) : [],
     alternations: random() < 0.7 ? [{ underlying: 't', surface: 'd', before: random() < 0.5 ? ['an'] : undefined }] : [],
   }
   const analyzer = createAnalyzer(spec)
-  const roots = [...new Set(Array.from({ length: 14 }, () => randomString(random, consonants, 1, 1) + randomString(random, alphabet, 1, 4)))]
+  // 詞根多半是 CV(C)CV(C) 形狀，讓兩音節的重疊型式（CVCV、CVCVC）有機會適用
+  const syllable = () => pick(random, consonants) + pick(random, vowels) + (random() < 0.3 ? pick(random, consonants) : '')
+  const roots = [
+    ...new Set(
+      Array.from({ length: 14 }, () =>
+        random() < 0.6 ? syllable() + syllable() : randomString(random, consonants, 1, 1) + randomString(random, alphabet, 1, 4),
+      ),
+    ),
+  ]
   return { metric, spec: analyzer.spec, analyzer, roots, alphabet }
 }
 
@@ -88,8 +97,8 @@ function derive(random, { spec, analyzer, roots, alphabet }) {
   if (spec.infixes.length && random() < 0.25) {
     const head = analyzer.onset(w)
     w = head + spec.infixes[0].form + w.slice(head.length)
-  } else if (spec.reduplication.length && random() < 0.25) {
-    w = (analyzer.reduplicant(spec.reduplication[0].pattern, w) ?? '') + w
+  } else if (spec.reduplication.length && random() < 0.35) {
+    w = (analyzer.reduplicant(pick(random, spec.reduplication).pattern, w) ?? '') + w
   }
   let suffix = ''
   if (random() < 0.5) suffix = pick(random, spec.suffixes).form
@@ -107,41 +116,46 @@ function derive(random, { spec, analyzer, roots, alphabet }) {
 }
 
 describe('參考實作：BCDP 分段模型', () => {
+  /** reaching check（preparing-tests）：隨機測試中，每種非串接步驟與重疊型式都要真的出現在命中裡 @type {Map<string, number>} */
+  const reached = new Map()
   it.each([1, 2, 3, 4, 5, 6])('種子 %i：morphSearch 的每個命中與成本都等於窮舉（沒有截斷的查詢）', (seed) => {
     const random = createRandom(seed * 104729)
     let compared = 0
-    for (let round = 0; round < 8; round++) {
+    for (let round = 0; round < 12; round++) {
       const setup = randomMorphSetup(random)
       const { metric, spec, analyzer, roots } = setup
       const index = new FuzzyIndex(metric).addAll(roots.map((w) => [w, w]))
       const search = createMorphSearch({ analyzer, metric, index })
       const ctx = refContext(metric)
-      for (let k = 0; k < 6; k++) {
+      for (let k = 0; k < 8; k++) {
         const query = derive(random, setup)
         const prepared = search.prepare(query)
         // 還原變體超過上限時會被截斷（prepared.truncated），那時不保證與窮舉相同
         if (prepared?.truncated) continue
         const maxDistance = pick(random, [0.8, 1, 1.2])
-        const got = new Map(search.search(query, { maxDistance }).map((h) => [h.term, h.distance]))
+        const hits = search.search(query, { maxDistance })
+        for (const h of hits) for (const s of h.steps) if (s.type !== 'prefix' && s.type !== 'suffix') reached.set(s.pattern ?? s.type, (reached.get(s.pattern ?? s.type) ?? 0) + 1)
+        const got = new Map(hits.map((h) => [h.term, h.distance]))
         /** @type {Map<string, string>} */
         const why = new Map()
         const want = refMorph(ctx, { query, lexicon: roots, spec, maxDistance, reduplicant: analyzer.reduplicant, why })
         const terms = new Set([...got.keys(), ...want.keys()])
         for (const t of terms) {
-          // 已知錯誤（bcdp.md 1.6 第 5 項）：重疊部分超過 4 個字元時正式實作找不到；由下方的 it.fails 涵蓋
-          const removal = /拿掉 q\[(\d+)\.\.(\d+)\)/.exec(why.get(t) ?? '')
-          if (removal && Number(removal[2]) - Number(removal[1]) > 4 && !got.has(t)) continue
           const detail = `seed=${seed} round=${round} query=${query} term=${t}；參考：${why.get(t) ?? '—'}；規格：${JSON.stringify({ prefixes: spec.prefixes.map((a) => a.form), suffixes: spec.suffixes.map((a) => a.form), infixes: spec.infixes.map((a) => a.form), red: spec.reduplication.map((r) => r.pattern), alt: spec.alternations, rules: metric.ruleSet.expand().map((r) => `${r.source}>${r.target}:${r.position}`) })}`
           expect(got.get(t) ?? Infinity, detail).toBeCloseTo(want.get(t) ?? Infinity, 7)
         }
         compared++
       }
     }
-    expect(compared).toBeGreaterThan(30)
+    expect(compared).toBeGreaterThan(60)
+  })
+
+  it('reaching check：上面的隨機測試涵蓋每種重疊型式、中綴與交替', () => {
+    for (const kind of [...REDUPLICATION_PATTERNS, 'infix', 'alternation']) expect(reached.get(kind) ?? 0, `${kind}：${JSON.stringify([...reached])}`).toBeGreaterThanOrEqual(3)
   })
 })
 
-describe('已知與定義不一致的地方（docs/bcdp.md 1.6；修正後改回 it）', () => {
+describe('固定案例：bcdp.md 1.6 修正過的項目與 1.7 的語意', () => {
   /** 與網站相同的空白處理：連續空白合併、去掉頭尾空白（createNormalizer 的 collapseWhitespace） */
   const collapse = (/** @type {string} */ s) => s.replace(/\s+/gu, ' ').trim()
   /** 固定的小規格：prefix mu-、suffix -an，空白的增刪成本 0.1 */
@@ -218,11 +232,48 @@ describe('已知與定義不一致的地方（docs/bcdp.md 1.6；修正後改回
     expect(got.get('baz')).toBeCloseTo(0.6, 9)
   })
 
-  it.fails('重疊部分可以超過 4 個字元（Ca：首輔音群 4 個字元＋a）', () => {
+  it('重疊部分可以超過 4 個字元（Ca：首輔音群 4 個字元＋a）', () => {
     const setup = fixed({ reduplication: [{ pattern: 'Ca' }] })
     const { got, want } = compare(setup, ['bdknaku'], 'bdknabdknaku')
     expect(want.get('bdknaku')).toBeCloseTo(0.3, 9)
     expect(got.get('bdknaku')).toBeCloseTo(0.3, 9)
+  })
+
+  // 各重疊型式各一例。詞取自公開資料集，型式的歸類依 Lim & Zeitoun (2024) §51.3.2.2（見 bcdp.md 1.7）
+  it.each(/** @type {Array<[string, string, string, number]>} */ ([
+    ['Ca', 'dius', 'dadius', 0.3],
+    ['CV', 'suzuk', 'susuzuk', 0.3],
+    ['CVV', 'depex', 'deedepex', 0.3],
+    ['CVV', 'kita', 'mukiikita', 0.6],
+    ['CVCV', 'lubahing', 'lubalubahing', 0.3],
+    ['CVCV', 'kudung', 'kudukudungan', 0.6], // 巴宰語：兩音節去韻尾＋後綴
+    ['CVCVC', 'kudung', 'kudungkudungan', 0.6], // 噶哈巫語：兩音節含韻尾
+    ['full', 'kita', 'kitakitaan', 0.6],
+  ]))('重疊型式 %s：%s ← %s', (pattern, stem, query, cost) => {
+    const setup = fixed({ vowels: 'aeiu', suffixes: [{ form: 'an' }, { form: 'i' }], reduplication: [{ pattern }] })
+    const { got, want } = compare(setup, [stem], query)
+    expect(want.get(stem)).toBeCloseTo(cost, 9)
+    expect(got.get(stem)).toBeCloseTo(cost, 9)
+  })
+
+  it('重疊複製查詢（方言）的形式：重疊部分跟著查詢，詞幹再以方言規則對應', () => {
+    // kipu~kipud-i：詞根 kiput 在 -i 前濁化。只用 CVCV 與方言規則 t↔d（0.1）時，
+    // 重疊部分 kipu 由查詢的詞幹 kipud 產生，kipud 再以 0.1 對應到 kiput：0.3 ＋ 0.1 ＋ 0.3
+    const setup = fixed({ suffixes: [{ form: 'i' }], reduplication: [{ pattern: 'CVCV' }] }, new RuleSet().add('t', 'd', 0.1))
+    const { got, want } = compare(setup, ['kiput'], 'kipukipudi')
+    expect(want.get('kiput')).toBeCloseTo(0.7, 9)
+    expect(got.get('kiput')).toBeCloseTo(0.7, 9)
+  })
+
+  it('重疊的模板只套用在詞幹上，不含後綴', () => {
+    // kanakanan：若把模板套用在「詞幹＋後綴」kanan 上，CVCV 得到 kana，會誤分析成 kana~kan-an。
+    // 詞幹 kan 只有一個音節，CVCV 不適用，所以不是 kan 的重疊
+    const setup = fixed({ reduplication: [{ pattern: 'CVCV' }] })
+    const { got, want } = compare(setup, ['kan'], 'kanakanan')
+    expect(want.has('kan')).toBe(false)
+    expect(got.has('kan')).toBe(false)
+    // 同一個查詢、兩音節的詞幹 kana：kana~kana-n 不成立（沒有 -n），kana~kanan 成立
+    expect(compare(setup, ['kanan'], 'kanakanan').got.get('kanan')).toBeCloseTo(0.3, 9)
   })
 })
 

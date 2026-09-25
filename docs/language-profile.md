@@ -130,7 +130,7 @@
 | `vowels` | `aeiouéə` | 元音字母，決定「首輔音」與中綴的位置 |
 | `prefixes`、`suffixes` | — | 詞綴清單。`form` 寫成搜尋鍵的形式（不含連字號）；`gloss` 是顯示用的語法說明，可以依語系提供 |
 | `infixes` | — | 中綴，插在詞幹首輔音（群）之後、首元音之前；元音開頭的詞幹則插在最前面 |
-| `reduplication` | — | 重疊：`Ca`（首輔音＋a）、`CV`（首輔音＋首元音）、`full`（整個詞幹） |
+| `reduplication` | — | 重疊型式：`Ca`（首輔音＋a）、`CV`（首輔音＋首元音）、`CVV`（首輔音＋首元音加長）、`CVCV`（兩音節，去韻尾）、`CVCVC`（兩音節，含韻尾）、`full`（整個詞幹）。模板只套用在詞幹上，詳見 [bcdp.md](bcdp.md) 1.4、1.7 |
 | `alternations` | — | 詞幹交替：詞幹末的 `underlying` 在 `before` 列出的後綴前寫成 `surface`（`bitut` ＋ `-un` → `bitudun`） |
 
 運作方式：

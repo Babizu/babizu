@@ -26,7 +26,8 @@ const round = (/** @type {number} */ x) => Math.round(x * 1e9) / 1e9
  * @param {string[]} input.lexicon 可作為詞根的詞
  * @param {any} input.spec createAnalyzer(...).spec（已正規化、已補預設值）
  * @param {number} input.maxDistance 總成本上限 B
- * @param {(pattern: string, base: string) => string | null} input.reduplicant 重疊部分（analyzer.reduplicant）
+ * @param {(pattern: string, base: string) => string | null} input.reduplicant 重疊部分（analyzer.reduplicant；
+ *   只用這個模板函式本身，不用 reduplicantStems 的穩定引理）
  * @param {Map<string, string>} [input.why] 除錯用：傳入時，記下每個詞根最佳分析的文字描述
  * @returns {Map<string, number>} 詞根 → W_D（沒有 lemmaSpread 截斷）
  */
@@ -148,7 +149,7 @@ export function refMorph(ctx, { query, lexicon, spec, maxDistance, reduplicant, 
   for (let i = 0; i < n; i++) {
     if (P[i] === Infinity) continue
     const rest = q.slice(i)
-    /** @type {Array<{at: number, len: number, cost: number}>} 拿掉 q[at..at+len) */
+    /** @type {Array<{at: number, len: number, cost: number, pattern?: string}>} 拿掉 q[at..at+len) */
     const removals = []
     const head = onset(rest)
     if (!head.some(isB) && head.length < rest.length) {
@@ -168,13 +169,16 @@ export function refMorph(ctx, { query, lexicon, spec, maxDistance, reduplicant, 
         const base = q.slice(i + len)
         if (base.length < spec.minStem) break
         if (red.some(isB)) break // 重疊部分不跨越空白
-        if (reduplicant(r.pattern, base.join('')) !== red.join('')) continue
-        removals.push({ at: i, len, cost: r.cost })
+        // 模板只套用在詞幹上：是否成立要看詞幹的終點，在下面逐一檢查
+        removals.push({ at: i, len, cost: r.cost, pattern: r.pattern })
       }
     }
-    for (const { at, len, cost } of removals) {
+    for (const { at, len, cost, pattern } of removals) {
       const v = [...q.slice(0, at), ...q.slice(at + len)]
+      const red = q.slice(at, at + len).join('')
       for (let k = at + 1; k <= v.length; k++) {
+        // 重疊：詞幹 v[at..k) 依模板產生的重疊部分必須正好是 red（full 的模板就是詞幹本身）
+        if (pattern !== undefined && reduplicant(pattern, v.slice(at, k).join('')) !== red) continue
         // 詞幹終點 k（在 v 上）對應原查詢的位置 k + len
         const tail = S[k + len]
         if (tail === Infinity) continue
