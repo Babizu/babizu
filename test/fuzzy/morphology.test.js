@@ -100,7 +100,7 @@ describe('重疊模板（docs/bcdp.md 1.7 第 2 項）', () => {
     ['Ca', 'dius', 'da'],
     ['Ca', 'luzuk', 'la'],
     ['Ca', 'alep', 'a'], // 元音開頭：首輔音是空的
-    ['CV', 'suzuk', 'su'],
+    ['CV', 'kiliw', 'ki'],
     ['CVV', 'depex', 'dee'],
     ['CVV', 'kita', 'kii'],
     ['CVCV', 'kiput', 'kipu'],

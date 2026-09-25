@@ -121,7 +121,7 @@ W* 多找到的詞根只佔 1.2%，而且大多貼著上限。同時，每個查
    - 片語中每個詞的構詞分析，交給搜尋引擎的逐詞搜尋。
 2. **重疊複製方言形式**，支援的型式：
    - Ca：`da~dius`、`la~luzuk`
-   - CV：`su~suzuk`
+   - CV：`ki~kiliw`、`du~dusa`
    - CVV（元音加長）：`dee~depex`、`kii~kita`
    - 兩音節去韻尾（巴宰語的完整重疊）：`kipu~kipud-i`、`mi-kita~kita`、`luba~lubahing`
    - 兩音節含韻尾（噶哈巫語）：`maa-kudung~kudung`

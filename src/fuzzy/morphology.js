@@ -39,7 +39,7 @@
  * @typedef {'Ca' | 'CV' | 'CVV' | 'CVCV' | 'CVCVC' | 'full'} ReduplicationPattern
  * 重疊的型式（docs/bcdp.md 1.7）。重疊部分放在詞幹前面，由詞幹 base 依模板產生：
  * - Ca：首輔音（群）＋ a（`da~dius`、`la~luzuk`）
- * - CV：首輔音＋第一個元音（`su~suzuk`）
+ * - CV：首輔音＋第一個元音（`ki~kiliw`、`du~dusa`）
  * - CVV：首輔音＋第一個元音重複兩次，即元音加長（`dee~depex`、`kii~kita`）
  * - CVCV：base 從頭到第二個元音核為止，即「兩音節、去掉韻尾」（`kipu~kipud-i`、`luba~lubahing`）
  * - CVCVC：CVCV 再加上其後連續的輔音，即「兩音節、含韻尾」（噶哈巫語 `kudung~kudung`）

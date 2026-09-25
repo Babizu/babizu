@@ -239,18 +239,19 @@ describe('固定案例：bcdp.md 1.6 修正過的項目與 1.7 的語意', () =>
     expect(got.get('bdknaku')).toBeCloseTo(0.3, 9)
   })
 
-  // 各重疊型式各一例。詞取自公開資料集，型式的歸類依 Lim & Zeitoun (2024) §51.3.2.2（見 bcdp.md 1.7）
+  // 各重疊型式各一例。查詢都是公開資料集中的詞，型式的歸類依 Li & Tsuchida (2001) p. 22、
+  // Lim & Zeitoun (2024) §51.3.2.2（見 bcdp.md 1.7）
   it.each(/** @type {Array<[string, string, string, number]>} */ ([
     ['Ca', 'dius', 'dadius', 0.3],
-    ['CV', 'suzuk', 'susuzuk', 0.3],
+    ['CV', 'kiliw', 'kikiliw', 0.3],
     ['CVV', 'depex', 'deedepex', 0.3],
-    ['CVV', 'kita', 'mukiikita', 0.6],
+    ['CVV', 'kita', 'kiikita', 0.3],
     ['CVCV', 'lubahing', 'lubalubahing', 0.3],
-    ['CVCV', 'kudung', 'kudukudungan', 0.6], // 巴宰語：兩音節去韻尾＋後綴
-    ['CVCVC', 'kudung', 'kudungkudungan', 0.6], // 噶哈巫語：兩音節含韻尾
-    ['full', 'kita', 'kitakitaan', 0.6],
+    ['CVCV', 'kudung', 'maakudukudung', 0.6], // 巴宰語：兩音節去韻尾（maa- ＋ 重疊）
+    ['CVCVC', 'kudung', 'maakudungkudung', 0.6], // 噶哈巫語：兩音節含韻尾
+    ['full', 'saw', 'sawsaw', 0.3], // 單音節詞根的完整重疊
   ]))('重疊型式 %s：%s ← %s', (pattern, stem, query, cost) => {
-    const setup = fixed({ vowels: 'aeiu', suffixes: [{ form: 'an' }, { form: 'i' }], reduplication: [{ pattern }] })
+    const setup = fixed({ vowels: 'aeiu', prefixes: [{ form: 'mu' }, { form: 'maa' }], suffixes: [{ form: 'an' }, { form: 'i' }], reduplication: [{ pattern }] })
     const { got, want } = compare(setup, [stem], query)
     expect(want.get(stem)).toBeCloseTo(cost, 9)
     expect(got.get(stem)).toBeCloseTo(cost, 9)
