@@ -159,20 +159,29 @@ describe('已知與定義不一致的地方（docs/bcdp.md 1.6；修正後改回
     return { got, want }
   }
 
-  it.fails('多詞查詢：詞幹開頭的空白要付刪除成本（計價不能把片段重新正規化而截掉空白）', () => {
-    // δ = 0.05：「mu 」（含空白，刪空白 0.1）不是合法的前綴，只能是 mu- ＋ 詞幹 " daux"
-    const { got, want } = compare(fixed({ affixDistance: 0.05 }, new RuleSet(), collapse), ['daux'], 'mu daux')
-    expect(want.get('daux')).toBeCloseTo(0.4, 9) // mu- 0.3 ＋ 詞幹 " daux" 刪空白 0.1
-    expect(got.get('daux')).toBeCloseTo(0.4, 9)
+  it('多詞查詢：構詞不跨越詞邊界（前綴與詞幹之間不能是空白），也不因重新正規化而截掉空白', () => {
+    // 「mu daux」是兩個詞：不能分析成 mu- ＋ 詞幹 " daux"（交界在空白旁），也不能把「mu 」當成前綴。
+    // 改動前：計價時把 " daux" 重新正規化成 "daux"，得到錯誤的 0.3
+    const { got, want } = compare(fixed({ affixDistance: 0.2 }, new RuleSet(), collapse), ['daux'], 'mu daux')
+    expect(want.has('daux')).toBe(false)
+    expect(got.has('daux')).toBe(false)
+    // 同一個詞之內照常：mudaux → mu- ＋ daux
+    expect(compare(fixed({}, new RuleSet(), collapse), ['daux'], 'mudaux').got.get('daux')).toBeCloseTo(0.3, 9)
   })
 
-  it.fails('多詞查詢：詞綴不能包含空白', () => {
+  it('多詞查詢：詞幹本身可以含空白（複合詞），交界不在空白旁即可', () => {
+    const { got, want } = compare(fixed({}, new RuleSet(), collapse), ['kan dalum'], 'mukan dalum')
+    expect(want.get('kan dalum')).toBeCloseTo(0.3, 9)
+    expect(got.get('kan dalum')).toBeCloseTo(0.3, 9)
+  })
+
+  it('多詞查詢：詞綴不能包含空白', () => {
     // 查詢 "dauxan an"：唯一合法的分析是詞幹 "dauxan "（刪空白 0.1）＋ -an；"n an" 不能被當成一個後綴
     const { got, want } = compare(fixed({ suffixes: [{ form: 'an' }, { form: 'nan' }], affixDistance: 0.2 }, new RuleSet(), collapse), ['dauxa'], 'dauxan an')
     expect(got.get('dauxa') ?? Infinity).toBeCloseTo(want.get('dauxa') ?? Infinity, 9)
   })
 
-  it.fails('非 BMP 字元：計價以 code point 切片', () => {
+  it('非 BMP 字元：計價以 code point 切片', () => {
     const { got, want } = compare(fixed(), ['b𝔞d'], 'mub𝔞d')
     expect(want.get('b𝔞d')).toBeCloseTo(0.3, 9)
     expect(got.get('b𝔞d')).toBeCloseTo(0.3, 9)

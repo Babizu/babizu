@@ -80,6 +80,8 @@ export function createMorphSearch({ analyzer, metric, index }) {
     return idx
   }
   const prefixIndex = affixIndex(spec.prefixes)
+  /** 詞邊界字元（預設為空白）：詞綴、中綴、重疊部分都不能包含或跨越它（docs/bcdp.md 1.7） */
+  const isBoundary = (/** @type {string | undefined} */ ch) => ch !== undefined && metric.boundaries.has(ch)
   /**
    * 詞幹部分在 λ 以內最多能改變幾個字元的長度：一般的增刪每字元至少 min(插入, 刪除) 成本；
    * 個別字元的覆寫與方言規則（例如 au→o）可能更便宜，所以以「λ ÷ 最便宜的每字元代價」估計上限。
@@ -109,25 +111,32 @@ export function createMorphSearch({ analyzer, metric, index }) {
    * @returns {ChartEdge[]}
    */
   function scan(idx, chars, k, tag) {
-    // 查詢從 k 到詞尾的整段：詞尾規則只在真正的詞尾適用（詞綴 trie 很淺，多出來的欄位不影響剪枝）
-    const piece = chars.slice(k).join('')
-    const key = `${tag}${piece}`
+    // 查詢從 k 到詞尾的整段（已正規化的 code point 陣列，原樣使用、不再正規化）：
+    // 詞尾規則只在真正的詞尾或空白前適用（詞綴 trie 很淺，多出來的欄位不影響剪枝）。
+    const piece = chars.slice(k)
+    // 詞綴不跨越空白（docs/bcdp.md 1.7）：只收 q[k..k+l) 不含邊界字元的 l
+    let limit = piece.length
+    for (let l = 0; l < piece.length; l++) {
+      if (isBoundary(piece[l])) {
+        limit = l
+        break
+      }
+    }
+    const key = `${tag}${piece.join('')}`
     const cached = scanCache.get(key)
     if (cached) return cached.map((e) => ({ ...e, from: e.from + k, to: e.to + k }))
     /** @type {ChartEdge[]} */
     const edges = []
-    if (piece) {
-      idx.search(piece, {
-        maxDistance: spec.affixDistance,
-        onTerminal: (_term, row, payloads) => {
-          for (let l = 1; l < row.length; l++) {
-            if (row[l] > spec.affixDistance + EPSILON) continue
-            for (const affix of /** @type {AffixEntry[]} */ (payloads)) {
-              edges.push({ from: 0, to: l, affix, distance: roundCost(row[l]) })
-            }
+    if (limit > 0) {
+      const onTerminal = (/** @type {string} */ _term, /** @type {Float64Array} */ row, /** @type {unknown[]} */ payloads) => {
+        for (let l = 1; l <= limit; l++) {
+          if (row[l] > spec.affixDistance + EPSILON) continue
+          for (const affix of /** @type {AffixEntry[]} */ (payloads)) {
+            edges.push({ from: 0, to: l, affix, distance: roundCost(row[l]) })
           }
-        },
-      })
+        }
+      }
+      idx.searchChannels([{ query: piece, options: { maxDistance: spec.affixDistance, onTerminal } }])
     }
     if (scanCache.size > CACHE_LIMIT) scanCache.clear()
     scanCache.set(key, edges)
@@ -200,7 +209,14 @@ export function createMorphSearch({ analyzer, metric, index }) {
       }
       return { cost: out, slotAt }
     }
-    return { P: best(P), S: best(S), backP, backS, suffixEdges }
+    const bestP = best(P)
+    const bestS = best(S)
+    // 詞素交界不能在空白旁（docs/bcdp.md 1.7）：接前綴的詞幹不能以空白開頭，接後綴的詞幹不能以空白結尾。
+    // 詞綴本身已不含空白，所以只要遮掉「下一個字元是空白」的前綴鏈終點、「前一個字元是空白」的後綴鏈起點。
+    // 片語中每個詞的構詞，交給搜尋引擎的逐詞搜尋。
+    for (let i = 1; i < n; i++) if (isBoundary(chars[i])) bestP.cost[i] = Infinity
+    for (let k = 1; k < n; k++) if (isBoundary(chars[k - 1])) bestS.cost[k] = Infinity
+    return { P: bestP, S: bestS, backP, backS, suffixEdges }
   }
 
   /**
@@ -264,8 +280,8 @@ export function createMorphSearch({ analyzer, metric, index }) {
       const head = analyzer.onset(rest)
       const headLength = Array.from(head).length
 
-      // 中綴：詞幹首輔音之後、首元音之前
-      for (const x of spec.infixes) {
+      // 中綴：詞幹首輔音之後、首元音之前（首輔音不能含空白：構詞不跨越詞邊界）
+      for (const x of Array.from(head).some(isBoundary) ? [] : spec.infixes) {
         const xs = Array.from(x.form)
         const at = k + headLength
         if (chars.slice(at, at + xs.length).join('') !== x.form) continue
@@ -288,6 +304,7 @@ export function createMorphSearch({ analyzer, metric, index }) {
           const red = chars.slice(k, k + len).join('')
           const base = chars.slice(k + len)
           if (base.length < spec.minStem) break
+          if (isBoundary(chars[k + len - 1])) break // 重疊部分不跨越空白
           if (analyzer.reduplicant(r.pattern, base.join('')) !== red) continue
           const reduced = [...chars.slice(0, k), ...base]
           out.push(
@@ -410,7 +427,8 @@ export function createMorphSearch({ analyzer, metric, index }) {
       charts: c,
       variants: list,
       channels: list.map((v) => ({
-        query: v.text,
+        // 已正規化的 code point 陣列：FuzzyIndex 原樣使用，不再正規化
+        query: v.chars,
         options: { maxDistance: spec.lemmaDistance, start: zero(v.start), end: zero(v.end) },
       })),
     }
@@ -437,9 +455,8 @@ export function createMorphSearch({ analyzer, metric, index }) {
     const termChars = new Map()
     prepared.variants.forEach((v, vi) => {
       const m = v.chars.length
-      const text = v.text
       /**
-       * 查詢片段 text[i..k) 的編譯結果（成本表與規則表），依 i·(m+1)+k 索引。
+       * 查詢片段 v.chars[i..k) 的編譯結果（成本表與規則表），依 i·(m+1)+k 索引。
        * 同一個片段要和很多候選詞比較，編譯一次、共用給所有候選詞。
        * 這取代了最佳化前（commit e1557f4）每一組（片段, 詞）都呼叫 metric.distance 的做法：那會對片段與詞
        * 各做一次完整的正規化（含 Unicode 分解與正規表示式）並重新編譯查詢。
@@ -461,10 +478,11 @@ export function createMorphSearch({ analyzer, metric, index }) {
             if (!v.op && i === 0 && k === m) continue
             // 長度差太多的切法不可能在 λ 以內（每個字元的增刪至少要付 minLengthStepCost）
             if (Math.abs(k - i - termLength) > maxLengthChange) continue
-            // 與 metric.distance(text.slice(i, k), term) 逐位元相同：同樣先正規化再算 DP
+            // 詞幹片段直接以 code point 陣列切出（不再正規化：再正規化會截掉頭尾空白、
+            // UTF-16 切片會切壞非 BMP 字元，docs/bcdp.md 1.6）；片段當作一個完整的詞計算距離
             const key = i * (m + 1) + k
             let plan = plans.get(key)
-            if (plan === undefined) plans.set(key, (plan = metric.prepareQuery(metric.prepare(text.slice(i, k)))))
+            if (plan === undefined) plans.set(key, (plan = metric.prepareQuery(v.chars.slice(i, k))))
             let y = termChars.get(term)
             if (y === undefined) termChars.set(term, (y = metric.prepare(term)))
             const d = metric.distancePrepared(plan, y)
@@ -491,7 +509,7 @@ export function createMorphSearch({ analyzer, metric, index }) {
           term,
           payloads: r.payloads,
           distance: roundCost(bestTotal),
-          stemSurface: text.slice(bestI, bestK),
+          stemSurface: v.chars.slice(bestI, bestK).join(''),
           stemDistance: roundCost(bestStem),
           steps,
         }

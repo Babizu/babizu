@@ -128,6 +128,9 @@ export function refMorph(ctx, { query, lexicon, spec, maxDistance, reduplicant, 
   const P = prefixChart(q)
   /** S[k]：原查詢上由 k 開始的後綴鏈（至多 slots 個） */
   const S = Array.from({ length: n + 1 }, (_, k) => suffixChain(q, k, slots))
+  // 詞素交界不能在空白旁（bcdp.md 1.7）：接前綴的詞幹不以空白開頭、接後綴的詞幹不以空白結尾
+  for (let i = 1; i < n; i++) if (isB(q[i])) P[i] = Infinity
+  for (let k = 1; k < n; k++) if (isB(q[k - 1])) S[k] = Infinity
 
   // ── 沒有非串接步驟：詞幹是 q[i..k) ──
   for (let i = 0; i <= n; i++) {

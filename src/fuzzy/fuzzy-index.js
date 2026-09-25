@@ -298,7 +298,11 @@ export class FuzzyIndex {
    * 其他通道照常進行，所有通道都剪掉時才停止往下走。所以每個通道的結果與單獨搜尋完全相同，
    * 但詞圖的走訪、路徑維護、出邊檢查只做一次。通道最多 31 個（以位元遮罩記錄存活的通道）。
    *
-   * @param {Array<{query: string, options?: SearchOptions}>} channels
+   * 通道的 query 可以是字串（先經過 metric 的正規化），也可以是**已正規化的 code point 陣列**
+   * （原樣使用、不再正規化）。構詞搜尋用後者：它的查詢片段取自已正規化的查詢，
+   * 再正規化一次可能改變片段（例如截掉頭尾空白），位置就會錯開（docs/bcdp.md 1.6）。
+   *
+   * @param {Array<{query: string | string[], options?: SearchOptions}>} channels
    * @param {SearchStats} [stats] 累加統計（走訪節點數以實際走訪計，不按通道重複計算）
    * @returns {SearchResult[][]} 各通道的結果（未排序）
    */
@@ -344,7 +348,7 @@ export class FuzzyIndex {
     const useF = (/** @type {number} */ r) => matcher.boundary[r] === 1
 
     const channels = specs.map(({ query, options }) => {
-      const x = this.metric.prepare(query)
+      const x = Array.isArray(query) ? query : this.metric.prepare(query)
       const n = x.length
       const start = options.start ?? null
       const end = options.end ?? null
