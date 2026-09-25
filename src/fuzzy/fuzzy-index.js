@@ -38,10 +38,17 @@
  * `start`、`end` 兩個向量讓候選詞只對應查詢的一段：第 0 列取 start（詞幹可以從前綴鏈的
  * 任何終點開始），詞尾取 min_i F_j[i] + end[i]（詞幹可以在後綴鏈的任何起點結束）。
  * end ≥ 0，所以上面的下界照樣成立；普通搜尋就是 start = [0, ∞…]、end = [∞…, 0] 的特例。
+ *
+ * ## 實作上的最佳化（結果與最佳化前逐位元相同）
+ * - 詞圖的邊標籤預先轉成字元編號（`_edgeCodes`，每個索引、每組規則只算一次），
+ *   並預先標出哪些邊是邊界字元，走訪時不再做字串比較。
+ * - 路徑上的規則 target 匹配與跨列剪枝改由 `PathMatcher` 逐層維護（見 dp.js 檔頭第 3 點）。
+ *   它只依賴路徑、與通道無關，所以每個節點只算一次，所有通道共用。
+ * - 列的最小值由 `fillRow` 順便回傳。
  */
 
 import { Dawg } from './dawg.js'
-import { fillRow, prepareColumn, roundCost, EPSILON } from './dp.js'
+import { fillRow, jumpBound, PathMatcher, prepareColumn, roundCost, EPSILON } from './dp.js'
 import { resolveNormalization } from './normalization.js'
 
 /**
@@ -124,6 +131,8 @@ export class FuzzyIndex {
     this._payloads = built?.payloads ?? []
     /** @type {string[] | null} 詞表快取（需要逐詞比對時才展開） */
     this._terms = null
+    /** @type {{compiled: object, dawg: Dawg, codes: Int32Array, boundary: Uint8Array} | null} 邊標籤的字元編號（見 _edgeCodes） */
+    this._codes = null
   }
 
   /** 詞數 */
@@ -323,14 +332,16 @@ export class FuzzyIndex {
     if (specs.length === 0) return []
     if (specs.length > 31) throw new RangeError('一次最多 31 個通道')
     const { compiled, costs } = this.metric
-    const span = compiled.maxTargetLength
     const dawg = this.dawg
     const payloads = this._payloads
+    const { codes, boundary } = this._edgeCodes(compiled)
 
-    /** @type {string[]} 目前走訪路徑上的字元（所有通道共用） */
+    /** @type {string[]} 目前走訪路徑上的字元（所有通道共用；只在組出結果的詞時使用） */
     const path = []
+    /** 路徑上的字元編號、邊界旗標與規則 target 的 trie 狀態（所有通道共用） */
+    const matcher = new PathMatcher(compiled)
     /** 第 r 列（r < 目前深度）是否該用 F 列：看路徑上第 r 個字元是否為邊界 */
-    const useF = (/** @type {number} */ r) => compiled.isBoundary(path[r])
+    const useF = (/** @type {number} */ r) => matcher.boundary[r] === 1
 
     const channels = specs.map(({ query, options }) => {
       const x = this.metric.prepare(query)
@@ -358,7 +369,7 @@ export class FuzzyIndex {
         onNode: options.onNode,
         onTerminal: options.onTerminal,
         // 前綴鏈的終點也算詞首、後綴鏈的起點也算詞尾，詞首／詞尾規則才能套用在詞幹上
-        plan: compiled.compileQuery(x, {
+        plan: compiled.compileQuery(x, costs, {
           start,
           extraInitial: start ? Array.from(start, (c) => c < Infinity) : null,
           extraFinal: end ? Array.from(end, (c) => c < Infinity) : null,
@@ -390,7 +401,7 @@ export class FuzzyIndex {
       let hasBoundaryChild = false
       let hasOtherChild = false
       for (let e = firstEdge; e < endEdge; e++) {
-        if (compiled.isBoundary(dawg.label(e))) hasBoundaryChild = true
+        if (boundary[e] === 1) hasBoundaryChild = true
         else hasOtherChild = true
       }
 
@@ -399,23 +410,23 @@ export class FuzzyIndex {
         if ((alive & (1 << c)) === 0) continue
         const ch = channels[c]
         const { n, plan, rowsN, rowsF, minN, minF } = ch
-        const column = prepareColumn(plan, compiled, path, j, ch.rowAt)
+        const column = prepareColumn(plan, compiled, matcher, j, ch.rowAt)
 
-        // N_j：子節點不是邊界字元時使用
+        // N_j：子節點不是邊界字元時使用（fillRow 同時回傳這一列的最小值）
         const rowN = (rowsN[j] ??= new Float64Array(n + 1))
-        fillRow(plan, compiled, costs, column, false, rowN)
-        minN[j] = minOf(rowN)
+        minN[j] = fillRow(plan, compiled, column, false, rowN)
         stats.computedRows++
 
         // F_j：只有「本節點是詞尾」或「有邊界字元的子節點」時才會被用到
         let rowF = rowN
+        let rowFMin = minN[j]
         if (plan.hasFinal && (isTerminal || hasBoundaryChild)) {
           rowF = rowsF[j] && rowsF[j] !== rowN ? rowsF[j] : new Float64Array(n + 1)
-          fillRow(plan, compiled, costs, column, true, rowF)
+          rowFMin = fillRow(plan, compiled, column, true, rowF)
           stats.computedRows++
         }
         rowsF[j] = rowF
-        minF[j] = rowF === rowN ? minN[j] : minOf(rowF)
+        minF[j] = rowFMin
 
         // 此子樹允許的絕對距離上界
         let bound = ch.maxDistance
@@ -458,10 +469,8 @@ export class FuzzyIndex {
         let lowerBound = Infinity
         if (hasOtherChild) lowerBound = minN[j]
         if (hasBoundaryChild) lowerBound = Math.min(lowerBound, minF[j])
-        for (let r = Math.max(0, j - span + 1); r < j; r++) {
-          const jump = compiled.jumpWeights.get(/** @type {string} */ (column.suffix[j - r]))
-          if (jump !== undefined) lowerBound = Math.min(lowerBound, (useF(r) ? minF[r] : minN[r]) + jump)
-        }
+        // 跨列：第 r 列經由一條更長的規則跳過第 j 列（狀態由 PathMatcher 提供，見 dp.js）
+        lowerBound = Math.min(lowerBound, jumpBound(compiled, matcher, j, (r) => (useF(r) ? minF[r] : minN[r])))
         const pruned = endEdge > firstEdge && lowerBound > bound + EPSILON
 
         if (ch.onNode) {
@@ -486,6 +495,7 @@ export class FuzzyIndex {
       }
       for (let e = firstEdge; e < endEdge; e++) {
         path[j] = dawg.label(e)
+        matcher.set(j + 1, codes[e])
         visit(dawg.target(e), j + 1, base + dawg.wordsBefore(e), nextAlive)
       }
       path.length = j
@@ -493,6 +503,28 @@ export class FuzzyIndex {
 
     visit(dawg.root, 0, 0, (1 << channels.length) - 1)
     return channels.map((c) => c.results)
+  }
+
+  /**
+   * 詞圖每條邊的字元編號與邊界旗標。字元編號屬於某一組規則（CompiledRules），
+   * 所以快取時記下是哪一組；詞圖重建（freeze）或規則替換（setRules）後自動重算。
+   * @param {import('./dp.js').CompiledRules} compiled
+   * @returns {{codes: Int32Array, boundary: Uint8Array}}
+   * @private
+   */
+  _edgeCodes(compiled) {
+    const dawg = this.dawg
+    const cached = this._codes
+    if (cached && cached.compiled === compiled && cached.dawg === dawg) return cached
+    const edges = dawg.edgeLabels.length
+    const codes = new Int32Array(edges)
+    const boundary = new Uint8Array(edges)
+    for (let e = 0; e < edges; e++) {
+      codes[e] = compiled.idOf(dawg.label(e))
+      boundary[e] = compiled.isBoundaryId(codes[e]) ? 1 : 0
+    }
+    this._codes = { compiled, dawg, codes, boundary }
+    return this._codes
   }
 
   /**
@@ -522,9 +554,3 @@ export class FuzzyIndex {
   }
 }
 
-/** @param {Float64Array} row */
-function minOf(row) {
-  let m = Infinity
-  for (let i = 0; i < row.length; i++) if (row[i] < m) m = row[i]
-  return m
-}

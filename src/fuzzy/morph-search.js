@@ -429,11 +429,22 @@ export function createMorphSearch({ analyzer, metric, index }) {
     const lambda = spec.lemmaDistance
     /** @type {Map<string, MorphHit>} */
     const best = new Map()
+    /**
+     * 詞 → 正規化後的字元（同一個詞可能出現在好幾個變體的結果中，只正規化一次）。
+     * @type {Map<string, string[]>}
+     */
+    const termChars = new Map()
     prepared.variants.forEach((v, vi) => {
       const m = v.chars.length
       const text = v.text
-      /** @type {Map<string, number>} 子字串對詞的距離只算一次 */
-      const memo = new Map()
+      /**
+       * 查詢片段 text[i..k) 的編譯結果（成本表與規則表），依 i·(m+1)+k 索引。
+       * 同一個片段要和很多候選詞比較，編譯一次、共用給所有候選詞。
+       * 這取代了最佳化前（commit e1557f4）每一組（片段, 詞）都呼叫 metric.distance 的做法：那會對片段與詞
+       * 各做一次完整的正規化（含 Unicode 分解與正規表示式）並重新編譯查詢。
+       * @type {Map<number, import('./dp.js').QueryPlan>}
+       */
+      const plans = new Map()
       for (const r of resultsPerChannel[vi] ?? []) {
         const term = r.term
         const termLength = Array.from(term).length
@@ -449,9 +460,13 @@ export function createMorphSearch({ analyzer, metric, index }) {
             if (!v.op && i === 0 && k === m) continue
             // 長度差太多的切法不可能在 λ 以內（每個字元的增刪至少要付 minLengthStepCost）
             if (Math.abs(k - i - termLength) > maxLengthChange) continue
-            const key = `${i}:${k}:${term}`
-            let d = memo.get(key)
-            if (d === undefined) memo.set(key, (d = metric.distance(text.slice(i, k), term)))
+            // 與 metric.distance(text.slice(i, k), term) 逐位元相同：同樣先正規化再算 DP
+            const key = i * (m + 1) + k
+            let plan = plans.get(key)
+            if (plan === undefined) plans.set(key, (plan = metric.prepareQuery(metric.prepare(text.slice(i, k)))))
+            let y = termChars.get(term)
+            if (y === undefined) termChars.set(term, (y = metric.prepare(term)))
+            const d = metric.distancePrepared(plan, y)
             if (d > lambda + EPSILON) continue
             const total = v.start[i] + d + v.end[k]
             // 同分時取詞幹較短的切法（詞綴說明較完整）

@@ -3,7 +3,7 @@
  */
 
 import { CostModel } from './costs.js'
-import { CompiledRules, fillRow, prepareColumn, roundCost, EPSILON } from './dp.js'
+import { CompiledRules, fillRow, PathMatcher, prepareColumn, roundCost, EPSILON } from './dp.js'
 import { createNormalizer } from './normalize.js'
 import { resolveNormalization } from './normalization.js'
 import { RuleSet } from './rules.js'
@@ -86,6 +86,10 @@ export class WeightedEditDistance {
     this.ruleSet =
       rules instanceof RuleSet ? rules : RuleSet.fromTable(/** @type {any} */ (rules ?? []))
     this.compiled = new CompiledRules(this.ruleSet.expand(this.normalize), this.boundaries)
+    /** @type {PathMatcher | null} `_rows` 重複使用的路徑匹配器（屬於目前這組規則） */
+    this._matcher = null
+    /** `_rows` 的巢狀深度：追蹤回呼中又呼叫距離函式時，內層另外配置匹配器 */
+    this._rowsDepth = 0
     return this
   }
 
@@ -111,6 +115,29 @@ export class WeightedEditDistance {
     const y = this.prepare(candidate)
     const rows = this._matrix(x, y, null)
     return roundCost(rows[y.length][x.length])
+  }
+
+  /**
+   * 預先編譯查詢：同一個查詢要和很多候選字串比較時（例如構詞搜尋的計價），
+   * 只算一次成本表與規則表，之後以 `distancePrepared` 逐一計算。
+   * 與 `distance` 不同，這裡不做正規化：x 與 y 必須已經是 `prepare()` 的結果。
+   * @param {string[]} x 已正規化的查詢字元
+   * @returns {import('./dp.js').QueryPlan}
+   */
+  prepareQuery(x) {
+    return this.compiled.compileQuery(x, this.costs)
+  }
+
+  /**
+   * 以預先編譯的查詢計算距離。`distancePrepared(prepareQuery(prepare(q)), prepare(c))`
+   * 與 `distance(q, c)` 逐位元相同。
+   * @param {import('./dp.js').QueryPlan} plan `prepareQuery` 的結果（須在同一組規則與成本下編譯）
+   * @param {string[]} y 已正規化的候選字元
+   * @returns {number}
+   */
+  distancePrepared(plan, y) {
+    const rows = this._rows(plan, y, null)
+    return roundCost(rows[y.length][plan.n])
   }
 
   /**
@@ -222,17 +249,39 @@ export class WeightedEditDistance {
    * @private
    */
   _matrix(x, y, trace) {
-    const plan = this.compiled.compileQuery(x)
-    /** @type {Float64Array[]} */
-    const rows = []
-    const rowAt = (/** @type {number} */ r) => rows[r]
-    for (let j = 0; j <= y.length; j++) {
-      const row = new Float64Array(x.length + 1)
-      const column = prepareColumn(plan, this.compiled, y, j, rowAt)
-      fillRow(plan, this.compiled, this.costs, column, this._isWordEnd(y, j), row, trace)
-      rows.push(row)
+    return this._rows(this.compiled.compileQuery(x, this.costs), y, trace)
+  }
+
+  /**
+   * 以已編譯的查詢逐列計算整張表。候選字串 Y 的字元逐一送進路徑匹配器
+   * （與詞圖搜尋相同的程式路徑，只是路徑只有一條）。
+   * @param {import('./dp.js').QueryPlan} plan
+   * @param {string[]} y
+   * @param {((t: import('./dp.js').Transition) => void) | null} trace
+   * @returns {Float64Array[]}
+   * @private
+   */
+  _rows(plan, y, trace) {
+    const compiled = this.compiled
+    const reuse = this._rowsDepth === 0 && this._matcher?.compiled === compiled
+    const matcher = reuse ? /** @type {PathMatcher} */ (this._matcher) : new PathMatcher(compiled)
+    if (this._rowsDepth === 0) this._matcher = matcher
+    this._rowsDepth++
+    try {
+      /** @type {Float64Array[]} */
+      const rows = []
+      const rowAt = (/** @type {number} */ r) => rows[r]
+      for (let j = 0; j <= y.length; j++) {
+        if (j > 0) matcher.set(j, compiled.idOf(y[j - 1]))
+        const row = new Float64Array(plan.n + 1)
+        const column = prepareColumn(plan, compiled, matcher, j, rowAt)
+        fillRow(plan, compiled, column, this._isWordEnd(y, j), row, trace)
+        rows.push(row)
+      }
+      return rows
+    } finally {
+      this._rowsDepth--
     }
-    return rows
   }
 
   /**
