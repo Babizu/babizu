@@ -50,10 +50,32 @@ describe('analyze：去詞綴', () => {
     expect(stems('bitudén')).not.toContain('bitut')
   })
 
-  it('詞幹最短長度與層數上限', () => {
+  it('詞幹最短長度與步數預算（與 BCDP 相同，docs/bcdp.md 1.7）', () => {
     expect(stems('muan')).toEqual([]) // 剝掉後只剩 2 個字元
     const deep = analyzer.analyze('mupakabinaketan')
-    expect(deep.every((a) => a.steps.length <= 3)).toBe(true)
+    const count = (/** @type {any} */ a, /** @type {string[]} */ types) => a.steps.filter((/** @type {any} */ s) => types.includes(s.type)).length
+    for (const a of deep) {
+      expect(count(a, ['prefix'])).toBeLessThanOrEqual(3) // 前綴至多 maxSteps 個
+      expect(count(a, ['suffix'])).toBeLessThanOrEqual(count(a, ['alternation']) ? 4 : 3) // 交替時可以多一個
+      expect(count(a, ['infix', 'reduplication', 'alternation'])).toBeLessThanOrEqual(1) // 非串接步驟至多一個
+    }
+    // 三個前綴＋中綴＋後綴，共五步：前後綴各自計數，所以找得到
+    expect(deep.find((a) => a.stem === 'baket')?.steps.map((s) => s.type)).toEqual(['prefix', 'prefix', 'prefix', 'suffix', 'infix'])
+  })
+
+  it('非串接步驟之後，同一端不能再剝詞綴（步驟由外而內）', () => {
+    // 交替緊接最內層的後綴：bitudunan ＝ bitut ＋ -un（交替 t>d）＋ -an
+    expect(analyzer.analyze('bitudunan').find((x) => x.stem === 'bitut')?.steps.map((s) => s.type)).toEqual(['suffix', 'suffix', 'alternation'])
+    // 不變量：交替之後不再有後綴；中綴、重疊之後不再有前綴
+    for (const w of ['bitudunan', 'kinapatan', 'mupakakawasan', 'mubinaketan', 'papaketen', 'tatudan']) {
+      for (const a of analyzer.analyze(w)) {
+        const types = a.steps.map((s) => s.type)
+        const alt = types.indexOf('alternation')
+        if (alt >= 0) expect(types.slice(alt + 1), `${w} → ${a.stem}`).not.toContain('suffix')
+        const op = types.findIndex((t) => t === 'infix' || t === 'reduplication')
+        if (op >= 0) expect(types.slice(op + 1), `${w} → ${a.stem}`).not.toContain('prefix')
+      }
+    }
   })
 
   it('同一個詞幹只保留成本最低的分析，依成本排序', () => {

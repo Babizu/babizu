@@ -55,7 +55,7 @@
  * @typedef {object} MorphologySpec 語言設定檔的 `morphology` 區段
  * @property {number} [cost=0.3] 每個構詞步驟的預設成本
  * @property {number} [minStem=3] 詞幹最短長度（code point）
- * @property {number} [maxSteps=3] 最多剝除幾層（交替不計）
+ * @property {number} [maxSteps=3] 前綴、後綴各自最多幾個（另加至多一個中綴、重疊或詞幹交替；見 docs/bcdp.md 1.7）
  * @property {number} [lemmaDistance=0.3] 構詞命中時，詞幹部分允許的加權編輯距離（音變預算）。
  *   0 表示詞幹必須正好是詞庫中的詞；0.1–0.3 讓「另一個方言的衍生詞 → 這個方言的詞根」也找得到
  * @property {number} [affixDistance=0.2] 每個詞綴允許的加權編輯距離（詞綴本身的方言差異，例如 mine-／minu-）
@@ -261,44 +261,59 @@ export function createAnalyzer(spec, normalize = (s) => s) {
     /** @type {Map<string, Analysis>} */
     const best = new Map()
     /**
+     * 步數預算與 BCDP 相同（docs/bcdp.md 1.2、1.7）：
+     * - 前綴、後綴各自至多 maxSteps 個；另加至多一個非串接步驟（中綴、重疊或詞幹交替）
+     * - 中綴與重疊位在「前綴鏈之內」的詞幹開頭：做了之後不能再剝前綴
+     * - 詞幹交替位在詞幹結尾、緊接最內層的後綴：做了之後不能再剝後綴；
+     *   與它一起剝掉的那個後綴可以是第 maxSteps ＋ 1 個
      * @param {string} w 目前剩下的詞形
      * @param {MorphStep[]} steps
      * @param {number} total
-     * @param {number} depth 已剝除的層數
+     * @param {number} pre 已剝的前綴數
+     * @param {number} suf 已剝的後綴數
+     * @param {boolean} op 已用掉非串接步驟
+     * @param {boolean} preClosed 前綴端已封閉（做過中綴或重疊）
+     * @param {boolean} sufClosed 後綴端已封閉（做過詞幹交替）
      */
-    const visit = (w, steps, total, depth) => {
+    const visit = (w, steps, total, pre, suf, op, preClosed, sufClosed) => {
       if (steps.length > 0) {
         const prev = best.get(w)
         if (!prev || total < prev.cost) best.set(w, { stem: w, steps, cost: round(total) })
       }
-      if (depth >= maxSteps || best.size >= MAX_ANALYSES) return
+      if (best.size >= MAX_ANALYSES) return
       const n = len(w)
 
-      for (const p of prefixes) {
-        if (w.startsWith(p.form) && n - len(p.form) >= minStem) {
-          visit(w.slice(p.form.length), [...steps, step('prefix', p.form, p.gloss, p.cost)], total + p.cost, depth + 1)
+      if (!preClosed && pre < maxSteps) {
+        for (const p of prefixes) {
+          if (w.startsWith(p.form) && n - len(p.form) >= minStem) {
+            visit(w.slice(p.form.length), [...steps, step('prefix', p.form, p.gloss, p.cost)], total + p.cost, pre + 1, suf, op, preClosed, sufClosed)
+          }
         }
       }
-      for (const s of suffixes) {
-        if (!w.endsWith(s.form) || n - len(s.form) < minStem) continue
-        const rest = w.slice(0, w.length - s.form.length)
-        const next = [...steps, step('suffix', s.form, s.gloss, s.cost)]
-        visit(rest, next, total + s.cost, depth + 1)
-        // 詞幹交替只在剛剝掉的後綴前面發生
-        for (const a of alternations) {
-          if ((a.before && !a.before.has(s.form)) || !rest.endsWith(a.surface)) continue
-          const restored = rest.slice(0, rest.length - a.surface.length) + a.underlying
-          if (len(restored) < minStem) continue
-          visit(restored, [...next, step('alternation', `${a.underlying}>${a.surface}`, null, a.cost)], total + s.cost + a.cost, depth + 1)
+      if (!sufClosed) {
+        for (const s of suffixes) {
+          if (!w.endsWith(s.form) || n - len(s.form) < minStem) continue
+          const rest = w.slice(0, w.length - s.form.length)
+          const next = [...steps, step('suffix', s.form, s.gloss, s.cost)]
+          if (suf < maxSteps) visit(rest, next, total + s.cost, pre, suf + 1, op, preClosed, sufClosed)
+          // 詞幹交替只在剛剝掉的後綴前面發生（這個後綴可以是第 maxSteps ＋ 1 個）
+          if (op || suf > maxSteps) continue
+          for (const a of alternations) {
+            if ((a.before && !a.before.has(s.form)) || !rest.endsWith(a.surface)) continue
+            const restored = rest.slice(0, rest.length - a.surface.length) + a.underlying
+            if (len(restored) < minStem) continue
+            visit(restored, [...next, step('alternation', `${a.underlying}>${a.surface}`, null, a.cost)], total + s.cost + a.cost, pre, suf + 1, true, preClosed, true)
+          }
         }
       }
+      if (op) return
       const head = onset(w)
       for (const x of infixes) {
         // 中綴位於首輔音（群）之後；拿掉之後，詞幹首輔音後面必須接元音，還原時位置才會一致
         if (!w.startsWith(x.form, head.length) || n - len(x.form) < minStem) continue
         const rest = head + w.slice(head.length + x.form.length)
         if (onset(rest) !== head) continue
-        visit(rest, [...steps, step('infix', x.form, x.gloss, x.cost)], total + x.cost, depth + 1)
+        visit(rest, [...steps, step('infix', x.form, x.gloss, x.cost)], total + x.cost, pre, suf, true, true, sufClosed)
       }
       const chars = reduplication.length ? Array.from(w) : []
       for (const r of reduplication) {
@@ -307,11 +322,11 @@ export function createAnalyzer(spec, normalize = (s) => s) {
           const red = chars.slice(0, k).join('')
           const base = chars.slice(k).join('')
           if (reduplicant(r.pattern, base) !== red) continue
-          visit(base, [...steps, { type: 'reduplication', form: red, pattern: r.pattern, gloss: r.gloss, cost: r.cost }], total + r.cost, depth + 1)
+          visit(base, [...steps, { type: 'reduplication', form: red, pattern: r.pattern, gloss: r.gloss, cost: r.cost }], total + r.cost, pre, suf, true, true, sufClosed)
         }
       }
     }
-    visit(word, [], 0, 0)
+    visit(word, [], 0, 0, 0, false, false, false)
     return [...best.values()].sort((a, b) => a.cost - b.cost || (a.stem < b.stem ? -1 : a.stem > b.stem ? 1 : 0))
   }
 
