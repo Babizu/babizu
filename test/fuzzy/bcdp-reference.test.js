@@ -119,8 +119,8 @@ describe('參考實作：BCDP 分段模型', () => {
       for (let k = 0; k < 6; k++) {
         const query = derive(random, setup)
         const prepared = search.prepare(query)
-        // 還原變體達到上限（16）時可能被截斷；那是另一個測試（下方 it.fails）的範圍
-        if (prepared && prepared.variants.length >= 16) continue
+        // 還原變體超過上限時會被截斷（prepared.truncated），那時不保證與窮舉相同
+        if (prepared?.truncated) continue
         const maxDistance = pick(random, [0.8, 1, 1.2])
         const got = new Map(search.search(query, { maxDistance }).map((h) => [h.term, h.distance]))
         /** @type {Map<string, string>} */
@@ -209,7 +209,7 @@ describe('已知與定義不一致的地方（docs/bcdp.md 1.6；修正後改回
     expect(suffix?.form).toBe('an')
   })
 
-  it.fails('還原變體超過 16 個時不截斷', () => {
+  it('還原變體超過 16 個時不截斷（上限 64）', () => {
     // 20 種交替（底層字元不同、表面都是 d）：第 20 種才能還原出 baz
     const letters = ['b', 'c', 'f', 'g', 'h', 'j', 'k', 'l', 'm', 'p', 'q', 'r', 's', 'v', 'w', 'x', 'y', 'o', 'e', 'z']
     const setup = fixed({ alternations: letters.map((u) => ({ underlying: u, surface: 'd' })) })
@@ -258,7 +258,7 @@ describe('多通道走訪（searchChannels）', () => {
     for (let seed = 1; seed <= 20; seed++) channelCase(seed * 31, 2 + (seed % 9))
   })
 
-  it.fails('超過 31 個通道也能一起走訪', () => {
+  it('超過 31 個通道也能一起走訪', () => {
     channelCase(4242, 40)
   })
 })

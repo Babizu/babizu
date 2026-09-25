@@ -62,8 +62,12 @@ import { FuzzyIndex } from './fuzzy-index.js'
 /** 詞綴圖表的快取上限（同一個網頁工作階段中重複查詢時省下重算） */
 const CACHE_LIMIT = 2000
 
-/** 還原變體（含原查詢）的上限：多通道搜尋最多 31 個通道，另一個留給普通模糊搜尋 */
-const MAX_VARIANTS = 16
+/**
+ * 還原變體（含原查詢）的上限。多通道走訪沒有通道數的限制，這只是防止病態輸入（很長的查詢、
+ * 很多交替規則）讓一次查詢展開成上百個通道；超過時 prepare 的結果標記 truncated。
+ * 變體的產生順序固定（原查詢、各前綴鏈終點的中綴與重疊、詞幹交替），截斷時保留前面的。
+ */
+const MAX_VARIANTS = 64
 
 /**
  * 建立構詞搜尋器。
@@ -391,7 +395,8 @@ export function createMorphSearch({ analyzer, metric, index }) {
    * @property {string[]} chars
    * @property {ReturnType<typeof charts>} charts
    * @property {Array<ReturnType<typeof variants>[number] & {text: string, starts: number[], ends: number[]}>} variants
-   * @property {Array<{query: string, options: import('./fuzzy-index.js').SearchOptions}>} channels 每個變體一個搜尋通道
+   * @property {Array<{query: string[], options: import('./fuzzy-index.js').SearchOptions}>} channels 每個變體一個搜尋通道
+   * @property {boolean} truncated 還原變體超過 MAX_VARIANTS 而被截斷
    */
 
   /**
@@ -412,6 +417,7 @@ export function createMorphSearch({ analyzer, metric, index }) {
     const zero = (/** @type {Float64Array} */ vec) => Float64Array.from(vec, (x) => (x < Infinity ? 0 : Infinity))
     /** @type {Prepared['variants']} */
     const list = []
+    let truncated = false
     for (const v of variants(chars, c)) {
       const starts = []
       const ends = []
@@ -420,14 +426,18 @@ export function createMorphSearch({ analyzer, metric, index }) {
         if (v.end[i] < Infinity) ends.push(i)
       }
       if (starts.length === 0 || ends.length === 0) continue
+      if (list.length >= MAX_VARIANTS) {
+        truncated = true
+        break
+      }
       list.push({ ...v, text: v.chars.join(''), starts, ends })
-      if (list.length >= MAX_VARIANTS) break
     }
     return {
       query,
       chars,
       charts: c,
       variants: list,
+      truncated,
       channels: list.map((v) => ({
         // 已正規化的 code point 陣列：FuzzyIndex 原樣使用，不再正規化
         query: v.chars,

@@ -296,7 +296,7 @@ export class FuzzyIndex {
    *
    * 每個通道有自己的 DP 列、上限與剪枝；某個通道在一個節點被剪掉，只是它不再往下算，
    * 其他通道照常進行，所有通道都剪掉時才停止往下走。所以每個通道的結果與單獨搜尋完全相同，
-   * 但詞圖的走訪、路徑維護、出邊檢查只做一次。通道最多 31 個（以位元遮罩記錄存活的通道）。
+   * 但詞圖的走訪、路徑維護、出邊檢查只做一次。通道數沒有上限（每一層記一份存活通道的清單）。
    *
    * 通道的 query 可以是字串（先經過 metric 的正規化），也可以是**已正規化的 code point 陣列**
    * （原樣使用、不再正規化）。構詞搜尋用後者：它的查詢片段取自已正規化的查詢，
@@ -334,7 +334,6 @@ export class FuzzyIndex {
    */
   _searchChannels(specs, stats) {
     if (specs.length === 0) return []
-    if (specs.length > 31) throw new RangeError('一次最多 31 個通道')
     const { compiled, costs } = this.metric
     const dawg = this.dawg
     const payloads = this._payloads
@@ -391,12 +390,22 @@ export class FuzzyIndex {
     })
 
     /**
+     * 存活的通道：第 j 層的節點只計算 alive[j] 的前 aliveCount[j] 個通道（依通道編號遞增）。
+     * 父節點算出下一層的清單後，所有子節點共用；前一個兄弟的子樹走完才會被覆寫，與 DP 的列相同，
+     * 所以每層只需一份。以清單取代位元遮罩，通道數不再受 31 個的限制。
+     * @type {Int32Array[]}
+     */
+    const alive = []
+    /** @type {number[]} */
+    const aliveCount = []
+    const aliveAt = (/** @type {number} */ j) => (alive[j] ??= new Int32Array(channels.length))
+
+    /**
      * @param {number} node 詞圖節點編號
      * @param {number} j 深度
      * @param {number} base 這個節點的子樹中，第一個詞的字典序名次
-     * @param {number} alive 仍在計算的通道（位元遮罩）
      */
-    const visit = (node, j, base, alive) => {
+    const visit = (node, j, base) => {
       stats.visitedNodes++
       const isTerminal = dawg.isFinal(node)
       const firstEdge = dawg.firstEdge(node)
@@ -409,9 +418,11 @@ export class FuzzyIndex {
         else hasOtherChild = true
       }
 
-      let nextAlive = 0
-      for (let c = 0; c < channels.length; c++) {
-        if ((alive & (1 << c)) === 0) continue
+      const current = alive[j]
+      const next = aliveAt(j + 1)
+      let nextCount = 0
+      for (let a = 0; a < aliveCount[j]; a++) {
+        const c = current[a]
         const ch = channels[c]
         const { n, plan, rowsN, rowsF, minN, minF } = ch
         const column = prepareColumn(plan, compiled, matcher, j, ch.rowAt)
@@ -490,22 +501,26 @@ export class FuzzyIndex {
             accepted,
           })
         }
-        if (!pruned) nextAlive |= 1 << c
+        if (!pruned) next[nextCount++] = c
       }
 
-      if (nextAlive === 0) {
+      if (nextCount === 0) {
         if (endEdge > firstEdge) stats.prunedNodes++
         return
       }
+      aliveCount[j + 1] = nextCount
       for (let e = firstEdge; e < endEdge; e++) {
         path[j] = dawg.label(e)
         matcher.set(j + 1, codes[e])
-        visit(dawg.target(e), j + 1, base + dawg.wordsBefore(e), nextAlive)
+        visit(dawg.target(e), j + 1, base + dawg.wordsBefore(e))
       }
       path.length = j
     }
 
-    visit(dawg.root, 0, 0, (1 << channels.length) - 1)
+    const root = aliveAt(0)
+    for (let c = 0; c < channels.length; c++) root[c] = c
+    aliveCount[0] = channels.length
+    visit(dawg.root, 0, 0)
     return channels.map((c) => c.results)
   }
 
