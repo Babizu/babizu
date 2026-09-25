@@ -97,8 +97,23 @@ const DEFAULTS = Object.freeze({
 /** 同一個詞最多回傳幾個分析，避免規格過寬時列舉爆量 */
 const MAX_ANALYSES = 64
 
+/** 規格頂層允許的欄位（拼錯的欄位會被默默忽略，所以列為錯誤） */
+const SPEC_KEYS = new Set(['cost', 'minStem', 'maxSteps', 'lemmaDistance', 'affixDistance', 'lemmaSpread', 'vowels', 'prefixes', 'suffixes', 'infixes', 'reduplication', 'alternations'])
+/** 各種項目允許的欄位；ref（出處）與 note（說明）供語言設定檔記錄依據，搜尋不使用 */
+const ENTRY_KEYS = {
+  affix: new Set(['form', 'gloss', 'cost', 'ref', 'note']),
+  reduplication: new Set(['pattern', 'gloss', 'cost', 'ref', 'note']),
+  alternation: new Set(['underlying', 'surface', 'before', 'cost', 'ref', 'note']),
+}
+/** maxSteps 的上限：前綴、後綴各自最多這麼多層（圖表以 Int8Array 記槽位，也避免指數級的列舉） */
+const MAX_STEPS_LIMIT = 10
+const hasSpace = (/** @type {string} */ s) => /\s/u.test(s)
+
 /**
- * 檢查規格的結構，回傳錯誤訊息清單。
+ * 檢查規格的結構，回傳錯誤訊息清單（空陣列表示沒有錯誤）。
+ *
+ * 除了型別與範圍，也檢查「會讓搜尋默默出錯」的情況：拼錯的欄位、詞綴含空白
+ * （詞綴不跨越詞邊界，見 docs/bcdp.md 1.7）、非有限的成本。
  * @param {unknown} spec
  * @returns {string[]}
  */
@@ -107,10 +122,22 @@ export function validateMorphology(spec) {
   if (!spec || typeof spec !== 'object' || Array.isArray(spec)) return ['morphology 必須是物件']
   const s = /** @type {Record<string, any>} */ (spec)
   const errors = []
-  for (const key of ['cost', 'minStem', 'maxSteps', 'lemmaDistance', 'affixDistance', 'lemmaSpread']) {
-    if (s[key] !== undefined && !(typeof s[key] === 'number' && s[key] >= 0)) errors.push(`morphology.${key} 必須是非負數`)
+  const isCost = (/** @type {unknown} */ v) => typeof v === 'number' && Number.isFinite(v) && v >= 0
+  const unknownKeys = (/** @type {any} */ entry, /** @type {Set<string>} */ allowed, /** @type {string} */ path) => {
+    if (!entry || typeof entry !== 'object') return
+    for (const key of Object.keys(entry)) if (!allowed.has(key)) errors.push(`${path}.${key} 是未知的欄位`)
   }
-  if (s.vowels !== undefined && (typeof s.vowels !== 'string' || !s.vowels)) errors.push('morphology.vowels 必須是非空字串')
+
+  for (const key of Object.keys(s)) if (!SPEC_KEYS.has(key)) errors.push(`morphology.${key} 是未知的欄位`)
+  for (const key of ['cost', 'lemmaDistance', 'affixDistance', 'lemmaSpread']) {
+    if (s[key] !== undefined && !isCost(s[key])) errors.push(`morphology.${key} 必須是非負的有限數`)
+  }
+  if (s.minStem !== undefined && !(Number.isInteger(s.minStem) && s.minStem >= 1)) errors.push('morphology.minStem 必須是 ≥ 1 的整數')
+  if (s.maxSteps !== undefined && !(Number.isInteger(s.maxSteps) && s.maxSteps >= 0 && s.maxSteps <= MAX_STEPS_LIMIT)) {
+    errors.push(`morphology.maxSteps 必須是 0–${MAX_STEPS_LIMIT} 的整數`)
+  }
+  if (s.vowels !== undefined && (typeof s.vowels !== 'string' || !s.vowels || hasSpace(s.vowels))) errors.push('morphology.vowels 必須是不含空白的非空字串')
+
   for (const key of ['prefixes', 'suffixes', 'infixes']) {
     if (s[key] === undefined) continue
     if (!Array.isArray(s[key])) {
@@ -118,25 +145,38 @@ export function validateMorphology(spec) {
       continue
     }
     s[key].forEach((/** @type {any} */ a, /** @type {number} */ i) => {
-      if (!a || typeof a.form !== 'string' || !a.form) errors.push(`morphology.${key}[${i}].form 必須是非空字串`)
-      if (a?.cost !== undefined && !(typeof a.cost === 'number' && a.cost >= 0)) errors.push(`morphology.${key}[${i}].cost 必須是非負數`)
+      const path = `morphology.${key}[${i}]`
+      if (!a || typeof a.form !== 'string' || !a.form) errors.push(`${path}.form 必須是非空字串`)
+      else if (hasSpace(a.form)) errors.push(`${path}.form 不能含空白（詞綴不跨越詞邊界）`)
+      if (a?.cost !== undefined && !isCost(a.cost)) errors.push(`${path}.cost 必須是非負的有限數`)
+      unknownKeys(a, ENTRY_KEYS.affix, path)
     })
   }
   if (s.reduplication !== undefined) {
     if (!Array.isArray(s.reduplication)) errors.push('morphology.reduplication 必須是陣列')
     else
       s.reduplication.forEach((/** @type {any} */ r, /** @type {number} */ i) => {
-        if (!['Ca', 'CV', 'full'].includes(r?.pattern)) errors.push(`morphology.reduplication[${i}].pattern 必須是 Ca、CV 或 full`)
+        const path = `morphology.reduplication[${i}]`
+        if (!['Ca', 'CV', 'full'].includes(r?.pattern)) errors.push(`${path}.pattern 必須是 Ca、CV 或 full`)
+        if (r?.cost !== undefined && !isCost(r.cost)) errors.push(`${path}.cost 必須是非負的有限數`)
+        unknownKeys(r, ENTRY_KEYS.reduplication, path)
       })
   }
   if (s.alternations !== undefined) {
     if (!Array.isArray(s.alternations)) errors.push('morphology.alternations 必須是陣列')
     else
       s.alternations.forEach((/** @type {any} */ a, /** @type {number} */ i) => {
+        const path = `morphology.alternations[${i}]`
         if (typeof a?.underlying !== 'string' || typeof a?.surface !== 'string' || !a.underlying || !a.surface) {
-          errors.push(`morphology.alternations[${i}] 需要非空的 underlying 與 surface`)
+          errors.push(`${path} 需要非空的 underlying 與 surface`)
+        } else if (hasSpace(a.underlying) || hasSpace(a.surface)) {
+          errors.push(`${path} 的 underlying、surface 不能含空白`)
         }
-        if (a?.before !== undefined && !Array.isArray(a.before)) errors.push(`morphology.alternations[${i}].before 必須是陣列`)
+        if (a?.before !== undefined && !(Array.isArray(a.before) && a.before.every((/** @type {unknown} */ b) => typeof b === 'string' && b !== '' && !hasSpace(b)))) {
+          errors.push(`${path}.before 必須是非空、不含空白的後綴字串陣列`)
+        }
+        if (a?.cost !== undefined && !isCost(a.cost)) errors.push(`${path}.cost 必須是非負的有限數`)
+        unknownKeys(a, ENTRY_KEYS.alternation, path)
       })
   }
   return errors

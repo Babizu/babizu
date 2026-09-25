@@ -117,6 +117,39 @@ describe('規格檢查', () => {
     expect(() => createAnalyzer(/** @type {any} */ ({ cost: -1 }))).toThrow(/cost/)
   })
 
+  // 驗證器先於一切：每一條非法輸入都必須被拒絕，而且訊息要指出是哪個欄位（preparing-tests：
+  // 「沒觸發過的錯誤路徑，就等於沒處理」）。合法的邊界值則必須通過。
+  it.each(/** @type {Array<[string, any, RegExp]>} */ ([
+    ['成本為 Infinity', { cost: Infinity }, /morphology\.cost/],
+    ['成本為 NaN', { lemmaDistance: NaN }, /morphology\.lemmaDistance/],
+    ['minStem 不是整數', { minStem: 2.5 }, /morphology\.minStem.*整數/],
+    ['minStem 為 0', { minStem: 0 }, /morphology\.minStem/],
+    ['maxSteps 不是整數', { maxSteps: 1.5 }, /morphology\.maxSteps.*整數/],
+    ['maxSteps 過大', { maxSteps: 50 }, /morphology\.maxSteps/],
+    ['未知的欄位（拼錯）', { suffix: [{ form: 'an' }] }, /morphology\.suffix.*未知/],
+    ['詞綴含空白', { prefixes: [{ form: 'mu ' }] }, /morphology\.prefixes\[0\]\.form.*空白/],
+    ['詞綴的未知欄位', { suffixes: [{ form: 'an', costs: 0.2 }] }, /morphology\.suffixes\[0\]\.costs.*未知/],
+    ['重疊的成本為負', { reduplication: [{ pattern: 'Ca', cost: -0.1 }] }, /morphology\.reduplication\[0\]\.cost/],
+    ['交替的成本為負', { alternations: [{ underlying: 't', surface: 'd', cost: -1 }] }, /morphology\.alternations\[0\]\.cost/],
+    ['交替的 before 含空字串', { alternations: [{ underlying: 't', surface: 'd', before: [''] }] }, /morphology\.alternations\[0\]\.before/],
+    ['交替含空白', { alternations: [{ underlying: 't ', surface: 'd' }] }, /morphology\.alternations\[0\].*空白/],
+    ['元音含空白', { vowels: 'a e' }, /morphology\.vowels/],
+  ]))('拒絕非法輸入：%s', (_name, spec, message) => {
+    const errors = validateMorphology(spec)
+    expect(errors.some((e) => message.test(e)), errors.join('；')).toBe(true)
+  })
+
+  it('合法的邊界值通過', () => {
+    expect(validateMorphology({ cost: 0, minStem: 1, maxSteps: 0, lemmaDistance: 0, affixDistance: 0, lemmaSpread: 0 })).toEqual([])
+    expect(
+      validateMorphology({
+        prefixes: [{ form: 'mu', gloss: { zh: '主事焦點' }, cost: 0.2, ref: 'Lim & Zeitoun 2024 §51.2.4', note: '異體見 me-、mi-、m-' }],
+        alternations: [{ underlying: 'p', surface: 'b', before: ['i'], cost: 0.05, ref: '詞典 p.19' }],
+        reduplication: [{ pattern: 'Ca', cost: 0.3, gloss: null }],
+      }),
+    ).toEqual([])
+  })
+
   it('語言設定檔驗證包含構詞規格', () => {
     const errors = validateProfile({ format: 'babizu-language-profile', version: 1, morphology: { suffixes: 'an' } })
     expect(errors).toContain('morphology.suffixes 必須是陣列')
