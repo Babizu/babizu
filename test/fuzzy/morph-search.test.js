@@ -1,5 +1,5 @@
 /**
- * 構詞搜尋（morph-search.js）的性質測試。對應 docs/fuzzy-search.md 第 10 節：
+ * 構詞搜尋（morph-search.js）的性質測試。對應 docs/bcdp.md：
  *
  * - 定理 3：詞綴圖表 P[i]（S[k]）等於「把 q[0..i)（q[k..n)）切成至多 maxSteps 個詞綴、每段與詞綴的距離 ≤ δ」
  *   的所有切法中，成本總和的最小值

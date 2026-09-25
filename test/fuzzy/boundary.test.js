@@ -1,5 +1,5 @@
 /**
- * 邊界條件搜尋（構詞搜尋的基礎）的性質測試。對應 docs/fuzzy-search.md 第 10 節的定理：
+ * 邊界條件搜尋（構詞搜尋的基礎）的性質測試。對應 docs/bcdp.md 第 4–6 節的定理：
  *
  * - 定理 1／推論 1：帶起點向量 start 與終點向量 end 的詞圖搜尋，結果等於
  *     W(q, t) = min over i ≤ k of  start[i] + E(q[i..k), t) + end[k]
