@@ -240,6 +240,72 @@ export class WeightedEditDistance {
   }
 
   /**
+   * 只求最佳對齊，結果與 `explain(query, candidate).alignment` 逐位元相同，但不建整張候選表。
+   *
+   * explain 把每格的候選依（四捨五入後的成本, OP_PRIORITY）穩定排序，回溯時取第一個成本等於該格數值的。
+   * 排在第一個的就是成本最小者，而該格的數值正是最小成本，所以回溯取的一定是排序後的第一個。
+   * 因此每格只需記住「成本最小；同成本時 OP_PRIORITY 較小；再相同時先回報者」的那一個候選。
+   * 搜尋時對每個模糊命中都要說明音變（只用到對齊），這樣省下大部分配置。
+   * @param {string} query
+   * @param {string} candidate
+   * @returns {AlignmentStep[]}
+   */
+  align(query, candidate) {
+    const x = this.prepare(query)
+    const y = this.prepare(candidate)
+    const n = x.length
+    const m = y.length
+    const size = (n + 1) * (m + 1)
+    const cost = new Float64Array(size)
+    const priority = new Int8Array(size)
+    const fromI = new Int32Array(size).fill(-1)
+    const fromJ = new Int32Array(size)
+    const stepCost = new Float64Array(size)
+    /** @type {Array<import('./dp.js').Operation>} */
+    const ops = new Array(size)
+    /** @type {Array<import('./dp.js').CompiledRule | null>} */
+    const rules = new Array(size)
+    const rows = this._matrix(x, y, (t) => {
+      const at = t.i * (m + 1) + t.j
+      const c = roundCost(t.cost)
+      const p = OP_PRIORITY[t.op]
+      if (fromI[at] !== -1 && !(c < cost[at] || (c === cost[at] && p < priority[at]))) return
+      cost[at] = c
+      priority[at] = p
+      fromI[at] = t.fromI
+      fromJ[at] = t.fromJ
+      stepCost[at] = roundCost(t.stepCost)
+      ops[at] = t.op
+      rules[at] = t.rule
+    })
+
+    // 由右下角沿著每格選定的候選回溯（與 explain 相同）
+    /** @type {AlignmentStep[]} */
+    const alignment = []
+    let i = n
+    let j = m
+    while (i > 0 || j > 0) {
+      const at = i * (m + 1) + j
+      if (fromI[at] === -1 || Math.abs(cost[at] - roundCost(rows[j][i])) > EPSILON) break
+      const fi = fromI[at]
+      const fj = fromJ[at]
+      const rule = rules[at]
+      alignment.push({
+        op: ops[at],
+        source: x.slice(fi, i).join(''),
+        target: y.slice(fj, j).join(''),
+        cost: stepCost[at],
+        from: [fi, fj],
+        to: [i, j],
+        rule: rule ? publicRule(rule) : null,
+      })
+      i = fi
+      j = fj
+    }
+    return alignment.reverse()
+  }
+
+  /**
    * 候選字串固定時，逐列計算整張表。
    * 回傳 rows[j][i]（外層為 j，與詞圖逐層往下的方向一致）。
    * @param {string[]} x

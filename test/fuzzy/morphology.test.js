@@ -160,6 +160,55 @@ describe('重疊模板（docs/bcdp.md 1.7 第 2 項）', () => {
   })
 })
 
+describe('mayDerive：衍生的必要條件', () => {
+  it('每個 analyze 找到的（詞, 詞幹）都滿足 mayDerive（隨機規格與詞形；含所有重疊型式、交替、無元音詞幹、非 BMP 字元）', () => {
+    let seed = 2024
+    const rnd = (/** @type {number} */ n) => (seed = (seed * 16807) % 2147483647) % n
+    const letters = ['a', 'i', 'u', 'b', 'd', 'k', 'n', 't', '𝔞']
+    const word = (/** @type {number} */ min, /** @type {number} */ max) => Array.from({ length: min + rnd(max - min + 1) }, () => letters[rnd(letters.length)]).join('')
+    let checked = 0
+    let rejected = 0
+    /** reaching check：每種步驟都要真的出現過 @type {Set<string>} */
+    const reached = new Set()
+    for (let round = 0; round < 80; round++) {
+      const analyzer = createAnalyzer({
+        vowels: 'aiu𝔞',
+        minStem: 2,
+        maxSteps: 1 + rnd(2),
+        prefixes: Array.from({ length: 1 + rnd(4) }, () => ({ form: word(1, 2) })),
+        suffixes: Array.from({ length: 1 + rnd(4) }, () => ({ form: word(1, 2) })),
+        infixes: rnd(2) ? [{ form: word(1, 2) }] : [],
+        reduplication: rnd(3) ? [{ pattern: REDUPLICATION_PATTERNS[rnd(REDUPLICATION_PATTERNS.length)] }] : [],
+        alternations: rnd(2) ? [{ underlying: 't', surface: 'd', before: rnd(2) ? [word(1, 2)] : undefined }] : [],
+      })
+      const { spec } = analyzer
+      for (let k = 0; k < 150; k++) {
+        // 一半是隨機字串，一半由隨機詞幹套上隨機步驟產生（讓兩音節重疊等結構真的出現）
+        let w = word(2, 9)
+        if (k % 2) {
+          /** @type {any[]} */
+          const steps = []
+          if (spec.reduplication.length && rnd(2)) steps.push({ type: 'reduplication', form: '', pattern: spec.reduplication[0].pattern })
+          else if (spec.infixes.length && rnd(3) === 0) steps.push({ type: 'infix', form: spec.infixes[0].form })
+          if (rnd(2)) steps.unshift({ type: 'suffix', form: spec.suffixes[rnd(spec.suffixes.length)].form })
+          if (rnd(2)) steps.unshift({ type: 'prefix', form: spec.prefixes[rnd(spec.prefixes.length)].form })
+          w = analyzer.generate(word(2, 6), steps)
+        }
+        for (const a of analyzer.analyze(w)) {
+          checked++
+          for (const s of a.steps) reached.add(s.pattern ?? s.type)
+          expect(analyzer.mayDerive(w, a.stem), `${w} → ${a.stem}：${JSON.stringify(a.steps.map((s) => [s.type, s.form]))}`).toBe(true)
+        }
+        // 反方向：隨機的詞幹多半不成立（確認這個條件真的有篩選作用）
+        if (!analyzer.mayDerive(w, word(2, 4))) rejected++
+      }
+    }
+    expect(checked).toBeGreaterThan(2000)
+    expect(rejected).toBeGreaterThan(1000)
+    expect([...reached].sort()).toEqual(['prefix', 'suffix', 'infix', 'alternation', ...REDUPLICATION_PATTERNS].sort())
+  })
+})
+
 describe('generate：還原詞綴', () => {
   it('每個分析都能還原成原詞形（隨機詞形的性質測試，含所有重疊型式）', () => {
     const everyPattern = createAnalyzer({ ...SPEC, reduplication: REDUPLICATION_PATTERNS.map((pattern) => ({ pattern })) })

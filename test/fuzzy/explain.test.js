@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { roundCost } from '../../src/fuzzy/index.js'
+import { roundCost, RuleSet, WeightedEditDistance } from '../../src/fuzzy/index.js'
 import { createPazehKaxabuMetric } from '../fixtures/pazeh.js'
-import { createRandom, randomString } from './helpers.js'
+import { createRandom, pick, randomString } from './helpers.js'
 
 describe('explain', () => {
   const metric = createPazehKaxabuMetric()
@@ -46,6 +46,34 @@ describe('explain', () => {
       expect(total).toBeCloseTo(e.distance, 9)
       expect(e.alignment.map((s) => s.source).join('')).toBe(e.query.join(''))
       expect(e.alignment.map((s) => s.target).join('')).toBe(e.candidate.join(''))
+    }
+  })
+
+  it('align 與 explain(...).alignment 逐位元相同（網站規則，以及隨機規則：多字元、空字串、詞首詞尾、同分）', () => {
+    const random = createRandom(4099)
+    const alphabet = ['a', 'e', 'r', 'l', 'n', 'u', 'h', ' ', 'x', 'k']
+    for (let t = 0; t < 300; t++) {
+      const q = randomString(random, alphabet, 0, 7)
+      const c = randomString(random, alphabet, 0, 7)
+      expect(metric.align(q, c), `${q} / ${c}`).toEqual(metric.explain(q, c).alignment)
+    }
+    // 權重只取少數幾種，讓同分的候選常常出現（考驗 OP_PRIORITY 與先回報者的順序）
+    for (let seed = 1; seed <= 10; seed++) {
+      const rnd = createRandom(seed * 131)
+      const rules = new RuleSet()
+      for (let k = 0; k < 1 + Math.floor(rnd() * 6); k++) {
+        const source = randomString(rnd, alphabet.slice(0, 6), 0, 3)
+        rules.add(source, randomString(rnd, alphabet.slice(0, 6), source ? 0 : 1, 3), pick(rnd, [0.5, 1]), {
+          position: pick(rnd, ['any', 'initial', 'final']),
+          bidirectional: rnd() < 0.7,
+        })
+      }
+      const m = new WeightedEditDistance({ rules, normalize: (s) => s })
+      for (let k = 0; k < 80; k++) {
+        const q = randomString(rnd, alphabet, 0, 6)
+        const c = randomString(rnd, alphabet, 0, 6)
+        expect(m.align(q, c), `seed=${seed} ${q} / ${c}`).toEqual(m.explain(q, c).alignment)
+      }
     }
   })
 })

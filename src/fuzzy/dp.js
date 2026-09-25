@@ -266,15 +266,22 @@ export class CompiledRules {
     const del = new Float64Array(n + 1)
     for (let i = 1; i <= n; i++) del[i] = costs.del(x[i - 1])
 
-    // 先依 target 分桶收集，再攤平。桶內的順序＝舊版 at[i] 中同一 target 的規則順序
+    // 先依出現順序收集，再依 target 做穩定的計數排序。桶內的順序＝舊版 at[i] 中同一 target 的規則順序
     // （i 遞增；同一個 i 依 source 長度遞增、再依規則原本的順序），追蹤模式因此與舊版一致。
-    /** @type {Array<Array<[number, CompiledRule]>>} */
-    const buckets = this.targets.map(() => [])
+    /** @type {number[]} */
+    const foundI = []
+    /** @type {CompiledRule[]} */
+    const foundRule = []
     let hasFinal = false
+    const lengths = this.sourceLengths
     for (let i = 0; i <= n; i++) {
-      for (const a of this.sourceLengths) {
-        if (a > i) break
-        const key = a === 0 ? '' : x.slice(i - a, i).join('')
+      // key ＝ x[i−a..i)，a 由 0 遞增時往左逐字加長（不必每次切片）
+      let key = ''
+      let a = 0
+      for (let li = 0; li < lengths.length; li++) {
+        const want = lengths[li]
+        if (want > i) break
+        while (a < want) key = x[i - ++a] + key
         const candidates = this.bySource.get(key)
         if (!candidates) continue
         for (const rule of candidates) {
@@ -283,30 +290,31 @@ export class CompiledRules {
           }
           if (rule.position === 'final' && !(i === n || this.isBoundary(x[i]) || extraFinal?.[i])) continue
           if (rule.position === 'final') hasFinal = true
-          buckets[rule.targetId].push([i, rule])
+          foundI.push(i)
+          foundRule.push(rule)
         }
       }
     }
-    const total = buckets.reduce((s, b) => s + b.length, 0)
+    const total = foundRule.length
     const ruleOff = new Int32Array(this.targets.length + 1)
+    for (const rule of foundRule) ruleOff[rule.targetId + 1]++
+    for (let T = 0; T < this.targets.length; T++) ruleOff[T + 1] += ruleOff[T]
+    const cursor = ruleOff.slice(0, this.targets.length)
     const ruleI = new Int32Array(total)
     const ruleSrc = new Int32Array(total)
     const ruleW = new Float64Array(total)
     const ruleFlag = new Uint8Array(total)
     /** @type {CompiledRule[]} */
     const ruleRef = new Array(total)
-    let k = 0
-    buckets.forEach((bucket, T) => {
-      for (const [i, rule] of bucket) {
-        ruleI[k] = i
-        ruleSrc[k] = rule.sourceLength
-        ruleW[k] = rule.weight
-        ruleFlag[k] = (rule.position === 'final' ? FLAG_FINAL : 0) | (rule.position === 'initial' ? FLAG_INITIAL : 0)
-        ruleRef[k] = rule
-        k++
-      }
-      ruleOff[T + 1] = k
-    })
+    for (let e = 0; e < total; e++) {
+      const rule = foundRule[e]
+      const k = cursor[rule.targetId]++
+      ruleI[k] = foundI[e]
+      ruleSrc[k] = rule.sourceLength
+      ruleW[k] = rule.weight
+      ruleFlag[k] = (rule.position === 'final' ? FLAG_FINAL : 0) | (rule.position === 'initial' ? FLAG_INITIAL : 0)
+      ruleRef[k] = rule
+    }
 
     const cap = this.maxTargetLength + 1
     return {

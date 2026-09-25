@@ -133,6 +133,8 @@ export class FuzzyIndex {
     this._terms = null
     /** @type {{compiled: object, dawg: Dawg, codes: Int32Array, boundary: Uint8Array} | null} 邊標籤的字元編號（見 _edgeCodes） */
     this._codes = null
+    /** @type {PathMatcher | null} 上一次走訪用過、目前沒被借走的路徑匹配器（見 _searchChannels） */
+    this._spareMatcher = null
   }
 
   /** 詞數 */
@@ -341,8 +343,14 @@ export class FuzzyIndex {
 
     /** @type {string[]} 目前走訪路徑上的字元（所有通道共用；只在組出結果的詞時使用） */
     const path = []
-    /** 路徑上的字元編號、邊界旗標與規則 target 的 trie 狀態（所有通道共用） */
-    const matcher = new PathMatcher(compiled)
+    /**
+     * 路徑上的字元編號、邊界旗標與規則 target 的 trie 狀態（所有通道共用）。
+     * 重複使用上一次的（每一層都由上一層重算，不會留下舊狀態）；走訪中的回呼若又搜尋同一個索引，
+     * 那一次拿不到這個（已被借走），會另建一個。
+     */
+    const spare = this._spareMatcher
+    const matcher = spare && spare.compiled === compiled ? spare : new PathMatcher(compiled)
+    this._spareMatcher = null
     /** 第 r 列（r < 目前深度）是否該用 F 列：看路徑上第 r 個字元是否為邊界 */
     const useF = (/** @type {number} */ r) => matcher.boundary[r] === 1
 
@@ -360,8 +368,14 @@ export class FuzzyIndex {
        * @type {Float64Array[]}
        */
       const rowsN = []
-      /** @type {Float64Array[]} */
+      /** @type {Float64Array[]} rowsF[j] 是 F 列；不需要 F 列時與 rowsN[j] 是同一個陣列 */
       const rowsF = []
+      /** @type {Float64Array[]} F 列自己的緩衝（每層一個）：rowsF[j] 指回 rowsN[j] 之後不必重新配置 */
+      const bufF = []
+      /** @type {number[]} */
+      const minN = []
+      /** @type {number[]} */
+      const minF = []
       return {
         n,
         start,
@@ -379,11 +393,12 @@ export class FuzzyIndex {
         }),
         rowsN,
         rowsF,
-        /** @type {number[]} */
-        minN: [],
-        /** @type {number[]} */
-        minF: [],
+        bufF,
+        minN,
+        minF,
         rowAt: (/** @type {number} */ r) => (useF(r) ? rowsF[r] : rowsN[r]),
+        /** 第 r 列的最小值（跨列剪枝 jumpBound 用；每個通道建立一次，不在每個節點配置閉包） */
+        minAt: (/** @type {number} */ r) => (useF(r) ? minF[r] : minN[r]),
         /** @type {SearchResult[]} */
         results: [],
       }
@@ -424,7 +439,7 @@ export class FuzzyIndex {
       for (let a = 0; a < aliveCount[j]; a++) {
         const c = current[a]
         const ch = channels[c]
-        const { n, plan, rowsN, rowsF, minN, minF } = ch
+        const { n, plan, rowsN, rowsF, bufF, minN, minF } = ch
         const column = prepareColumn(plan, compiled, matcher, j, ch.rowAt)
 
         // N_j：子節點不是邊界字元時使用（fillRow 同時回傳這一列的最小值）
@@ -436,7 +451,7 @@ export class FuzzyIndex {
         let rowF = rowN
         let rowFMin = minN[j]
         if (plan.hasFinal && (isTerminal || hasBoundaryChild)) {
-          rowF = rowsF[j] && rowsF[j] !== rowN ? rowsF[j] : new Float64Array(n + 1)
+          rowF = bufF[j] ??= new Float64Array(n + 1)
           rowFMin = fillRow(plan, compiled, column, true, rowF)
           stats.computedRows++
         }
@@ -485,7 +500,7 @@ export class FuzzyIndex {
         if (hasOtherChild) lowerBound = minN[j]
         if (hasBoundaryChild) lowerBound = Math.min(lowerBound, minF[j])
         // 跨列：第 r 列經由一條更長的規則跳過第 j 列（狀態由 PathMatcher 提供，見 dp.js）
-        lowerBound = Math.min(lowerBound, jumpBound(compiled, matcher, j, (r) => (useF(r) ? minF[r] : minN[r])))
+        lowerBound = Math.min(lowerBound, jumpBound(compiled, matcher, j, ch.minAt))
         const pruned = endEdge > firstEdge && lowerBound > bound + EPSILON
 
         if (ch.onNode) {
@@ -514,13 +529,17 @@ export class FuzzyIndex {
         matcher.set(j + 1, codes[e])
         visit(dawg.target(e), j + 1, base + dawg.wordsBefore(e))
       }
-      path.length = j
+      // path 超過 j 的部分留著不清：只以 path.slice(0, j) 讀取，下一個兄弟會覆寫 path[j]
     }
 
     const root = aliveAt(0)
     for (let c = 0; c < channels.length; c++) root[c] = c
     aliveCount[0] = channels.length
-    visit(dawg.root, 0, 0)
+    try {
+      visit(dawg.root, 0, 0)
+    } finally {
+      this._spareMatcher = matcher
+    }
     return channels.map((c) => c.results)
   }
 

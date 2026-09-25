@@ -113,6 +113,9 @@ const DEFAULTS = Object.freeze({
 /** 同一個詞最多回傳幾個分析，避免規格過寬時列舉爆量 */
 const MAX_ANALYSES = 64
 
+/** analyze 的備忘最多記幾個詞（最久沒用的先丟）。衍生形方向對同一批候選詞反覆分析 */
+const ANALYZE_MEMO_LIMIT = 4096
+
 /** 規格頂層允許的欄位（拼錯的欄位會被默默忽略，所以列為錯誤） */
 const SPEC_KEYS = new Set(['cost', 'minStem', 'maxSteps', 'lemmaDistance', 'affixDistance', 'lemmaSpread', 'vowels', 'prefixes', 'suffixes', 'infixes', 'reduplication', 'alternations'])
 /** 各種項目允許的欄位；ref（出處）與 note（說明）供語言設定檔記錄依據，搜尋不使用 */
@@ -200,9 +203,13 @@ export function validateMorphology(spec) {
 
 /**
  * @typedef {object} Analyzer
- * @property {(word: string) => Analysis[]} analyze 去詞綴：所有可能的（詞幹, 步驟）；已正規化的輸入
+ * @property {(word: string) => ReadonlyArray<Readonly<Analysis>>} analyze 去詞綴：所有可能的（詞幹, 步驟）；已正規化的輸入。
+ *   結果有備忘，所以是深度凍結的（不能修改）
+ * @property {() => void} clearCache 清掉 analyze 的備忘（量測冷快取時用）
  * @property {(stem: string, steps: MorphStep[]) => string} generate 還原詞綴
  * @property {(stem: string) => string[]} coreForms 詞幹在衍生詞中可能的核心形式（找衍生詞時用）
+ * @property {(term: string, stem: string, cores?: string[]) => boolean} mayDerive
+ *   term 能否由 stem 衍生的必要條件：不成立時 analyze(term) 一定沒有這個詞幹（成立時不一定有）
  * @property {(w: string) => string} onset 詞首的輔音（群）
  * @property {(pattern: ReduplicationPattern, base: string) => string | null} reduplicant 詞幹 base 套用重疊模式時前面要加的字串
  * @property {(pattern: ReduplicationPattern, rest: string[], red: string) => number[]} reduplicantStems
@@ -227,19 +234,23 @@ export function createAnalyzer(spec, normalize = (s) => s) {
   const lemmaSpread = spec.lemmaSpread ?? DEFAULTS.lemmaSpread
   const vowels = new Set(Array.from(normalize(spec.vowels ?? DEFAULTS.vowels)))
 
+  /** 說明複製一份再凍結：分析結果（有備忘）會引用它，但不能凍結呼叫端自己的物件 @param {Gloss | undefined} g */
+  const glossOf = (g) => (g == null ? null : typeof g === 'string' ? g : Object.freeze({ ...g }))
   /** @param {AffixSpec[] | undefined} list */
   const affixes = (list) =>
     (list ?? [])
-      .map((a) => ({ form: normalize(a.form), gloss: a.gloss ?? null, cost: a.cost ?? cost }))
+      .map((a) => Object.freeze({ form: normalize(a.form), gloss: glossOf(a.gloss), cost: a.cost ?? cost }))
       .filter((a) => a.form)
   const prefixes = affixes(spec.prefixes)
   const suffixes = affixes(spec.suffixes)
   const infixes = affixes(spec.infixes)
-  const reduplication = (spec.reduplication ?? []).map((r) => ({
-    pattern: r.pattern,
-    gloss: r.gloss ?? null,
-    cost: r.cost ?? cost,
-  }))
+  const reduplication = (spec.reduplication ?? []).map((r) =>
+    Object.freeze({
+      pattern: r.pattern,
+      gloss: glossOf(r.gloss),
+      cost: r.cost ?? cost,
+    }),
+  )
   const alternations = (spec.alternations ?? []).map((a) => ({
     underlying: normalize(a.underlying),
     surface: normalize(a.surface),
@@ -249,6 +260,36 @@ export function createAnalyzer(spec, normalize = (s) => s) {
 
   /** @param {string} s */
   const len = (s) => Array.from(s).length
+  /** 第一個、最後一個 code point @param {string} w */
+  const firstChar = (w) => String.fromCodePoint(/** @type {number} */ (w.codePointAt(0)))
+  /** 位置 p（UTF-16）開始的 code point @param {string} w @param {number} p */
+  const charAt = (w, p) => String.fromCodePoint(/** @type {number} */ (w.codePointAt(p)))
+  const lastChar = (/** @type {string} */ w) => {
+    const lo = w.charCodeAt(w.length - 1)
+    const hi = w.charCodeAt(w.length - 2)
+    return lo >= 0xdc00 && lo <= 0xdfff && hi >= 0xd800 && hi <= 0xdbff ? w.slice(-2) : w.slice(-1)
+  }
+  /**
+   * 依第一個（或最後一個）字元分組的詞綴，附上長度。組內保持規格的順序，所以 analyze 的走訪順序
+   * （也就是同成本時留下哪一個分析）與逐一比對所有詞綴完全相同，只是略過不可能相符的。
+   * @param {Array<{form: string, gloss: Gloss, cost: number}>} list
+   * @param {(form: string) => string} key
+   */
+  const bucket = (list, key) => {
+    /** @type {Map<string, Array<{affix: typeof list[number], length: number}>>} */
+    const map = new Map()
+    for (const affix of list) {
+      const k = key(affix.form)
+      if (!map.has(k)) map.set(k, [])
+      map.get(k)?.push({ affix, length: len(affix.form) })
+    }
+    return map
+  }
+  const prefixesByFirst = bucket(prefixes, firstChar)
+  const suffixesByLast = bucket(suffixes, lastChar)
+  const suffixesByFirst = bucket(suffixes, firstChar)
+  /** @type {Array<{affix: typeof prefixes[number], length: number}>} */
+  const none = []
   /** 詞首的輔音（群）：第一個元音之前的所有字元 @param {string} w */
   const onset = (w) => {
     const chars = Array.from(w)
@@ -267,20 +308,35 @@ export function createAnalyzer(spec, normalize = (s) => s) {
   const reduplicant = (pattern, base) => {
     if (pattern === 'full') return base
     const chars = Array.from(base)
-    const isVowel = (/** @type {string} */ c) => vowels.has(c)
-    const v1 = chars.findIndex(isVowel)
-    if (pattern === 'Ca') return `${(v1 < 0 ? chars : chars.slice(0, v1)).join('')}a`
-    if (v1 < 0) return null
-    if (pattern === 'CV') return chars.slice(0, v1 + 1).join('')
-    if (pattern === 'CVV') return chars.slice(0, v1 + 1).join('') + chars[v1]
+    const t = template(pattern, chars, 0)
+    return t && chars.slice(0, t.end).join('') + t.extra
+  }
+
+  /**
+   * 模板的本體：套用在 chars[from..) 上的結果，表示成「chars[from..end) 再接 extra」（extra 是空字串或一個字元），
+   * 不適用時為 null。直接在字元陣列上計算、不配置字串，analyze 每個切點都要算一次。
+   * @param {ReduplicationPattern} pattern
+   * @param {string[]} chars
+   * @param {number} from
+   * @returns {{end: number, extra: string} | null}
+   */
+  const template = (pattern, chars, from) => {
+    const n = chars.length
+    if (pattern === 'full') return { end: n, extra: '' }
+    let v1 = from
+    while (v1 < n && !vowels.has(chars[v1])) v1++ // 第一個元音（沒有時 v1 ＝ n）
+    if (pattern === 'Ca') return { end: v1, extra: 'a' }
+    if (v1 === n) return null
+    if (pattern === 'CV') return { end: v1 + 1, extra: '' }
+    if (pattern === 'CVV') return { end: v1 + 1, extra: chars[v1] }
     // CVCV／CVCVC：第一個元音核之後，跳過輔音，找第二個元音核
     let k = v1
-    while (k < chars.length && isVowel(chars[k])) k++ // 第一個元音核結束
-    while (k < chars.length && !isVowel(chars[k])) k++ // 第二個音節的首輔音
-    if (k >= chars.length) return null // 只有一個音節
-    while (k < chars.length && isVowel(chars[k])) k++ // 第二個元音核結束
-    if (pattern === 'CVCVC') while (k < chars.length && !isVowel(chars[k])) k++ // 其後的輔音（韻尾）
-    return chars.slice(0, k).join('')
+    while (k < n && vowels.has(chars[k])) k++ // 第一個元音核結束
+    while (k < n && !vowels.has(chars[k])) k++ // 第二個音節的首輔音
+    if (k >= n) return null // 只有一個音節
+    while (k < n && vowels.has(chars[k])) k++ // 第二個元音核結束
+    if (pattern === 'CVCVC') while (k < n && !vowels.has(chars[k])) k++ // 其後的輔音（韻尾）
+    return { end: k, extra: '' }
   }
 
   /**
@@ -315,10 +371,50 @@ export function createAnalyzer(spec, normalize = (s) => s) {
   }
 
   /**
+   * 模板在 chars[k..) 上的結果 t 是否正好等於 chars[0..k)（即 reduplicant(pattern, chars[k..]) === chars[0..k)）。
+   * @param {string[]} chars
+   * @param {number} k
+   * @param {{end: number, extra: string}} t
+   */
+  const sameAsPrefix = (chars, k, t) => {
+    const body = t.end - k
+    if (body + (t.extra ? 1 : 0) !== k) return false
+    for (let j = 0; j < body; j++) if (chars[j] !== chars[k + j]) return false
+    return !t.extra || chars[k - 1] === t.extra
+  }
+
+  /** @type {Map<string, ReadonlyArray<Readonly<Analysis>>>} 最近用過的在最後（Map 保持插入順序） */
+  const memo = new Map()
+
+  /**
+   * @param {string} word
+   * @returns {ReadonlyArray<Readonly<Analysis>>}
+   */
+  function analyze(word) {
+    const cached = memo.get(word)
+    if (cached) {
+      memo.delete(word)
+      memo.set(word, cached)
+      return cached
+    }
+    const result = Object.freeze(
+      enumerate(word).map((a) => {
+        for (const s of a.steps) Object.freeze(s)
+        Object.freeze(a.steps)
+        return Object.freeze(a)
+      }),
+    )
+    memo.set(word, result)
+    if (memo.size > ANALYZE_MEMO_LIMIT) memo.delete(/** @type {string} */ (memo.keys().next().value))
+    return result
+  }
+
+  /**
+   * analyze 的本體（沒有備忘）。
    * @param {string} word
    * @returns {Analysis[]}
    */
-  function analyze(word) {
+  function enumerate(word) {
     /** @type {Map<string, Analysis>} */
     const best = new Map()
     /**
@@ -345,16 +441,16 @@ export function createAnalyzer(spec, normalize = (s) => s) {
       if (best.size >= MAX_ANALYSES) return
       const n = len(w)
 
-      if (!preClosed && pre < maxSteps) {
-        for (const p of prefixes) {
-          if (w.startsWith(p.form) && n - len(p.form) >= minStem) {
+      if (!preClosed && pre < maxSteps && w) {
+        for (const { affix: p, length } of prefixesByFirst.get(firstChar(w)) ?? none) {
+          if (w.startsWith(p.form) && n - length >= minStem) {
             visit(w.slice(p.form.length), [...steps, step('prefix', p.form, p.gloss, p.cost)], total + p.cost, pre + 1, suf, op, preClosed, sufClosed)
           }
         }
       }
-      if (!sufClosed) {
-        for (const s of suffixes) {
-          if (!w.endsWith(s.form) || n - len(s.form) < minStem) continue
+      if (!sufClosed && w) {
+        for (const { affix: s, length } of suffixesByLast.get(lastChar(w)) ?? none) {
+          if (!w.endsWith(s.form) || n - length < minStem) continue
           const rest = w.slice(0, w.length - s.form.length)
           const next = [...steps, step('suffix', s.form, s.gloss, s.cost)]
           if (suf < maxSteps) visit(rest, next, total + s.cost, pre, suf + 1, op, preClosed, sufClosed)
@@ -369,7 +465,10 @@ export function createAnalyzer(spec, normalize = (s) => s) {
         }
       }
       if (op) return
-      const head = onset(w)
+      const chars = infixes.length || reduplication.length ? Array.from(w) : []
+      let h = 0
+      while (h < chars.length && !vowels.has(chars[h])) h++
+      const head = chars.slice(0, h).join('') // onset(w)
       for (const x of infixes) {
         // 中綴位於首輔音（群）之後；拿掉之後，詞幹首輔音後面必須接元音，還原時位置才會一致
         if (!w.startsWith(x.form, head.length) || n - len(x.form) < minStem) continue
@@ -377,14 +476,14 @@ export function createAnalyzer(spec, normalize = (s) => s) {
         if (onset(rest) !== head) continue
         visit(rest, [...steps, step('infix', x.form, x.gloss, x.cost)], total + x.cost, pre, suf, true, true, sufClosed)
       }
-      const chars = reduplication.length ? Array.from(w) : []
       for (const r of reduplication) {
-        // 重疊部分在最前面：試每一種切法，看剩下的詞幹套用同一模式是否正好得到這個重疊部分。
+        // 重疊部分在最前面：試每一種切法 k，看剩下的詞幹 chars[k..) 套用同一模式是否正好得到 chars[0..k)。
         // 模板只看詞幹，所以重疊是最內層的步驟，剩下的就是詞幹（兩端都封閉）
         for (let k = 1; k <= n - minStem; k++) {
+          const t = template(r.pattern, chars, k)
+          if (!t || !sameAsPrefix(chars, k, t)) continue
           const red = chars.slice(0, k).join('')
           const base = chars.slice(k).join('')
-          if (reduplicant(r.pattern, base) !== red) continue
           visit(base, [...steps, { type: 'reduplication', form: red, pattern: r.pattern, gloss: r.gloss, cost: r.cost }], total + r.cost, pre, suf, true, true, true)
         }
       }
@@ -437,14 +536,58 @@ export function createAnalyzer(spec, normalize = (s) => s) {
     return [...out]
   }
 
+  /**
+   * term 能否由 stem 衍生的必要條件。不成立時 analyze(term) 一定沒有詞幹 stem，可以不必分析；成立時不一定有。
+   *
+   * 由 analyze 的步驟可知，stem 的衍生詞一定是「前綴鏈 · 核心形式 · 後綴鏈」：
+   * - analyze 只剝與規格完全相同的詞綴，所以前綴鏈、後綴鏈都是詞綴形式原樣的串接；
+   *   前綴至多 maxSteps 個，後綴至多 maxSteps 個（有詞幹交替時多一個）
+   * - 中綴與重疊在所有前綴都剝掉之後才做，重疊又是最內層；交替緊接最內層的後綴。
+   *   所以非串接步驟只改變詞幹的一端，核心形式（coreForms）在衍生詞中是連續的一段
+   * 例外：詞幹沒有元音時，中綴的位置（首輔音之後）會落到後綴裡，核心形式不連續，這時一律回傳 true。
+   * @param {string} term
+   * @param {string} stem
+   * @param {string[]} [cores] coreForms(stem)（呼叫端已經算好時傳入）
+   */
+  function mayDerive(term, stem, cores = coreForms(stem)) {
+    if (infixes.length && !Array.from(stem).some((c) => vowels.has(c))) return true
+    const L = term.length
+    // pre[p]：term[0..p) 最少由幾個前綴拼成；suf[q]：term[q..L) 最少由幾個後綴拼成（UTF-16 位置，與 indexOf 一致）
+    const pre = new Float64Array(L + 1).fill(Infinity)
+    pre[0] = 0
+    for (let p = 0; p < L; p++) {
+      if (pre[p] >= maxSteps) continue
+      for (const { affix } of prefixesByFirst.get(charAt(term, p)) ?? none) {
+        if (term.startsWith(affix.form, p)) pre[p + affix.form.length] = Math.min(pre[p + affix.form.length], pre[p] + 1)
+      }
+    }
+    const suf = new Float64Array(L + 1).fill(Infinity)
+    suf[L] = 0
+    for (let q = L - 1; q >= 0; q--) {
+      for (const { affix } of suffixesByFirst.get(charAt(term, q)) ?? none) {
+        if (term.startsWith(affix.form, q)) suf[q] = Math.min(suf[q], suf[q + affix.form.length] + 1)
+      }
+    }
+    const maxSuffixes = maxSteps + (alternations.length ? 1 : 0)
+    for (const core of cores) {
+      for (let p = term.indexOf(core); p !== -1; p = term.indexOf(core, p + 1)) {
+        if (pre[p] <= maxSteps && suf[p + core.length] <= maxSuffixes) return true
+      }
+    }
+    return false
+  }
+
   return {
     analyze,
+    clearCache: () => memo.clear(),
     generate,
     coreForms,
+    mayDerive,
     onset,
     reduplicant,
     reduplicantStems,
-    spec: {
+    // 深度凍結：analyze 的備忘依賴規格不變，而分析器內部直接使用這些陣列
+    spec: Object.freeze({
       cost,
       minStem,
       maxSteps,
@@ -452,12 +595,12 @@ export function createAnalyzer(spec, normalize = (s) => s) {
       affixDistance,
       lemmaSpread,
       vowels: [...vowels].join(''),
-      prefixes,
-      suffixes,
-      infixes,
-      reduplication,
-      alternations: alternations.map((a) => ({ ...a, before: a.before ? [...a.before] : null })),
-    },
+      prefixes: Object.freeze(prefixes),
+      suffixes: Object.freeze(suffixes),
+      infixes: Object.freeze(infixes),
+      reduplication: Object.freeze(reduplication),
+      alternations: Object.freeze(alternations.map((a) => Object.freeze({ ...a, before: a.before ? Object.freeze([...a.before]) : null }))),
+    }),
   }
 }
 

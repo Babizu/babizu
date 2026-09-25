@@ -128,7 +128,12 @@ export function createMorphSearch({ analyzer, metric, index }) {
     }
     const key = `${tag}${piece.join('')}`
     const cached = scanCache.get(key)
-    if (cached) return cached.map((e) => ({ ...e, from: e.from + k, to: e.to + k }))
+    if (cached) {
+      // LRU：用過的移到最後
+      scanCache.delete(key)
+      scanCache.set(key, cached)
+      return cached.map((e) => ({ ...e, from: e.from + k, to: e.to + k }))
+    }
     /** @type {ChartEdge[]} */
     const edges = []
     if (limit > 0) {
@@ -142,8 +147,8 @@ export function createMorphSearch({ analyzer, metric, index }) {
       }
       idx.searchChannels([{ query: piece, options: { maxDistance: spec.affixDistance, onTerminal } }])
     }
-    if (scanCache.size > CACHE_LIMIT) scanCache.clear()
     scanCache.set(key, edges)
+    if (scanCache.size > CACHE_LIMIT) scanCache.delete(/** @type {string} */ (scanCache.keys().next().value))
     return edges.map((e) => ({ ...e, from: e.from + k, to: e.to + k }))
   }
 
@@ -584,7 +589,7 @@ export function createMorphSearch({ analyzer, metric, index }) {
     return [...(first.to === chars.length ? [] : suffixSteps(c, chars, first.to)), affixStep('suffix', first, chars)]
   }
 
-  return { search, prepare, finish, charts }
+  return { search, prepare, finish, charts, clearCache: () => scanCache.clear() }
 }
 
 /**

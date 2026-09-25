@@ -53,6 +53,36 @@ describe('FuzzyIndex', () => {
     expect(stats.prunedNodes).toBeGreaterThan(0)
   })
 
+  // 工作量守門（以計數，不以計時）：不剪枝時，每個通道對每個前綴（trie 節點）至少要算一列。
+  // 剪枝失效（例如下界算錯而永遠不剪）時結果仍然正確，只有這個測試會發現。
+  it.each([
+    ['一般查詢', false],
+    ['帶邊界向量（BCDP 的還原變體通道）', true],
+  ])('工作量守門：%s的剪枝讓計算的列數少 4 倍以上', (_name, withBoundary) => {
+    const random = createRandom(777)
+    const alphabet = ['a', 'i', 'u', 'b', 'd', 'k', 'n', 't', 's', 'l']
+    const lexicon = [...new Set(Array.from({ length: 3000 }, () => randomString(random, alphabet, 3, 10)))]
+    const big = new FuzzyIndex(new WeightedEditDistance({ rules: new RuleSet().add('d', 't', 0.1).add('u', 'o', 0.1), normalize: (s) => s })).addAll(
+      lexicon.map((w) => [w, w]),
+    )
+    const prefixes = new Set()
+    for (const w of lexicon) for (let k = 0; k <= w.length; k++) prefixes.add(w.slice(0, k))
+    const channels = Array.from({ length: 40 }, () => {
+      const query = randomString(random, alphabet, 4, 10)
+      /** @type {import('../../src/fuzzy/fuzzy-index.js').SearchOptions} */
+      const options = { maxDistance: 1 }
+      if (withBoundary) {
+        // 像詞綴圖表：開頭與幾個前綴終點可以起始、詞尾與幾個後綴起點可以結束
+        options.start = Array.from({ length: query.length + 1 }, (_, i) => (i === 0 ? 0 : i <= 3 && random() < 0.5 ? 0.3 : Infinity))
+        options.end = Array.from({ length: query.length + 1 }, (_, i) => (i === query.length ? 0 : i >= query.length - 3 && random() < 0.5 ? 0.3 : Infinity))
+      }
+      return { query, options }
+    })
+    const stats = { visitedNodes: 0, prunedNodes: 0, computedRows: 0 }
+    big.searchChannels(channels, stats)
+    expect(stats.computedRows * 4).toBeLessThan(prefixes.size * channels.length)
+  })
+
   it('onNode 回報每個走訪節點', () => {
     const events = []
     index.search('apay', { maxDistance: 0.2, onNode: (e) => events.push(e) })

@@ -210,7 +210,7 @@ export class SearchEngine {
     this._zhIndex = null
     /** @type {{tokens: Map<string, Array<[number, 'en' | 'nan']>>, sorted: string[]} | null} */
     this._glossIndex = null
-    /** @type {{terms: string[], byChar: Map<string, number[]>} | null} */
+    /** @type {{terms: string[], byChar: Map<string, number[]>, byPair: Map<string, number[]>} | null} */
     this._termIndex = null
     /** @type {{key: string, indices: number[]} | null} */
     this._listCache = null
@@ -224,6 +224,14 @@ export class SearchEngine {
     this._ensureGlossIndex()
     this._ensureTermIndex()
     this.docById('')
+  }
+
+  /**
+   * 清掉跨查詢的快取（構詞分析的備忘、詞綴掃描），不影響結果。量測「沒有快取」的耗時時用。
+   */
+  clearCaches() {
+    this.text.morphology?.clearCache()
+    this.morphSearch?.clearCache()
   }
 
   /** 記錄總數 */
@@ -387,8 +395,8 @@ export class SearchEngine {
    */
   explainNotes(query, term) {
     return this.metric
-      .explain(query, term)
-      .alignment.filter((s) => s.op !== 'match')
+      .align(query, term)
+      .filter((s) => s.op !== 'match')
       .map((s) => ({
         op: s.op,
         source: s.source,
@@ -457,11 +465,26 @@ export class SearchEngine {
       }
     }
 
-    // 例句：每個查詢詞都要在句中出現（模糊），距離相加排序
+    // 例句：每個查詢詞都要在句中出現（模糊），距離相加排序。
+    // 重複的查詢詞（例如 ma sa kau ma ngit 的 ma）只算一次，走訪統計照樣累加，與逐次計算相同
+    /** @type {Map<string, {terms: TermMatch[], visited: number}>} */
+    const seen = new Map()
+    const matchWord = (/** @type {string} */ word) => {
+      if (word === key) return fullTerms
+      const prev = seen.get(word)
+      if (prev) {
+        response.stats.visitedNodes += prev.visited
+        return prev.terms
+      }
+      const before = response.stats.visitedNodes
+      const terms = this._matchTerms(word, level, response, fuzzy)
+      seen.set(word, { terms, visited: response.stats.visitedNodes - before })
+      return terms
+    }
     /** @type {Map<number, {distance: number, score: number, rank: number, terms: string[]}> | null} */
     let combined = null
     for (const word of words.length > 0 ? words : [key]) {
-      const terms = word === key ? fullTerms : this._matchTerms(word, level, response, fuzzy)
+      const terms = matchWord(word)
       /** @type {Map<number, {distance: number, score: number, rank: number, terms: string[]}>} */
       const found = new Map()
       for (const t of terms) {
@@ -624,11 +647,14 @@ export class SearchEngine {
     for (const { term: stem, distance: offset } of [{ term: key, distance: 0 }, ...variants]) {
       if (Array.from(stem).length < morphology.spec.minStem) continue
       const seen = new Set()
-      for (const core of morphology.coreForms(stem)) {
+      const cores = morphology.coreForms(stem)
+      for (const core of cores) {
         for (const id of this._termsContaining(core)) {
           const term = terms[id]
           if (term === key || term === stem || seen.has(term)) continue
           seen.add(term)
+          // 大部分候選只是碰巧含有核心形式：先用必要條件排除，不必逐一分析（結果不變）
+          if (!morphology.mayDerive(term, stem, cores)) continue
           const a = morphology.analyze(term).find((x) => x.stem === stem)
           if (!a) continue
           const distance = Math.round((a.cost + offset) * 1e9) / 1e9
@@ -654,21 +680,40 @@ export class SearchEngine {
   }
 
   /**
-   * 含有某個字串的所有詞編號（不設上限；取最少見字元的 posting 當候選再驗證）。
+   * 含有某個字串的所有詞編號（不設上限；遞增）。候選取自 _containingCandidates，再逐一驗證。
    * @param {string} needle
    * @returns {number[]}
    * @private
    */
   _termsContaining(needle) {
-    const { terms, byChar } = this._ensureTermIndex()
-    /** @type {number[] | null} */
-    let candidates = null
-    for (const ch of new Set(Array.from(needle))) {
-      const list = byChar.get(ch)
+    const { terms } = this._ensureTermIndex()
+    return this._containingCandidates(needle).filter((id) => terms[id].includes(needle))
+  }
+
+  /**
+   * 可能含有 needle 的詞編號（遞增）：needle 的每個字元與每對相鄰字元都有 posting，取最短的一個。
+   * 含有 needle 的詞一定出現在每一個 posting 中，所以選哪一個都不影響驗證後的結果，只影響要驗證幾個。
+   * 有字元或字元對完全沒出現過時，不可能有詞含有 needle，回傳空陣列。
+   * @param {string} needle
+   * @returns {number[]}
+   * @private
+   */
+  _containingCandidates(needle) {
+    const { byChar, byPair } = this._ensureTermIndex()
+    const chars = Array.from(needle)
+    /** @type {number[]} */
+    let best = []
+    for (let k = 0; k < chars.length; k++) {
+      const list = byChar.get(chars[k])
       if (!list) return []
-      if (!candidates || list.length < candidates.length) candidates = list
+      if (k === 0 || list.length < best.length) best = list
     }
-    return (candidates ?? []).filter((id) => terms[id].includes(needle))
+    for (let k = 1; k < chars.length; k++) {
+      const list = byPair.get(chars[k - 1] + chars[k])
+      if (!list) return []
+      if (list.length < best.length) best = list
+    }
+    return best
   }
 
   /**
@@ -714,17 +759,10 @@ export class SearchEngine {
    */
   _substringTerms(key, limit = SUBSTRING_TERM_LIMIT) {
     if (!key) return []
-    const { terms, byChar } = this._ensureTermIndex()
+    const { terms } = this._ensureTermIndex()
 
-    // 取「出現次數最少的字元」的 posting 當候選，再逐一驗證
-    /** @type {number[] | null} */
-    let candidates = null
-    for (const ch of new Set(Array.from(key))) {
-      const list = byChar.get(ch)
-      if (!list) return [] // 有字元完全沒出現過 → 不可能有詞包含這個查詢
-      if (!candidates || list.length < candidates.length) candidates = list
-    }
-    if (!candidates) return []
+    // 取最少見的字元或字元對的 posting 當候選，再逐一驗證（候選的順序不影響結果：下面依長度排序）
+    const candidates = this._containingCandidates(key)
 
     /** @type {number[]} */
     const prefix = []
@@ -767,16 +805,27 @@ export class SearchEngine {
   _ensureTermIndex() {
     if (this._termIndex) return this._termIndex
     const terms = this.index.terms
-    /** @type {Map<string, number[]>} */
+    /** @type {Map<string, number[]>} 字元 → 含有它的詞編號（遞增） */
     const byChar = new Map()
-    terms.forEach((term, id) => {
-      for (const ch of new Set(Array.from(term))) {
-        let list = byChar.get(ch)
-        if (!list) byChar.set(ch, (list = []))
+    /** @type {Map<string, number[]>} 相鄰的兩個字元 → 含有它的詞編號（遞增）；比單一字元的 posting 短得多 */
+    const byPair = new Map()
+    /** @param {Map<string, number[]>} map @param {Iterable<string>} keys @param {number} id */
+    const add = (map, keys, id) => {
+      for (const k of keys) {
+        let list = map.get(k)
+        if (!list) map.set(k, (list = []))
         list.push(id)
       }
+    }
+    terms.forEach((term, id) => {
+      const chars = Array.from(term)
+      add(byChar, new Set(chars), id)
+      /** @type {Set<string>} */
+      const pairs = new Set()
+      for (let k = 1; k < chars.length; k++) pairs.add(chars[k - 1] + chars[k])
+      add(byPair, pairs, id)
     })
-    this._termIndex = { terms, byChar }
+    this._termIndex = { terms, byChar, byPair }
     return this._termIndex
   }
 
