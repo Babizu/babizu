@@ -122,6 +122,18 @@ describe('BCDP 的步驟', () => {
     expect(checked).toBeGreaterThan(100)
   })
 
+  it('同一個位置有多條鏈時，圖表取最小值（後面較貴的槽位不能蓋掉前面較便宜的）', () => {
+    // 位置 2 先由 mu-（一個前綴，0.3）到達，後來 m- ＋ u-（兩個前綴，0.6）也到達
+    const analyzer = createAnalyzer({ minStem: 3, maxSteps: 2, prefixes: [{ form: 'mu' }, { form: 'm' }, { form: 'u' }] })
+    const metric = new WeightedEditDistance({ normalize: (s) => s })
+    const index = new FuzzyIndex(metric).addAll([['daux', 'daux']])
+    const e = /** @type {any} */ (createMorphSearch({ analyzer, metric, index }).explain('mudaux', 'daux'))
+    const steps = bcdpSteps(e)
+    expect(steps.filter((s) => s.kind === 'relax' && /** @type {any} */ (s.focus).at === 2)).toHaveLength(2)
+    expect(bcdpStateAt(e, steps, steps.length - 1).P).toEqual(e.charts.P)
+    expect(e.charts.P[2]).toBeCloseTo(0.3, 9)
+  })
+
   it('距離參數的清單涵蓋所有說明中的成本', () => {
     for (const key of ['value', 'distance', 'total', 'lambda', 'cutoff']) expect(DISTANCE_PARAMS.has(key)).toBe(true)
     for (const key of ['i', 'j', 'at', 'count', 'visited']) expect(DISTANCE_PARAMS.has(key)).toBe(false)

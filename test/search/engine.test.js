@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createCitation, createRecord, createSense } from '../../src/schema/index.js'
 import {
+  FUZZINESS,
   SearchEngine,
   buildSearchIndex,
   computeDialectSupersets,
@@ -309,5 +310,21 @@ describe('SearchEngine', () => {
 
   it('空查詢', () => {
     expect(engine.search('   ').entries).toEqual([])
+  })
+})
+
+describe('搜尋統計', () => {
+  it('重複的查詢詞只算一次，統計照樣累加（與逐次計算相同）', () => {
+    const q = 'yaku dalum yaku'
+    const res = engine.search(q)
+    // 逐次計算：整個查詢一次，每個詞各一次（重複的詞也各算一次）
+    const internal = /** @type {any} */ (engine)
+    const expected = [searchKey(q), ...splitWords(q)].reduce((sum, word) => {
+      const response = { stats: { visitedNodes: 0 } }
+      internal._matchTerms(word, FUZZINESS.normal, response, true)
+      return sum + response.stats.visitedNodes
+    }, 0)
+    expect(res.occurrences.length).toBeGreaterThan(0) // 三個詞都有對到同一句，逐詞迴圈沒有提早結束
+    expect(res.stats.visitedNodes).toBe(expected)
   })
 })

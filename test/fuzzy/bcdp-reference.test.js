@@ -271,6 +271,14 @@ describe('固定案例：bcdp.md 1.6 修正過的項目與 1.7 的語意', () =>
     expect(suffix?.form).toBe('an')
   })
 
+  it('詞幹長度差剛好等於上界、成本剛好等於 λ 的切法也要計價', () => {
+    // x 的脫落每個 0.1，λ ＝ 0.3：詞幹 daxxxux 比詞根 daux 長 3，距離正好 0.3
+    const setup = fixed({ lemmaDistance: 0.3 }, new RuleSet().add('x', '', 0.1))
+    const { got, want } = compare(setup, ['daux'], 'mudaxxxux')
+    expect(want.get('daux')).toBeCloseTo(0.6, 9)
+    expect(got.get('daux')).toBeCloseTo(0.6, 9)
+  })
+
   it('還原變體超過 16 個時不截斷（上限 64）', () => {
     // 20 種交替（底層字元不同、表面都是 d）：第 20 種才能還原出 baz
     const letters = ['b', 'c', 'f', 'g', 'h', 'j', 'k', 'l', 'm', 'p', 'q', 'r', 's', 'v', 'w', 'x', 'y', 'o', 'e', 'z']

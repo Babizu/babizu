@@ -46,7 +46,8 @@
     "example:build": "node bin/babizu.js build examples/minimal",
     "example:preview": "node bin/babizu.js preview examples/minimal",
     "bench": "node test/fuzzy/bench.js",
-    "format": "prettier --write \"src/**/*.{js,json}\" \"app/src/**/*.{js,vue,css}\" \"test/**/*.js\" \"docs/**/*.md\" \"locales/*.json\""
+    "format": "prettier --write \"src/**/*.{js,json}\" \"app/src/**/*.{js,vue,css}\" \"test/**/*.js\" \"docs/**/*.md\" \"locales/*.json\"",
+    "zoo": "node test/zoo/run.mjs"
   },
   "dependencies": {
     "@fontsource/gentium-book-plus": "^5.3.0",
