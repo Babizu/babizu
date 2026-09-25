@@ -184,7 +184,52 @@
     "targetPlaceholder": "To (may be empty)",
     "visited": "Visited",
     "weight": "Weight",
-    "words": "Words (space-separated, up to 200)"
+    "words": "Words (space-separated, up to 200)",
+    "note": {
+      "cell": {
+        "match": "D({i}, {j}) = {value}: the characters are the same, so D({fromI}, {fromJ}) = {from} carries over.",
+        "substitute": "D({i}, {j}) = {value}: substitution, D({fromI}, {fromJ}) + {stepCost}.",
+        "delete": "D({i}, {j}) = {value}: delete an extra character of the query, D({fromI}, {fromJ}) + {stepCost}.",
+        "insert": "D({i}, {j}) = {value}: insert a character missing from the query, D({fromI}, {fromJ}) + {stepCost}.",
+        "rule": "D({i}, {j}) = {value}: dialect rule {rule}, D({fromI}, {fromJ}) + {stepCost}."
+      },
+      "path": "The table is complete; the bottom-right cell is the distance, {distance}. Tracing each cell back to its best source gives the best alignment ({length} steps).",
+      "node": {
+        "open": "Visit “{prefix}”: the row’s lower bound {lowerBound} is within the limit {bound}, so the walk continues.",
+        "pruned": "Prune “{prefix}”: lower bound {lowerBound} > limit {bound}, so the whole subtree is skipped.",
+        "accepted": "“{prefix}” is a word at distance {distance}, within the limit {bound}: it is a result.",
+        "rejected": "“{prefix}” is a word, but its distance {distance} exceeds the limit {bound}; closer words may lie below, so the walk continues."
+      },
+      "bcdp": {
+        "relaxP": "Prefix chart P[{at}] = {cost}: “{surface}” matches the prefix {form}- (distance {distance}); this chain uses {slot} prefix(es).",
+        "relaxS": "Suffix chart S[{at}] = {cost}: “{surface}” matches the suffix -{form} (distance {distance}); this chain uses {slot} suffix(es).",
+        "mask": "{count} position(s) are next to a space: a morpheme boundary cannot sit next to a space, so those chains are unusable.",
+        "variant": {
+          "original": "The query “{text}” itself is one channel: the stem may start at {starts} position(s) and end at {ends}.",
+          "infix": "Removing the infix <{form}> gives the restored variant “{text}”, with its own boundary vectors.",
+          "reduplication": "Removing the reduplicant “{form}” gives the restored variant “{text}”; the template fixes the stem’s length.",
+          "alternation": "Undoing the stem alternation {form} gives the restored variant “{text}”."
+        },
+        "walk": "Channel “{text}”: boundaries set to zero, limit λ = {lambda}. The walk visits {visited} node(s), prunes {pruned}, and finds {candidates} candidate(s).",
+        "skip": {
+          "whole": "“{stem}” is the whole query: that is a plain fuzzy match, not morphology.",
+          "length": "“{stem}” and “{term}” differ too much in length to be within λ, so this pair is skipped.",
+          "lambda": "The distance from “{stem}” to “{term}”, {distance}, exceeds λ = {lambda}."
+        },
+        "price": "Stem “{stem}”: {start} + {distance} + {end} = {total}.",
+        "hits": "{count} root(s) found; only those with cost up to {cutoff} are kept.",
+        "hit": "Best analysis of “{term}”: cost {distance} ({steps} morphological step(s)).",
+        "tooShort": "The query is too short: morphological search needs at least one character more than the minimum stem length ({minStem}).",
+        "miss": {
+          "same": "“{term}” is the query itself, which is a plain fuzzy match.",
+          "short": "“{term}” is shorter than the minimum stem length.",
+          "notCandidate": "No split brings the stem within λ = {lambda} of “{term}”, so it is not a candidate.",
+          "lambda": "“{term}” is a candidate, but every split leaves the stem farther than λ = {lambda}.",
+          "bound": "Even the best analysis of “{term}” exceeds the cost limit {maxDistance}.",
+          "spread": "The cost of “{term}” is above the cutoff {cutoff} (best hit + lemmaSpread), so it is not listed."
+        }
+      }
+    }
   },
   "locale": {
     "name": "English"

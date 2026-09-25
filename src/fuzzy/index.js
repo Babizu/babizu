@@ -28,6 +28,7 @@ export { FuzzyIndex, INDEX_FORMAT, INDEX_VERSION } from './fuzzy-index.js'
 export { createAffixStripper } from './expanders.js'
 export { createAnalyzer, REDUPLICATION_PATTERNS, validateMorphology } from './morphology.js'
 export { createMorphSearch } from './morph-search.js'
+export { bcdpStateAt, bcdpSteps, dawgStateAt, dawgSteps, DISTANCE_PARAMS, dpStateAt, dpSteps } from './steps.js'
 export { roundCost, EPSILON } from './dp.js'
 export {
   PROFILE_FORMAT,
