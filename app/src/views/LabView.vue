@@ -30,17 +30,19 @@ const { state, metric, activeRuleCount, reset } = createLabState()
 /** 桌面把設定放在側欄；行動裝置收合在內容下方（只渲染一份） */
 const isDesktop = useMediaQuery('(min-width: 1024px)')
 
-/** 顯示用的長度上限，避免表格過大 */
+/** 顯示用的長度上限（code point），避免表格過大 */
 const MAX_LENGTH = 24
+/** 以 code point 截斷（UTF-16 切片會切壞非 BMP 字元） @param {unknown} s */
+const clip = (s) => Array.from(String(s)).slice(0, MAX_LENGTH).join('')
 /** 一鍵帶入的詞對（站台設定 lab.pairs）；第一組是預設值 */
 const PRESETS = site.lab.pairs
 const [DEFAULT_A, DEFAULT_B] = PRESETS[0] ?? ['', '']
 
-const a = ref(String(route.query.a ?? DEFAULT_A).slice(0, MAX_LENGTH))
-const b = ref(String(route.query.b ?? DEFAULT_B).slice(0, MAX_LENGTH))
+const a = ref(clip(route.query.a ?? DEFAULT_A))
+const b = ref(clip(route.query.b ?? DEFAULT_B))
 const tab = ref('dp')
 
-const explanation = computed(() => metric.value.explain(a.value.slice(0, MAX_LENGTH), b.value.slice(0, MAX_LENGTH)))
+const explanation = computed(() => metric.value.explain(clip(a.value), clip(b.value)))
 const totalCells = computed(() => explanation.value.order.length)
 
 // ---- 逐格動畫 ----

@@ -5,9 +5,13 @@
  * - 整類開關、調整單條權重與適用位置
  * - 新增自訂規則
  * - 調整基本成本（替換、刪除、插入、空白）
+ *
+ * 距離函式以搜尋引擎同一個 createSearchMetric 建立：正規化（含刪除體例符號）、詞邊界都與搜尋相同，
+ * 規則也經過同一個 RuleSet.fromTable。沒有修改時，實驗室算出的距離與搜尋完全一致。
  */
 
-import { createNormalizer, normalizerOptionsFromProfile, RuleSet, WeightedEditDistance } from '@babizu/fuzzy/index.js'
+import { DEFAULT_COSTS, RuleSet } from '@babizu/fuzzy/index.js'
+import { createSearchMetric } from '@babizu/search/text.js'
 import site from 'virtual:babizu/site'
 import { computed, reactive } from 'vue'
 import { t } from '@/i18n.js'
@@ -21,6 +25,7 @@ const PROFILE = /** @type {any} */ (site.profile)
  * @property {string} target
  * @property {number} weight
  * @property {'any' | 'initial' | 'final'} position
+ * @property {boolean} bidirectional 雙向（設定檔的規則預設雙向）
  */
 
 /**
@@ -39,26 +44,34 @@ function defaultGroups() {
     rules: g.rules.map((row) => {
       if (Array.isArray(row)) {
         const [source, target, weight] = /** @type {[string, string, number]} */ (row)
-        return { source, target, weight, position: g.position ?? 'any' }
+        return { source, target, weight, position: g.position ?? 'any', bidirectional: true }
       }
       const r = /** @type {any} */ (row)
-      return { source: r.source, target: r.target, weight: r.weight, position: r.position ?? g.position ?? 'any' }
+      return {
+        source: r.source,
+        target: r.target,
+        weight: r.weight,
+        position: r.position ?? g.position ?? 'any',
+        bidirectional: r.bidirectional ?? true,
+      }
     }),
   }))
 }
 
+/**
+ * 可編輯的基本成本，預設值與搜尋相同（設定檔沒寫的取框架預設，替換 1.5、刪除 1.0、插入 0.8、空白 0.1）。
+ * 空白的三種操作在介面上合成一個滑桿。
+ */
 function defaultCosts() {
-  const costs = /** @type {any} */ (PROFILE.costs ?? {})
-  const substitute = costs.substitute ?? 1
+  const costs = /** @type {import('@babizu/fuzzy/costs.js').CostOptions} */ (PROFILE.costs ?? {})
+  const space = (costs.overrides ?? DEFAULT_COSTS.overrides)[' ']
   return {
-    substitute,
-    delete: costs.delete ?? 1,
-    insert: costs.insert ?? 1,
-    space: costs.overrides?.[' ']?.substitute ?? substitute,
+    substitute: costs.substitute ?? DEFAULT_COSTS.substitute,
+    delete: costs.delete ?? DEFAULT_COSTS.delete,
+    insert: costs.insert ?? DEFAULT_COSTS.insert,
+    space: space?.substitute ?? costs.substitute ?? DEFAULT_COSTS.substitute,
   }
 }
-
-const normalize = createNormalizer(normalizerOptionsFromProfile(PROFILE))
 
 export function createLabState() {
   const state = reactive({
@@ -71,23 +84,12 @@ export function createLabState() {
 
   /** 依目前設定建立距離函式（設定變動時自動重建） */
   const metric = computed(() => {
-    const rules = new RuleSet()
-    for (const group of state.groups) {
-      if (!group.enabled) continue
-      for (const r of group.rules) addSafely(rules, r, group.category)
-    }
-    for (const r of state.custom) addSafely(rules, r, t('lab.customCategory'))
-    const space = state.costs.space
-    return new WeightedEditDistance({
-      costs: {
-        substitute: state.costs.substitute,
-        delete: state.costs.delete,
-        insert: state.costs.insert,
-        overrides: { ' ': { substitute: space, delete: space, insert: space } },
-      },
-      rules,
-      normalize,
-    })
+    const table = [
+      ...state.groups.filter((g) => g.enabled).map((g) => ({ category: g.category, rules: g.rules.filter(valid) })),
+      { category: t('lab.customCategory'), rules: state.custom.filter(valid) },
+    ]
+    const rules = RuleSet.fromTable(/** @type {any} */ (table.map((g) => ({ ...g, rules: g.rules.map(row) }))))
+    return createSearchMetric(PROFILE, { rules, costs: editedCosts(state.costs) })
   })
 
   const activeRuleCount = computed(
@@ -104,14 +106,31 @@ export function createLabState() {
 }
 
 /**
- * 加入規則；不合法的列（例如兩側皆空、權重非數字）直接略過，讓編輯中的半成品不會讓頁面出錯。
- * @param {RuleSet} rules
+ * 規則列是否合法；不合法的列（例如兩側皆空、權重非數字）直接略過，讓編輯中的半成品不會讓頁面出錯。
  * @param {EditableRule} r
- * @param {string} category
  */
-function addSafely(rules, r, category) {
+function valid(r) {
   const weight = Number(r.weight)
-  if (!Number.isFinite(weight) || weight < 0) return
-  if (!r.source && !r.target) return
-  rules.add(r.source, r.target, weight, { position: r.position, category })
+  return Number.isFinite(weight) && weight >= 0 && Boolean(r.source || r.target)
+}
+
+/** 可編輯的規則列 → 設定檔的規則物件列 @param {EditableRule} r */
+function row(r) {
+  return { source: r.source, target: r.target, weight: Number(r.weight), position: r.position, bidirectional: r.bidirectional ?? true }
+}
+
+/**
+ * 使用者改過成本時，以編輯後的值取代設定檔的成本；沒改時回傳 undefined，直接用設定檔（與搜尋完全相同，
+ * 包括空白以外的字元覆寫，以及空白三種操作各自的成本）。
+ * @param {ReturnType<typeof defaultCosts>} costs
+ */
+function editedCosts(costs) {
+  const base = defaultCosts()
+  if (costs.substitute === base.substitute && costs.delete === base.delete && costs.insert === base.insert && costs.space === base.space) {
+    return undefined
+  }
+  const profileCosts = /** @type {import('@babizu/fuzzy/costs.js').CostOptions} */ (PROFILE.costs ?? {})
+  const overrides = { ...(profileCosts.overrides ?? DEFAULT_COSTS.overrides) }
+  if (costs.space !== base.space) overrides[' '] = { substitute: costs.space, delete: costs.space, insert: costs.space }
+  return { substitute: costs.substitute, delete: costs.delete, insert: costs.insert, overrides }
 }

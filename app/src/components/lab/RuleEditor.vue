@@ -47,6 +47,8 @@ function addCustom() {
             :max="3"
             :step="0.1"
             :aria-labelledby="`cost-${c}`"
+            :thumb-label="t(`lab.cost.${c}`)"
+            :thumb-value-text="formatDistance(state.costs[c])"
             @update:model-value="(v) => (state.costs[c] = v[0])"
           />
         </div>
@@ -75,7 +77,7 @@ function addCustom() {
             <p v-if="group.description" class="text-muted-foreground pb-1 text-xs">{{ group.description }}</p>
             <div v-for="(rule, k) in group.rules" :key="k" class="flex items-center gap-2">
               <code class="bg-muted min-w-0 flex-1 truncate rounded px-1.5 py-1 font-mono text-xs">
-                {{ rule.source || '∅' }} ↔ {{ rule.target || '∅' }}
+                {{ rule.source || '∅' }} {{ rule.bidirectional === false ? '→' : '↔' }} {{ rule.target || '∅' }}
               </code>
               <select
                 v-model="rule.position"

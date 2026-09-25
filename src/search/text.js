@@ -91,13 +91,39 @@ export function createTextTools(profile) {
       .filter(Boolean)
   }
 
-  /** 搜尋用的距離函式：設定檔的規則與成本，正規化使用 searchKey */
-  const createSearchMetric = () => createMetricFromProfile(profile, { normalize: searchKey })
+  /** 搜尋用的距離函式（見下方匯出的 createSearchMetric），與這裡的 searchKey 共用正規化 */
+  const createSearchMetric = () => searchMetric(profile, searchKey)
 
   const morphology = profile.morphology ? createAnalyzer(profile.morphology, searchKey) : null
   const analyze = morphology ? morphology.analyze : null
 
   return { notationChars, baseNormalize, searchKey, tokenize, splitWords, createSearchMetric, analyze, morphology }
+}
+
+/**
+ * 搜尋用的距離函式：語言設定檔的成本、規則與詞邊界，正規化使用族語搜尋鍵（刪除體例符號）。
+ *
+ * 建置、搜尋引擎與演算法實驗室都用這個函式建立距離函式，三者算出的距離才會一致。
+ * 實驗室可以換掉規則或成本（使用者編輯過的），其餘（正規化、詞邊界）仍與搜尋相同。
+ *
+ * @param {import('../fuzzy/profile.js').LanguageProfile} profile
+ * @param {object} [options]
+ * @param {import('../fuzzy/rules.js').RuleSet} [options.rules] 取代設定檔的規則
+ * @param {import('../fuzzy/costs.js').CostOptions} [options.costs] 取代設定檔的成本
+ * @returns {import('../fuzzy/distance.js').WeightedEditDistance}
+ */
+export function createSearchMetric(profile, options = {}) {
+  const searchKey = createNormalizer({ ...normalizerOptionsFromProfile(profile), removeChars: notationCharsOf(profile) })
+  return searchMetric(profile, searchKey, options)
+}
+
+/**
+ * @param {import('../fuzzy/profile.js').LanguageProfile} profile
+ * @param {(text: string) => string} searchKey
+ * @param {{rules?: import('../fuzzy/rules.js').RuleSet, costs?: import('../fuzzy/costs.js').CostOptions}} [options]
+ */
+function searchMetric(profile, searchKey, { rules, costs } = {}) {
+  return createMetricFromProfile(profile, { normalize: searchKey, ...(rules ? { rules } : {}), ...(costs ? { costs } : {}) })
 }
 
 /** 是否含漢字 @param {string} text */
