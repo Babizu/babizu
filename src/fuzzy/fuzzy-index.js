@@ -390,6 +390,20 @@ export class FuzzyIndex {
     /** 第 r 列（r < 目前深度）是否該用 F 列：看路徑上第 r 個字元是否為邊界 */
     const useF = (/** @type {number} */ r) => matcher.boundary[r] === 1
 
+    /**
+     * 查詢端的編譯結果依（查詢、交界、鎖住空白）共用：通道之間只差在起點列。複本共用成本表的快取與
+     * 暫存（ColumnContext、ruleMin）；每個節點上一個通道的列算完才換下一個通道，所以暫存不會互相覆寫
+     * @type {Map<string, import('./dp.js').QueryPlan>}
+     */
+    const plans = new Map()
+    /** @param {string[]} x @param {Float64Array | null} start @param {boolean} junctions @param {boolean} lockBoundary */
+    const planFor = (x, start, junctions, lockBoundary) => {
+      const key = `${junctions ? 1 : 0}${lockBoundary ? 1 : 0}${x.join('\u0001')}`
+      let base = plans.get(key)
+      if (!base) plans.set(key, (base = compiled.compileQuery(x, costs, { start: null, junctions, lockBoundary })))
+      return start ? { ...base, start: Float64Array.from(start) } : base
+    }
+
     const channels = specs.map(({ query, options }) => {
       const x = Array.isArray(query) ? query : this.metric.prepare(query)
       const n = x.length
@@ -460,7 +474,7 @@ export class FuzzyIndex {
         onNode: options.onNode,
         onTerminal: options.onTerminal,
         onJunction: options.onJunction,
-        plan: compiled.compileQuery(x, costs, { start: from?.row ?? null, junctions, lockBoundary: options.lockBoundary ?? false }),
+        plan: planFor(x, from?.row ?? null, junctions, options.lockBoundary ?? false),
         rowsN,
         rowsF,
         bufF,
