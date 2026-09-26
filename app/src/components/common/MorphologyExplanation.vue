@@ -4,7 +4,7 @@
  * 按鈕顯示詞綴結構的摘要（「mu- + daux」），點開列出：
  * - 每個構詞步驟與語法說明、步驟本身的成本
  * - 整個詞一起比對的音變（docs/bcdp.md 1.2）：每一個標出落在前綴、詞幹、後綴，或詞素交界
- *   （例如 tadusaw 的 aa → a 跨越詞幹與後綴的交界）
+ *   （例如 takitaw 的 aa → a 跨越詞幹與後綴的交界）
  */
 import { computed } from 'vue'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'

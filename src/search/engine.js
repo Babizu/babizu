@@ -787,7 +787,7 @@ export class SearchEngine {
    * 詞根相符（去詞綴方向）：音變 ∘ 構詞 ∘ 詞庫的聯合搜尋 BCDP（babizu/fuzzy 的 morph-search.js）。
    *
    * 分析的成本是構詞步驟加上整個詞的音變：同一套方言規則對整個詞計算，可以跨越詞素交界
-   * （ta-dusa-aw → tadusaw），詞首、詞尾規則與構詞音變在交界也適用（docs/bcdp.md 第 1 節）。
+   * （ta-kita-aw → takitaw），詞首、詞尾規則與構詞音變在交界也適用（docs/bcdp.md 第 1 節）。
    * 總成本上限＝ min(1, 該模糊程度的門檻 ＋ 0.6)。精確模式不做（精確只比對拼寫相同的詞）。
    *
    * @param {string} key
