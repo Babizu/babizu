@@ -168,6 +168,8 @@ const DIALECT_VARIANT_DISTANCE = 0.3
  * （喉塞音增生、元音合併、構詞音變），一兩條規則的成本就夠
  */
 const DERIVED_SOUND_DISTANCE = 0.2
+/** 衍生形方向跨查詢保留的編譯結果個數（每個詞兩份，約數 KB） */
+const PLAN_CACHE_LIMIT = 4096
 
 
 
@@ -228,6 +230,12 @@ export class SearchEngine {
     this._listCache = null
     /** @type {WeakMap<LemmaAnalysis, () => MorphNote[]>} 構詞命中的音變說明（需要時才計算） */
     this._lazyNotes = new WeakMap()
+    /**
+     * 衍生形方向：候選詞 → 它的聯合對齊編譯結果（依詞綴、詞幹兩種段落）。同一個詞會被不同的詞根、
+     * 同一個查詢的不同詞、不同的查詢反覆驗證，編譯只看這個詞，所以跨查詢保留最近用過的 PLAN_CACHE_LIMIT 個
+     * @type {Map<string, Map<string, any>>}
+     */
+    this._derivedPlans = new Map()
   }
 
   /**
@@ -270,6 +278,7 @@ export class SearchEngine {
   clearCaches() {
     this.text.morphology?.clearCache()
     this.morphSearch?.clearCache()
+    this._derivedPlans.clear()
   }
 
   /** 記錄總數 */
@@ -623,7 +632,8 @@ export class SearchEngine {
     /** @type {TermMatch[]} */
     let lemma = []
     if (fuzzy) {
-      const prepared = morphology ? /** @type {NonNullable<typeof this.morphSearch>} */ (this.morphSearch).prepare(key, this._lemmaMax(key, level)) : null
+      const ms = morphology ? /** @type {NonNullable<typeof this.morphSearch>} */ (this.morphSearch) : null
+      const prepared = ms ? ms.seed(ms.prepare(key, this._lemmaMax(key, level)) ?? null, this.index) : null
       const { results, morph } = this._fuzzyTerms(key, level, response, prepared)
       if (prepared) lemma = this._lemmaTerms(key, level, prepared, morph)
       for (const r of results) {
@@ -666,7 +676,7 @@ export class SearchEngine {
    * 候選先用「字元 → 詞」索引找含有詞根核心形式的詞，再列出「前綴鏈 · 核心形式 · 後綴鏈」的結構
    * （詞綴原樣、交界上容許一個字元的出入，morphology.derivations），逐一以整個詞的聯合對齊
    * （metric.jointDistance）驗證。衍生詞是標準寫法，整個詞的音變不能超過 DERIVED_SOUND_DISTANCE
-   * （docs/bcdp.md 第 11 節）。
+   * （docs/bcdp.md 第 10 節）。
    *
    * 查詢的方言變體（variants：純規則、距離小的模糊命中詞）也各當一次詞根，
    * 成本加上變體本身的距離，說明中附上查詢 → 變體的音變。
@@ -682,6 +692,7 @@ export class SearchEngine {
     const { terms } = this._ensureTermIndex()
     /** @type {Map<string, TermMatch>} */
     const out = new Map()
+    const plansOf = this._derivedPlans
     for (const { term: stem, distance: offset } of [{ term: key, distance: 0 }, ...variants]) {
       if (Array.from(stem).length < morphology.spec.minStem) continue
       const seen = new Set()
@@ -693,8 +704,11 @@ export class SearchEngine {
           seen.add(term)
           // 候選分析的結構（詞綴原樣、交界上容許一個字元的出入），逐一以整個詞的聯合對齊驗證
           const x = Array.from(term)
-          /** 同一個候選詞的各種分析共用編譯結果 @type {Map<string, any>} */
-          const plans = new Map()
+          let plans = plansOf.get(term)
+          if (plans) plansOf.delete(term)
+          else plans = new Map()
+          plansOf.set(term, plans)
+          if (plansOf.size > PLAN_CACHE_LIMIT) plansOf.delete(/** @type {string} */ (plansOf.keys().next().value))
           /** @type {{cost: number, steps: import('../fuzzy/morph-search.js').MorphStepHit[], segments: any[]} | null} */
           let best = null
           for (const d of morphology.derivations(term, stem)) {

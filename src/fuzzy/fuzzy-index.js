@@ -34,7 +34,7 @@
  * say→tshay，L = 5，前 5 層幾乎無法剪枝）。
  * 測試中的「暴力比對性質測試」用來保證剪枝不會漏掉任何結果。
  *
- * ## 詞素交界（構詞搜尋，docs/bcdp.md 第 4–8 節）
+ * ## 詞素交界（構詞搜尋，docs/bcdp.md 第 4–7 節）
  * 構詞搜尋把「前綴鏈 · 詞幹 · 後綴鏈」看成一條底層字串，每一段各走一次（詞綴 trie 或詞庫詞圖），
  * 段與段之間以「交界狀態」銜接（dp.js 檔頭）：
  * - `from`：起點是前一段留下的交界狀態——交界列當作第 0 列，還沒走完的規則 target 由跨界狀態延續
@@ -96,8 +96,17 @@ import { resolveNormalization } from './normalization.js'
  * @property {(term: string, state: JunctionState, payloads: unknown[]) => void} [onJunction]
  *   每走到一個詞尾就回呼一次，附上這一段結束時的交界狀態（複本）
  * @property {boolean} [lockBoundary=false] 查詢的邊界字元（空白）完全不能被消耗（詞綴不含空白）
+ * @property {SpreadCutoff} [cutoff] 相對上限（可由多個通道共用）：只需要「最佳 ＋ spread」之內的結果時，
+ *   上限隨目前找到的最佳結果收緊。最後的最佳一定不大於途中的最佳，所以最佳 ＋ spread 之內的詞一個也不會少
  * @property {(term: string, row: Float64Array, payloads: unknown[]) => void} [onTerminal]
  *   每走到一個詞尾就回呼一次，附上完整的 F 列（row[i] = 查詢前 i 個字元轉成這個詞的成本）
+ */
+
+/**
+ * @typedef {object} SpreadCutoff 相對上限的共用狀態（走訪時會被改寫）
+ * @property {number} best 目前找到的最小距離（初始 Infinity）
+ * @property {number} spread 只保留距離不超過「最佳 ＋ spread」的結果
+ * @property {(term: string) => boolean} [eligible] 哪些詞算進最佳（呼叫端之後會丟掉的詞不能收緊上限）
  */
 
 /**
@@ -329,7 +338,7 @@ export class FuzzyIndex {
    *
    * 通道的 query 可以是字串（先經過 metric 的正規化），也可以是**已正規化的 code point 陣列**
    * （原樣使用、不再正規化）。構詞搜尋用後者：它的查詢片段取自已正規化的查詢，
-   * 再正規化一次可能改變片段（例如截掉頭尾空白），位置就會錯開（docs/bcdp.md 第 11、12 節）。
+   * 再正規化一次可能改變片段（例如截掉頭尾空白），位置就會錯開（docs/bcdp.md 第 11 節）。
    *
    * @param {Array<{query: string | string[], options?: SearchOptions}>} channels
    * @param {SearchStats} [stats] 累加統計（走訪節點數以實際走訪計，不按通道重複計算）
@@ -390,8 +399,21 @@ export class FuzzyIndex {
       const vectors = [from?.row, ...(from?.pending ?? []).map((p) => p.row), to?.row, to?.word, ...(to?.pending ?? []).map((p) => p.row)]
       for (const vec of vectors) {
         if (vec && vec.length !== n + 1) throw new RangeError(`start／end（交界狀態）的長度必須是查詢長度 + 1（${n + 1}）`)
-        // 剪枝的下界依賴「交界成本不小於 0」（docs/bcdp.md 第 6 節）
+        // 剪枝的下界依賴「交界成本不小於 0」（docs/bcdp.md 第 7 節）
         if (vec && !Array.prototype.every.call(vec, (c) => c >= 0)) throw new RangeError('start／end（交界狀態）的值必須是非負數或 Infinity')
+      }
+      // 詞尾耦合的位能：pot[x] ＝ 在查詢位置 x 或之後結束時，至少還要付的耦合成本。對齊的查詢位置只會往後走，
+      // 所以子樹的下界可以用 min_x（列[x] ＋ pot[x]）取代列的最小值（docs/bcdp.md 第 7 節）。
+      // 允許直接在詞尾結束（to.word[n] ＝ 0）時位能處處是 0，不必計算
+      /** @type {Float64Array | null} */
+      let pot = null
+      if (to) {
+        const e = new Float64Array(n + 1).fill(Infinity)
+        for (const vec of [to.row, to.word, ...to.pending.map((p) => p.row)]) {
+          if (vec) for (let x = 0; x <= n; x++) if (vec[x] < e[x]) e[x] = vec[x]
+        }
+        for (let x = n - 1; x >= 0; x--) if (e[x + 1] < e[x]) e[x] = e[x + 1]
+        if (e.some((v) => v > 0)) pot = e
       }
       /** @type {import('./dp.js').Crossing[]} 第 j 層的跨界狀態（來自 from.pending，只在淺層） */
       const cross = []
@@ -426,11 +448,13 @@ export class FuzzyIndex {
         to,
         startEdge: options.startEdge ?? (from ? EDGE_JUNCTION : EDGE_WORD),
         cross,
+        pot,
         /** 詞尾的交界列（算完立刻使用，所以每個通道一個緩衝就夠） */
         rowJ: junctions ? new Float64Array(n + 1) : null,
         /** 跨界耦合：（這一段尾巴的 trie 節點, to.pending 的序號）→ 規則 target 編號（-1 表示沒有） */
         coupleTarget: new Map(),
         maxDistance: options.maxDistance ?? 1,
+        cutoff: options.cutoff ?? null,
         maxNormalized: options.maxNormalized ?? Infinity,
         norm: resolveNormalization(options.normalization ?? 'none'),
         onNode: options.onNode,
@@ -503,6 +527,7 @@ export class FuzzyIndex {
         // N_j：子節點不是邊界字元時使用（fillRow 同時回傳這一列的最小值）
         const rowN = (rowsN[j] ??= new Float64Array(n + 1))
         minN[j] = fillRow(plan, compiled, column, false, rowN)
+        if (ch.pot) minN[j] = minWithPotential(rowN, ch.pot)
         stats.computedRows++
 
         // F_j：只有「本節點是詞尾」或「有邊界字元的子節點」時才會被用到
@@ -511,6 +536,7 @@ export class FuzzyIndex {
         if (plan.hasFinal && (isTerminal || hasBoundaryChild)) {
           rowF = bufF[j] ??= new Float64Array(n + 1)
           rowFMin = fillRow(plan, compiled, column, true, rowF)
+          if (ch.pot) rowFMin = minWithPotential(rowF, ch.pot)
           stats.computedRows++
         }
         rowsF[j] = rowF
@@ -521,6 +547,7 @@ export class FuzzyIndex {
         if (Number.isFinite(ch.maxNormalized) && ch.norm.bound) {
           bound = Math.min(bound, ch.norm.bound(ch.maxNormalized, n, j + dawg.height[node]))
         }
+        if (ch.cutoff) bound = Math.min(bound, ch.cutoff.best + ch.cutoff.spread)
 
         // 詞尾：記錄結果。base 就是這個詞的字典序名次（完美雜湊）
         let distance = null
@@ -556,6 +583,7 @@ export class FuzzyIndex {
                 result.exit = exit
               }
               ch.results.push(result)
+              if (ch.cutoff && distance < ch.cutoff.best && (!ch.cutoff.eligible || ch.cutoff.eligible(result.term))) ch.cutoff.best = distance
             }
           }
         }
@@ -755,3 +783,17 @@ export class FuzzyIndex {
   }
 }
 
+
+/**
+ * 加上位能的列最小值：min_x（row[x] ＋ pot[x]）。
+ * @param {Float64Array} row
+ * @param {Float64Array} pot
+ */
+function minWithPotential(row, pot) {
+  let min = Infinity
+  for (let x = 0; x < row.length; x++) {
+    const v = row[x] + pot[x]
+    if (v < min) min = v
+  }
+  return min
+}

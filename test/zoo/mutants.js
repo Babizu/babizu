@@ -7,35 +7,48 @@
  * - why：它模擬的錯誤，以及預期由哪個測試殺掉
  *
  * 刻意不收的突變：
- * - 候選階段改用真正的邊界值（不歸零）：結果完全相同、只是變慢，是等價突變；效能由私有 repo 的 A/B 量測守著。
- * - 計價同分時改取較長的詞幹：成本不變，只改變說明中詞綴與詞幹的切法；參考實作只比成本，
- *   說明的切法由 explain 與 search 共用同一個 priceTerm，無法互相仲裁。這一項由 bcdp.md 1.2 的定義與人工審查守著。
+ * - 相對上限（最佳 ＋ lemmaSpread）不把查詢本身排除：只在詞庫剛好含有查詢、而且它比真正的最佳還便宜時才會錯，
+ *   隨機測試幾乎碰不到；由 finish 與 SpreadCutoff.eligible 共用同一個條件的程式審查守著。
+ * - 普通搜尋（沒有交界）編譯時略過構詞音變的 continue 拿掉：admissible 在沒有交界的位置本來就不收構詞音變，
+ *   只是變慢，是等價突變；junction.test.js「構詞音變只在詞素交界適用」守著結果。
  * - 實驗室元件（app/）的突變：動物園只跑 node 端的測試；實驗室與搜尋的一致性由 app 端的 lab-state 測試守著。
- * - 詞幹長度過濾的上界少 1（ceil(λ ÷ 每字元代價 ＋ ε) − 1）：原本的 ceil 比精確上界 floor 多 1，
- *   減 1 正好是精確上界，結果不變，是等價突變。改收「比精確上界再少 1」（第 3 號）。
  */
 
 export const MUTANTS = [
   {
     name: '詞素交界可以在空白旁（遮罩拿掉）',
-    file: 'src/fuzzy/morph-search.js',
-    find: 'for (let i = 1; i < n; i++) if (isBoundary(chars[i])) bestP.cost[i] = Infinity',
-    replace: 'for (let i = 1; i < n; i++) void isBoundary(chars[i])',
-    why: '多詞查詢會把 mu daux 分析成 mu- ＋ daux；bcdp-reference 的固定案例與隨機仲裁',
+    file: 'src/fuzzy/dp.js',
+    find: 'for (let i = 0; i <= n; i++) if ((i > 0 && this.isBoundary(x[i - 1])) || (i < n && this.isBoundary(x[i]))) junctionMask[i] = 1',
+    replace: 'void junctionMask',
+    why: '多詞查詢會把 mu daux 分析成 mu- ＋ daux；詞綴各層的性質測試與隨機仲裁（查詢含空白）',
   },
   {
-    name: '詞幹交替的說明不檢查 before',
-    file: 'src/fuzzy/morph-search.js',
-    find: 'if (before && !before.includes(e.affix.form)) continue',
-    replace: 'void before',
-    why: '說明中的後綴可能不在 before 清單；bcdp-reference「詞幹交替的說明」',
+    name: '有位置限制的規則可以跨越交界',
+    file: 'src/fuzzy/dp.js',
+    find: '  if (start === EDGE_CROSS) return false\n',
+    replace: '\n',
+    why: '詞尾規則的 target 從前一段開始；ref-joint 的逐一比對與隨機仲裁',
   },
   {
-    name: '詞幹長度的過濾比精確上界少 1',
-    file: 'src/fuzzy/morph-search.js',
-    find: 'return perChar > 0 ? Math.ceil(spec.lemmaDistance / perChar + 1e-9) : Infinity',
-    replace: 'return perChar > 0 ? Math.floor(spec.lemmaDistance / perChar + 1e-9) - 1 : Infinity',
-    why: '長度差剛好在上界、成本剛好等於 λ 的切法被丟掉；隨機仲裁與 bcdp-reference 的固定案例',
+    name: '交界上仍檢查 X 側的位置條件',
+    file: 'src/fuzzy/dp.js',
+    find: '          if (xfail && !junctions) continue',
+    replace: '          if (xfail) continue',
+    why: "tau'alawan 的 ' 在交界上找不到 alaw；bcdp-reference 的固定案例與 ref-joint",
+  },
+  {
+    name: '沒有指定側的構詞音變在詞中也適用',
+    file: 'src/fuzzy/dp.js',
+    find: '  if (flag & FLAG_JUNCTION && !(flag & (FLAG_INITIAL | FLAG_FINAL)) && start !== EDGE_JUNCTION && end !== EDGE_JUNCTION) return false\n',
+    replace: '\n',
+    why: '構詞搜尋的詞幹內部也套用構詞音變；ref-joint 的逐一比對',
+  },
+  {
+    name: '交界狀態合併時不取 min',
+    file: 'src/fuzzy/junction.js',
+    find: '    const v = state.row[x] + add\n    if (v < into.row[x]) {',
+    replace: '    const v = state.row[x] + add\n    if (v < Infinity) {',
+    why: '後合併的詞綴鏈蓋掉較便宜的；詞綴各層合併的性質測試',
   },
   {
     name: 'CVCVC 不收韻尾',
@@ -75,8 +88,8 @@ export const MUTANTS = [
   {
     name: '詞尾規則在詞尾前一格也適用',
     file: 'src/fuzzy/dp.js',
-    find: "if (rule.position === 'final' && !(i === n || this.isBoundary(x[i]) || extraFinal?.[i])) continue",
-    replace: "if (rule.position === 'final' && !(i >= n - 1 || this.isBoundary(x[i]) || extraFinal?.[i])) continue",
+    find: "(rule.position === 'final' && !(i === n || this.isBoundary(x[i]))))",
+    replace: "(rule.position === 'final' && !(i >= n - 1 || this.isBoundary(x[i]))))",
     why: '詞中的 l 被當成詞尾；refDistance 的逐一比對',
   },
   {
@@ -87,11 +100,32 @@ export const MUTANTS = [
     why: '對齊與 explain 不同；explain 測試的 align 比對',
   },
   {
-    name: '步驟狀態的圖表不取最小值',
-    file: 'src/fuzzy/steps.js',
-    find: 'if (table[f.at] === null || cost < /** @type {number} */ (table[f.at])) table[f.at] = cost',
-    replace: 'table[f.at] = cost',
-    why: '較後、較貴的槽位蓋掉較便宜的值；steps 測試「同一個位置有多條鏈時，圖表取最小值」',
+    name: '相對上限的起點當成處處可以在詞尾結束',
+    file: 'src/fuzzy/morph-search.js',
+    find: 'prefixed + (y === n ? 0 : S.row[y])',
+    replace: 'prefixed',
+    why: '起點比真正的最佳還低，剪掉最佳 ＋ spread 之內的詞；morph-search「相對上限」的性質測試',
+  },
+  {
+    name: '耦合位能不取之後的最小值',
+    file: 'src/fuzzy/fuzzy-index.js',
+    find: '        for (let x = n - 1; x >= 0; x--) if (e[x + 1] < e[x]) e[x] = e[x + 1]',
+    replace: '        void e',
+    why: '位能高估（之後的位置結束更便宜），剪掉上限內的詞；隨機仲裁',
+  },
+  {
+    name: '逐字相同的捷徑只比長度',
+    file: 'src/fuzzy/distance.js',
+    find: '      for (const ch of segments[k].chars) if (ch !== x[i++]) same = false',
+    replace: '      for (const ch of segments[k].chars) void (ch !== x[i++])',
+    why: '衍生形方向把不同的詞當成音變為 0；jointDistance 與 ref-joint 的比對、engine 的衍生形測試',
+  },
+  {
+    name: 'jointDistance 的剪枝在每段第 0 列忽略前一段未走完的規則',
+    file: 'src/fuzzy/distance.js',
+    find: '        const unfinished = j === 0 ? (cross[0] ?? null) : crossing',
+    replace: '        const unfinished = crossing',
+    why: '跨越交界的規則（例如 a｜a 的元音合併）在交界上被剪掉；junction.test.js 的 jointDistance 對 ref-joint',
   },
   {
     name: '重複的查詢詞不累加走訪統計',

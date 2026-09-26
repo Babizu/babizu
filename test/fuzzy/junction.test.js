@@ -308,3 +308,84 @@ describe('交界狀態：一段一段走 ＝ 整個詞的聯合對齊', () => {
     }
   })
 })
+
+describe('jointDistance（衍生形方向的驗證）', () => {
+  it('前綴 · 詞幹 · 後綴的聯合對齊 ＝ ref-joint；上限內相等，超過上限時也超過', () => {
+    const random = createRandom(6007)
+    let same = 0
+    let crossing = 0
+    for (let round = 0; round < 400; round++) {
+      const metric = randomMetric(random)
+      const ctx = refJointContext(metric)
+      let p = randomString(random, letters, 1, 2)
+      let t = randomString(random, letters, 1, 3)
+      const s = randomString(random, letters, 1, 2)
+      let x = queryFrom(random, p + t + s)
+      // 一半刻意在前綴與詞幹的交界上放一條規則（跨界或構詞音變）
+      const plant = random() < 0.5 ? planted(random, metric, p, t + s) : null
+      if (plant) {
+        ;[p, t] = [plant[0], plant[1].slice(0, plant[1].length - s.length)]
+        x = plant[2]
+        crossing++
+      }
+      if (!t) continue
+      const segments = [
+        { chars: Array.from(p), lock: true },
+        { chars: Array.from(t), lock: false },
+        { chars: Array.from(s), lock: true },
+      ]
+      const J1 = Array.from(p).length
+      const J2 = J1 + Array.from(t).length
+      const want = refJoint(ctx, x, Array.from(p + t + s), { junctions: [J1, J2], stem: [J1, J2] })
+      const bound = pick(random, [0.2, 0.5, Infinity])
+      const got = metric.jointDistance(x, segments, bound)
+      if (x.join('') === p + t + s) same++
+      if (want <= bound + EPSILON) expect(close(got, want), `p=${p} t=${t} s=${s} x=${x.join('')}：${got} ≠ ${want} rules=${JSON.stringify(ctx.rules)} bound=${bound}`).toBe(true)
+      else expect(got, `p=${p} t=${t} s=${s} x=${x.join('')}：${got} 應超過 ${bound}（ref ${want}）`).toBeGreaterThan(bound + EPSILON)
+    }
+    // reaching check：逐字相同（捷徑）與刻意跨界的情形都出現過
+    expect(same).toBeGreaterThan(20)
+    expect(crossing).toBeGreaterThan(50)
+  })
+})
+
+describe('構詞音變只在詞素交界適用', () => {
+  it('普通的距離（沒有交界）與拿掉構詞音變的距離函式相同；詞庫搜尋也相同', () => {
+    const random = createRandom(4099)
+    for (let round = 0; round < 40; round++) {
+      const full = new RuleSet()
+      const plain = new RuleSet()
+      for (let k = 0; k < 5; k++) {
+        const source = randomString(random, letters, 0, 2)
+        const target = randomString(random, letters, source ? 0 : 1, 2)
+        if (source === target) continue
+        const junction = k < 2
+        const options = { position: pick(random, ['any', 'initial', 'final']), junction }
+        full.add(source, target, 0.05, options)
+        if (!junction) plain.add(source, target, 0.05, options)
+      }
+      const make = (/** @type {RuleSet} */ rules) => new WeightedEditDistance({ rules, normalize: (s) => s, costs: { substitute: 1, delete: 0.7, insert: 0.6 } })
+      const a = make(full)
+      const b = make(plain)
+      const words = Array.from({ length: 12 }, () => randomString(random, letters, 1, 4))
+      const ia = new FuzzyIndex(a).addAll(words.map((w) => [w, null]))
+      const ib = new FuzzyIndex(b).addAll(words.map((w) => [w, null]))
+      for (let q = 0; q < 6; q++) {
+        const x = randomString(random, letters, 1, 4)
+        for (const y of words) {
+          expect(a.distance(x, y), `${x} → ${y}`).toBe(b.distance(x, y))
+        }
+        expect(ia.search(x, { maxDistance: 1.5 })).toEqual(ib.search(x, { maxDistance: 1.5 }))
+      }
+    }
+  })
+
+  // 構詞音變真的會作用（reaching check）：同一對字串在交界上便宜得多
+  it('固定案例：詞尾濁化 b → p 只在交界（alebi → alep ＋ -i），詞中的 b 不算', () => {
+    const rules = new RuleSet().add('b', 'p', 0.05, { junction: true })
+    const m = new WeightedEditDistance({ rules, normalize: (s) => s, costs: { substitute: 1, delete: 1, insert: 1 } })
+    expect(m.distance('alebi', 'alepi')).toBe(1)
+    const x = Array.from('alebi')
+    expect(m.jointDistance(x, [{ chars: Array.from('alep'), lock: false }, { chars: ['i'], lock: true }])).toBeCloseTo(0.05, 9)
+  })
+})

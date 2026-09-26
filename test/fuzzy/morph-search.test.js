@@ -16,8 +16,8 @@ import { refJoint, refJointContext } from './reference/ref-joint.js'
 
 const alphabet = ['a', 'b', 'd', 'm', 'n', 'u']
 
-/** @param {() => number} random */
-function randomSetup(random) {
+/** @param {() => number} random @param {number} [lemmaSpread] */
+function randomSetup(random, lemmaSpread = 100) {
   const rules = new RuleSet()
   for (let k = 0; k < 4; k++) {
     const source = randomString(random, alphabet, 0, 2)
@@ -29,7 +29,7 @@ function randomSetup(random) {
     cost: 0.3,
     minStem: 2,
     maxSteps: 2,
-    lemmaSpread: 100,
+    lemmaSpread,
     prefixes: affixes(4),
     suffixes: affixes(3),
     alternations: random() < 0.5 ? [{ underlying: 'b', surface: 'm', cost: 0.05 }] : [],
@@ -105,5 +105,43 @@ describe('構詞搜尋：詞綴一層一層合併', () => {
       }
     }
     expect(finite).toBeGreaterThan(15)
+  })
+})
+
+describe('構詞搜尋：相對上限（最佳 ＋ lemmaSpread）', () => {
+  it.each([1, 2, 3, 4])('起點不小於最後的最佳；收緊上限前後 finish 的結果完全相同，走訪不會變多（種子 %i）', (seed) => {
+    const random = createRandom(seed * 7919)
+    let seeded = 0
+    let saved = 0
+    for (let round = 0; round < 12; round++) {
+      const { metric, spec, analyzer } = randomSetup(random, pick(random, [0.1, 0.3]))
+      const index = new FuzzyIndex(metric)
+      const words = Array.from({ length: 40 }, () => randomString(random, alphabet, 2, 5))
+      index.addAll(words.map((w) => [w, null]))
+      const search = createMorphSearch({ analyzer, metric, index })
+      for (let k = 0; k < 6; k++) {
+        // 一半的查詢由詞庫詞加上詞綴組成，起點才有機會是有限的
+        const w = pick(random, words)
+        const query = random() < 0.5 ? `${pick(random, spec.prefixes).form}${w}${pick(random, spec.suffixes).form}` : randomString(random, alphabet, 4, 8)
+        const bound = pick(random, [0.6, 1, 1.5])
+        const loose = search.prepare(query, bound)
+        if (!loose) continue
+        const tight = search.seed(search.prepare(query, bound))
+        const statsLoose = { visitedNodes: 0, prunedNodes: 0, computedRows: 0 }
+        const statsTight = { visitedNodes: 0, prunedNodes: 0, computedRows: 0 }
+        const without = loose.channels.map((ch) => ({ query: ch.query, options: { ...ch.options, cutoff: undefined } }))
+        const want = search.finish(loose, index.searchChannels(without, statsLoose), bound)
+        const start = tight?.cutoff.best ?? Infinity
+        const got = search.finish(/** @type {any} */ (tight), index.searchChannels(/** @type {any} */ (tight).channels, statsTight), bound)
+        expect(got, `query=${query}`).toEqual(want)
+        if (want.length) expect(start, `起點 query=${query}`).toBeGreaterThanOrEqual(want[0].distance - EPSILON)
+        expect(statsTight.visitedNodes).toBeLessThanOrEqual(statsLoose.visitedNodes)
+        if (start < Infinity) seeded++
+        if (statsTight.visitedNodes < statsLoose.visitedNodes) saved++
+      }
+    }
+    // reaching check：起點真的出現過、上限真的剪掉過節點
+    expect(seeded).toBeGreaterThan(3)
+    expect(saved).toBeGreaterThan(3)
   })
 })

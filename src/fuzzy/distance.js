@@ -86,6 +86,8 @@ export class WeightedEditDistance {
     this.ruleSet =
       rules instanceof RuleSet ? rules : RuleSet.fromTable(/** @type {any} */ (rules ?? []))
     this.compiled = new CompiledRules(this.ruleSet.expand(this.normalize), this.boundaries)
+    /** @type {PathMatcher | null} jointDistance 的備用路徑匹配器（見該處） */
+    this._spareMatcher = null
     /** @type {PathMatcher | null} `_rows` 重複使用的路徑匹配器（屬於目前這組規則） */
     this._matcher = null
     /** `_rows` 的巢狀深度：追蹤回呼中又呼叫距離函式時，內層另外配置匹配器 */
@@ -96,7 +98,7 @@ export class WeightedEditDistance {
   /**
    * 鏡像距離函式：每條（有方向的）規則的 source、target 反轉，initial ↔ final 對調，成本與詞邊界相同。
    * 對任何 x、y：mirror().distance(reverse(x), reverse(y)) ＝ distance(x, y)，因為對齊反過來讀就是
-   * 鏡像的對齊。構詞搜尋用它由詞尾往前算後綴鏈（docs/bcdp.md 第 7 節）。
+   * 鏡像的對齊。構詞搜尋用它由詞尾往前算後綴鏈（docs/bcdp.md 第 5 節）。
    * 輸入必須已經正規化（鏡像的 normalize 是恆等函式）。規則替換（setRules）後重新建立。
    * @returns {WeightedEditDistance}
    */
@@ -194,8 +196,7 @@ export class WeightedEditDistance {
 
   /**
    * 與 explain 相同，但輸入是已正規化的 code point 陣列（不再正規化），並可以帶邊界條件：
-   * start 取代第 0 列的起點成本，extraInitial／extraFinal 把某些位置也當作詞首、詞尾（docs/bcdp.md 第 4 節）。
-   * 演算法實驗室用它顯示構詞搜尋中詞幹片段的計算。
+   * start 取代第 0 列的起點成本（交界列；docs/bcdp.md 第 4 節）。
    * @param {string[]} x
    * @param {string[]} y
    * @param {import('./dp.js').QueryOptions} [options]
@@ -465,6 +466,34 @@ export class WeightedEditDistance {
   jointDistance(x, segments, bound = Infinity, plans = new Map()) {
     const compiled = this.compiled
     const n = x.length
+    // 底層字串與 x 完全相同：逐字相同的對齊成本是 0，距離不會是負的
+    let same = segments.reduce((len, seg) => len + seg.chars.length, 0) === n
+    for (let k = 0, i = 0; same && k < segments.length; k++) {
+      for (const ch of segments[k].chars) if (ch !== x[i++]) same = false
+    }
+    if (same) return 0
+    // 路徑匹配器借用一個備用的（配置它不便宜；各段依序使用，跨界狀態在換段前已經取出）
+    const matcher = this._spareMatcher ?? new PathMatcher(compiled)
+    this._spareMatcher = null
+    try {
+      return this._jointDistance(x, segments, bound, plans, matcher)
+    } finally {
+      this._spareMatcher = matcher
+    }
+  }
+
+  /**
+   * jointDistance 的主體。
+   * @param {string[]} x
+   * @param {Array<{chars: string[], lock?: boolean}>} segments
+   * @param {number} bound
+   * @param {Map<string, any>} plans
+   * @param {PathMatcher} matcher
+   * @private
+   */
+  _jointDistance(x, segments, bound, plans, matcher) {
+    const compiled = this.compiled
+    const n = x.length
     /** @type {{row: Float64Array, pending: Array<{node: number, row: Float64Array}>} | null} */
     let state = null
     let result = Infinity
@@ -476,7 +505,6 @@ export class WeightedEditDistance {
       let plan = plans.get(key)
       if (!plan) plans.set(key, (plan = compiled.compileQuery(x, this.costs, { junctions: true, lockBoundary: Boolean(seg.lock) })))
       plan.start = state ? state.row : null
-      const matcher = new PathMatcher(compiled)
       /** @type {import('./dp.js').Crossing[]} */
       const cross = []
       if (state && state.pending.length) {
@@ -502,7 +530,9 @@ export class WeightedEditDistance {
         const min = fillRow(plan, compiled, column, fin, row)
         rows.push(row)
         // 剪枝：這一列與還能跨列的規則都超過上限，之後只會更大（同詞圖搜尋的下界）
-        if (min > bound + EPSILON && jumpBound(compiled, matcher, j, (r) => Math.min(...rows[r]), crossing) > bound + EPSILON) return Infinity
+        // 第 0 列的跨界狀態是前一段留下、還沒走完的規則：不參與這一列的計算，但下界要算進去（同詞圖搜尋）
+        const unfinished = j === 0 ? (cross[0] ?? null) : crossing
+        if (min > bound + EPSILON && jumpBound(compiled, matcher, j, (r) => Math.min(...rows[r]), unfinished) > bound + EPSILON) return Infinity
       }
       /** @type {Array<{node: number, row: Float64Array}>} */
       const pending = []
@@ -520,7 +550,7 @@ export class WeightedEditDistance {
   /**
    * 單一段（一個詞素）的追蹤 DP：由交界狀態 from 出發，在 exit 指定的地方結束，回溯出這一段的對齊，
    * 並回報對齊是由 from 的哪一格（或哪一個跨界狀態）進來的。構詞搜尋用它找出命中是哪一條詞綴鏈：
-   * 合併後的交界狀態每一格記著它來自哪個詞綴，一段一段往回追就得到整條鏈（docs/bcdp.md 第 9 節）。
+   * 合併後的交界狀態每一格記著它來自哪個詞綴，一段一段往回追就得到整條鏈（docs/bcdp.md 第 8 節）。
    *
    * @param {string[]} x 查詢
    * @param {string[]} y 這一段的字元

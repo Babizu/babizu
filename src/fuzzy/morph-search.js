@@ -251,7 +251,9 @@ export function createMorphSearch({ analyzer, metric, index }) {
    * @property {ReturnType<typeof emptyEnd>} S 各層後綴換成正向座標後合併（tags 記的是層數）
    * @property {Variant[]} variants 與 channels 一一對應
    * @property {Array<{query: string[], options: import('./fuzzy-index.js').SearchOptions}>} channels
+   * @property {import('./fuzzy-index.js').SpreadCutoff} cutoff 各通道共用的相對上限（seed 給起點，走訪時收緊）
    * @property {boolean} truncated 還原變體超過 MAX_VARIANTS 而被截斷
+   * @property {Map<string, AffixEntry[]>} [chains] 找回詞綴鏈的備忘（affixesOf）
    */
 
   /**
@@ -274,6 +276,10 @@ export function createMorphSearch({ analyzer, metric, index }) {
     suffixLevels.forEach((L, s) => mergeEndInto(S, toForwardEnd(L, mirror.compiled), s + 1))
     const word = new Float64Array(n + 1).fill(Infinity)
     word[n] = 0
+    // 只保留「最佳 ＋ lemmaSpread」之內的詞根（finish），所以各通道共用一個相對上限，隨途中的最佳收緊。
+    // 算進最佳的詞與 finish 相同（不是查詢本身、夠長），結果與不收緊時完全相同
+    /** @type {import('./fuzzy-index.js').SpreadCutoff} */
+    const cutoff = { best: Infinity, spread: spec.lemmaSpread, eligible: (term) => term !== query && Array.from(term).length >= spec.minStem }
 
     /** @type {Variant[]} */
     const variants = []
@@ -283,12 +289,12 @@ export function createMorphSearch({ analyzer, metric, index }) {
     // 沒有前綴：至少要有一個後綴
     if (suffixLevels.length) {
       variants.push({ kind: 'plain', chars, op: null, startEdge: EDGE_WORD, ...plain })
-      channels.push({ query: chars, options: { maxDistance, to: { row: S.row, pending: S.pending, word: null } } })
+      channels.push({ query: chars, options: { maxDistance, cutoff, to: { row: S.row, pending: S.pending, word: null } } })
     }
     // 至少一個前綴：之後可以接後綴，也可以就是詞尾
     if (prefixLevels.length) {
       variants.push({ kind: 'prefix', chars, op: null, startEdge: EDGE_JUNCTION, ...plain })
-      channels.push({ query: chars, options: { maxDistance, from: P, to: { row: S.row, pending: S.pending, word } } })
+      channels.push({ query: chars, options: { maxDistance, cutoff, from: P, to: { row: S.row, pending: S.pending, word } } })
     }
     let truncated = false
     let count = 0
@@ -308,10 +314,38 @@ export function createMorphSearch({ analyzer, metric, index }) {
       variants.push(v)
       channels.push({
         query: v.chars,
-        options: { maxDistance, from: { row: from, pending: [] }, startEdge: v.startEdge, to: { row, pending: [], word: vWord } },
+        options: { maxDistance, cutoff, from: { row: from, pending: [] }, startEdge: v.startEdge, to: { row, pending: [], word: vWord } },
       })
     }
-    return { query, chars, prefixLevels, suffixLevels, P, S, variants, channels, truncated }
+    return { query, chars, prefixLevels, suffixLevels, P, S, variants, channels, cutoff, truncated }
+  }
+
+  /**
+   * 走訪之前先給相對上限一個起點：詞幹與查詢的一段完全相同、兩側直接接上已算好的詞綴各層，
+   * 這是一個真的分析，所以它的成本不小於最後的最佳（上限只會更緊、結果不變）。
+   * 只查 idx 裡的詞：走訪的是哪個詞庫，就只能用哪個詞庫的詞當起點。
+   * @template {Prepared | null} T
+   * @param {T} prepared（null 原樣傳回，方便接在 prepare 之後）
+   * @param {FuzzyIndex} [idx] 接下來要走訪的詞庫（預設是建立時的詞庫）
+   * @returns {T}
+   */
+  function seed(prepared, idx = index) {
+    if (!prepared) return prepared
+    const { chars, P, S, cutoff } = prepared
+    const n = chars.length
+    for (let x = 0; x + spec.minStem <= n; x++) {
+      // 沒有前綴（一定要有後綴），或接在前綴之後（後綴可有可無）
+      const bare = x === 0 ? 0 : Infinity
+      const prefixed = P.row[x]
+      if (bare === Infinity && prefixed === Infinity) continue
+      let term = chars.slice(x, x + spec.minStem - 1).join('')
+      for (let y = x + spec.minStem; y <= n; y++) {
+        term += chars[y - 1]
+        const cost = Math.min(bare + S.row[y], prefixed + (y === n ? 0 : S.row[y]))
+        if (cost < cutoff.best && term !== prepared.query && idx.dawg.lookup(term) !== -1) cutoff.best = cost
+      }
+    }
+    return prepared
   }
 
   /**
@@ -356,20 +390,39 @@ export function createMorphSearch({ analyzer, metric, index }) {
    * 進來、在後綴狀態的哪一格出去，再各自往回追出詞綴鏈。
    * @param {Prepared} prepared
    * @param {number} c 通道
-   * @param {string} term
+   * @param {SearchResult} result 這個通道走訪到的結果（帶著耦合的出口）
    */
-  function affixesOf(prepared, c, term) {
+  function affixesOf(prepared, c, result) {
     const v = prepared.variants[c]
     const options = prepared.channels[c].options
-    const t = metric.traceSegment(v.chars, Array.from(term), {
-      from: options.from ?? null,
-      startEdge: options.startEdge,
-      exit: { kind: 'couple', to: /** @type {JunctionEnd} */ (options.to) },
-    })
+    // 只有「接在前綴之後」的通道不知道詞幹從哪一格進來，要在詞幹上做一次追蹤 DP；其他通道的起點
+    // 是詞首或固定的位置，出口走訪時已經記下（與追蹤 DP 的結果相同，所以不必再算）
+    const t =
+      v.kind === 'prefix' || !result.exit
+        ? metric.traceSegment(v.chars, Array.from(result.term), {
+            from: options.from ?? null,
+            startEdge: options.startEdge,
+            exit: { kind: 'couple', to: /** @type {JunctionEnd} */ (options.to) },
+          })
+        : { entry: /** @type {Entry} */ ({ kind: 'start' }), exit: result.exit }
     // 前綴：變體的起點固定在 v.start（有前綴鏈時由合併後的前綴狀態的那一格往回追）
     /** @type {Entry} */
     const entry = v.start >= 0 ? (v.prefixed ? { kind: 'row', x: v.start } : { kind: 'start' }) : t.entry
-    const prefixes = entry.kind === 'start' ? [] : chainFrom(metric, prepared.prefixLevels, /** @type {number} */ (tagAt(prepared.P, entry) ?? 0), entry, prepared.chars, (f) => Array.from(f))
+    // 詞綴鏈只取決於（哪一側、第幾層、從哪一格往回追），同一次查詢的命中常常共用，所以備忘在 prepared 上
+    const memo = (prepared.chains ??= new Map())
+    /** @param {string} side @param {number} level @param {Entry} at @param {() => AffixEntry[]} compute */
+    const chain = (side, level, at, compute) => {
+      const key = `${side}|${level}|${at.kind}|${'x' in at ? at.x : ''}|${'node' in at ? at.node : ''}`
+      let out = memo.get(key)
+      if (!out) memo.set(key, (out = compute()))
+      return out.slice()
+    }
+    const prefixes =
+      entry.kind === 'start'
+        ? []
+        : chain('p', /** @type {number} */ (tagAt(prepared.P, entry) ?? 0), entry, () =>
+            chainFrom(metric, prepared.prefixLevels, /** @type {number} */ (tagAt(prepared.P, entry) ?? 0), entry, prepared.chars, (f) => Array.from(f)),
+          )
     // 後綴：出口換成反向座標（位置 x → n − x；跨界狀態的 tail 反轉後是鏡像 trie 的節點）
     const n = prepared.chars.length
     const exit = t.exit
@@ -386,7 +439,7 @@ export function createMorphSearch({ analyzer, metric, index }) {
         level = /** @type {number} */ (prepared.S.tags.pending.get(tail.join(''))?.[x] ?? 0)
         back = { kind: 'pending', node: mirror.compiled.trieWalk(0, [...tail].reverse()), x: n - x }
       }
-      suffixes = chainFrom(mirror, prepared.suffixLevels, level, back, [...prepared.chars].reverse(), (f) => Array.from(f).reverse())
+      suffixes = chain('s', level, back, () => chainFrom(mirror, prepared.suffixLevels, level, back, [...prepared.chars].reverse(), (f) => Array.from(f).reverse()))
     }
     return { prefixes, suffixes }
   }
@@ -416,7 +469,7 @@ export function createMorphSearch({ analyzer, metric, index }) {
       .filter((h) => h.distance <= cutoff)
       .map((h) => {
         const v = prepared.variants[h.channel]
-        const { prefixes, suffixes } = affixesOf(prepared, h.channel, h.result.term)
+        const { prefixes, suffixes } = affixesOf(prepared, h.channel, h.result)
         /** @type {MorphStepHit[]} */
         const steps = [...prefixes.map((a) => affixStep('prefix', a)), ...(v.op ? [v.op] : []), ...suffixes.map((a) => affixStep('suffix', a))]
         return {
@@ -523,7 +576,7 @@ export function createMorphSearch({ analyzer, metric, index }) {
     const prepared = prepare(query, maxDistance)
     if (!prepared) return []
     const local = { visitedNodes: 0, prunedNodes: 0, computedRows: 0 }
-    const results = index.searchChannels(prepared.channels, local)
+    const results = index.searchChannels(seed(prepared).channels, local)
     if (stats) stats.visitedNodes += local.visitedNodes
     return finish(prepared, results, maxDistance)
   }
@@ -543,6 +596,7 @@ export function createMorphSearch({ analyzer, metric, index }) {
     if (!prepared) return { query, chars, params, tooShort: true, term, reason: term === null ? null : 'short' }
     /** @type {Array<Array<Record<string, unknown>>>} */
     const walks = prepared.channels.map(() => [])
+    seed(prepared)
     const results = index.searchChannels(
       prepared.channels.map((ch, c) => ({ query: ch.query, options: { ...ch.options, onNode: (/** @type {any} */ e) => walks[c].push(e) } })),
     )
@@ -573,7 +627,12 @@ export function createMorphSearch({ analyzer, metric, index }) {
         }
       } else if (term === query) reason = 'same'
       else if (Array.from(term).length < spec.minStem) reason = 'short'
-      else reason = results.flat().some((r) => r.term === term) ? 'spread' : 'bound'
+      else {
+        // 走訪用了相對上限，被截斷的詞可能根本沒走到：只對這個詞、不收緊上限再算一次
+        const single = new FuzzyIndex(metric).addAll([[term, null]])
+        const alone = single.searchChannels(prepared.channels.map((ch) => ({ query: ch.query, options: { ...ch.options, cutoff: undefined } })))
+        reason = alone.flat().length ? 'spread' : 'bound'
+      }
     }
     return {
       query,
@@ -588,7 +647,7 @@ export function createMorphSearch({ analyzer, metric, index }) {
         crossingP: prepared.P.pending.map((p) => ({ head: metric.compiled.trieString(p.node), row: rowOf(p.row) })),
         crossingS: prepared.S.pending.map((p) => ({ tail: p.tail.join(''), row: rowOf(p.row) })),
       },
-      variants: prepared.variants.map((v) => ({ kind: v.kind, text: v.chars.join(''), chars: [...v.chars], op: v.op, start: v.start })),
+      variants: prepared.variants.map((v) => ({ kind: v.kind, text: v.chars.join(''), chars: [...v.chars], op: v.op, start: v.start, prefixed: v.prefixed })),
       truncated: prepared.truncated,
       candidates: results.map((list) => list.map((r) => ({ term: r.term, distance: r.distance, exit: r.exit ?? null }))),
       walks: walks.map((events) => events.map((e) => ({ ...e, lowerBound: finite(/** @type {number} */ (e.lowerBound)) }))),
@@ -601,7 +660,7 @@ export function createMorphSearch({ analyzer, metric, index }) {
     }
   }
 
-  return { search, prepare, finish, explain, explainHit, notesOf, notesFor, derive, clearCache: () => cache.clear() }
+  return { search, prepare, seed, finish, explain, explainHit, notesOf, notesFor, derive, clearCache: () => cache.clear() }
 }
 
 /**
