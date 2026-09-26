@@ -4,7 +4,7 @@
  * - refDistance：由定義直接寫成的加權編輯距離，不共用 fillRow。先確認它與 metric.distance 逐一相同，
  *   之後就能當作其他測試的仲裁者（其他測試過去都以 metric.distance 為準，與被測程式共用同一個 DP）。
  * - refMorph：窮舉 BCDP 分段模型的所有分析（docs/bcdp.md 第 1 節）。
- * - 正式實作曾經不符合定義的地方（bcdp.md 1.6）先以 it.fails 寫成「應該怎樣」，修正後改回 it，
+ * - 正式實作曾經不符合定義的地方（bcdp.md 第 12 節）先以 it.fails 寫成「應該怎樣」，修正後改回 it，
  *   留作回歸測試。
  */
 
@@ -52,11 +52,14 @@ function randomMorphSetup(random) {
   const rules = new RuleSet()
   const ruleCount = 1 + Math.floor(random() * 4)
   for (let k = 0; k < ruleCount; k++) {
-    rules.add(randomString(random, alphabet, 1, 2), randomString(random, alphabet, 1, 2), pick(random, [0.1, 0.2]), {
+    // 一側可以是空字串（脫落、增生），但不能兩側都空
+    const source = randomString(random, alphabet, 0, 2)
+    rules.add(source, randomString(random, alphabet, source ? 0 : 1, 2), pick(random, [0.1, 0.2]), {
       position: pick(random, ['any', 'any', 'initial', 'final']),
     })
   }
-  const metric = new WeightedEditDistance({ rules, normalize: (s) => s })
+  // 空白的增刪只算 0.1（與網站相同），讓含空白的查詢有機會對到詞根
+  const metric = new WeightedEditDistance({ rules, normalize: (s) => s, costs: { overrides: { ' ': { substitute: 0.1, delete: 0.1, insert: 0.1 } } } })
   const affixes = (/** @type {number} */ n, /** @type {number} */ max) =>
     [...new Set(Array.from({ length: n }, () => randomString(random, alphabet, 1, max)))].map((form) => ({ form, cost: pick(random, [0.2, 0.3]) }))
   const spec = {
@@ -112,6 +115,11 @@ function derive(random, { spec, analyzer, roots, alphabet }) {
     const at = Math.floor(random() * q.length)
     q = q.slice(0, at) + pick(random, alphabet) + q.slice(at + 1)
   }
+  // 偶爾插入一個空白：多詞查詢、詞素交界在空白旁的情形（bcdp.md 1.6 第 1 項）
+  if (random() < 0.15 && q.length > 2) {
+    const at = 1 + Math.floor(random() * (q.length - 1))
+    q = `${q.slice(0, at)} ${q.slice(at)}`
+  }
   return q
 }
 
@@ -138,7 +146,7 @@ describe('參考實作：BCDP 分段模型', () => {
         const got = new Map(hits.map((h) => [h.term, h.distance]))
         /** @type {Map<string, string>} */
         const why = new Map()
-        const want = refMorph(ctx, { query, lexicon: roots, spec, maxDistance, reduplicant: analyzer.reduplicant, why })
+        const want = refMorph(ctx, { query, lexicon: roots, spec, maxDistance, why })
         const terms = new Set([...got.keys(), ...want.keys()])
         for (const t of terms) {
           const detail = `seed=${seed} round=${round} query=${query} term=${t}；參考：${why.get(t) ?? '—'}；規格：${JSON.stringify({ prefixes: spec.prefixes.map((a) => a.form), suffixes: spec.suffixes.map((a) => a.form), infixes: spec.infixes.map((a) => a.form), red: spec.reduplication.map((r) => r.pattern), alt: spec.alternations, rules: metric.ruleSet.expand().map((r) => `${r.source}>${r.target}:${r.position}`) })}`
@@ -192,6 +200,38 @@ describe('explain：實驗室用的說明與搜尋結果一致', () => {
     expect(found).toBeGreaterThan(20)
   })
 
+  it('候選是超集：有詞首、詞尾規則與空白時，任何切法在 λ 以內的詞根都在候選中（bcdp.md 第 9 節）', () => {
+    // 多源 DP 把所有有限起點同時當作詞首，詞幹中間也可能套用詞首規則，算出的值 ≤ 逐段計算的值（第 4 節）。
+    // 所以候選可能多於「某個切法在 λ 以內」的詞，但絕不會少
+    const random = createRandom(9001)
+    let checked = 0
+    for (let round = 0; round < 24; round++) {
+      const setup = randomMorphSetup(random)
+      const { metric, analyzer, roots } = setup
+      const ctx = refContext(metric)
+      const index = new FuzzyIndex(metric).addAll(roots.map((w) => [w, w]))
+      const search = createMorphSearch({ analyzer, metric, index })
+      for (let k = 0; k < 6; k++) {
+        const query = derive(random, setup)
+        const e = /** @type {any} */ (search.explain(query, null, { maxDistance: 1 }))
+        if (e.tooShort) continue
+        e.variants.forEach((/** @type {any} */ v, /** @type {number} */ vi) => {
+          const candidates = new Set(e.candidates[vi].map((/** @type {any} */ c) => c.term))
+          for (const t of roots) {
+            const reachable = v.starts.some((/** @type {number} */ i) =>
+              v.ends.some((/** @type {number} */ kk) => kk > i && refDistance(ctx, v.chars, Array.from(t), { lo: i, hi: kk }) <= analyzer.spec.lemmaDistance + EPSILON),
+            )
+            if (reachable) {
+              checked++
+              expect(candidates.has(t), `${query}（變體 ${v.text}）→ ${t}`).toBe(true)
+            }
+          }
+        })
+      }
+    }
+    expect(checked).toBeGreaterThan(50)
+  })
+
   it('explainChars 與 explain 相同；帶邊界向量時第 0 列就是 start', () => {
     const metric = new WeightedEditDistance({ rules: new RuleSet().add('au', 'o', 0.1), normalize: (s) => s })
     expect(metric.explainChars(Array.from('dox'), Array.from('daux'))).toEqual(metric.explain('dox', 'daux'))
@@ -203,7 +243,7 @@ describe('explain：實驗室用的說明與搜尋結果一致', () => {
   })
 })
 
-describe('固定案例：bcdp.md 1.6 修正過的項目與 1.7 的語意', () => {
+describe('固定案例：bcdp.md 第 12 節修正過的項目與 1.6 的語意', () => {
   /** 與網站相同的空白處理：連續空白合併、去掉頭尾空白（createNormalizer 的 collapseWhitespace） */
   const collapse = (/** @type {string} */ s) => s.replace(/\s+/gu, ' ').trim()
   /** 固定的小規格：prefix mu-、suffix -an，空白的增刪成本 0.1 */
@@ -217,7 +257,7 @@ describe('固定案例：bcdp.md 1.6 修正過的項目與 1.7 的語意', () =>
   const compare = ({ metric, analyzer, spec }, lexicon, query, maxDistance = 1) => {
     const index = new FuzzyIndex(metric).addAll(lexicon.map((w) => [w, w]))
     const got = new Map(createMorphSearch({ analyzer, metric, index }).search(query, { maxDistance }).map((h) => [h.term, h.distance]))
-    const want = refMorph(refContext(metric), { query, lexicon, spec, maxDistance, reduplicant: analyzer.reduplicant })
+    const want = refMorph(refContext(metric), { query, lexicon, spec, maxDistance })
     return { got, want }
   }
 
@@ -301,6 +341,53 @@ describe('固定案例：bcdp.md 1.6 修正過的項目與 1.7 的語意', () =>
     expect(() => search.search('badan', { maxDistance: 1 })).not.toThrow()
   })
 
+  it('查詢不比 minStem 長時不做構詞搜尋（限制 6）', () => {
+    // minStem 2：ba 可以分析成 b- ＋ a，但查詢只有 2 個字元
+    const setup = fixed({ prefixes: [{ form: 'b' }] }, new RuleSet().add('a', 'ab', 0.1))
+    const { got, want } = compare(setup, ['ab'], 'ba')
+    expect(want.size).toBe(0)
+    expect(got.size).toBe(0)
+  })
+
+  it('lemmaSpread：只保留成本在「最佳 ＋ lemmaSpread」之內的詞根', () => {
+    // mudaux：daux ＝ mu- ＋ daux（0.3），udaux ＝ m- ＋ udaux（m- 的成本 0.9）。兩者相差 0.6
+    const extra = { prefixes: [{ form: 'mu' }, { form: 'm', cost: 0.9 }] }
+    const run = (/** @type {number} */ lemmaSpread) => {
+      const setup = fixed({ ...extra, lemmaSpread })
+      const index = new FuzzyIndex(setup.metric).addAll([['daux', 'daux'], ['udaux', 'udaux']])
+      return createMorphSearch({ analyzer: setup.analyzer, metric: setup.metric, index }).search('mudaux', { maxDistance: 2 }).map((h) => [h.term, h.distance])
+    }
+    expect(run(100)).toEqual([['daux', 0.3], ['udaux', 0.9]])
+    expect(run(0.6)).toEqual([['daux', 0.3], ['udaux', 0.9]]) // 截斷線含等號
+    expect(run(0.5)).toEqual([['daux', 0.3]])
+  })
+
+  it('同分規則：成本相同時取詞幹較短的切法，再相同時取起點較小的（bcdp.md 1.2）', () => {
+    // anaa 對 nnn：切法 (0, 3)（詞幹 ana ＋ 後綴 a≈b）與 (1, 4)（前綴 a≈ai ＋ 詞幹 naa）成本都是 0.6、詞幹都長 3
+    const rules = new RuleSet().add('a', 'b', 0.1).add('n', 'a', 0.1)
+    const metric = new WeightedEditDistance({ rules, normalize: (s) => s })
+    const analyzer = createAnalyzer({ minStem: 2, maxSteps: 2, vowels: 'ai', lemmaSpread: 100, prefixes: [{ form: 'ai' }, { form: 'n' }], suffixes: [{ form: 'b' }, { form: 'd' }] })
+    const index = new FuzzyIndex(metric).addAll([['nnn', 'nnn']])
+    const e = /** @type {any} */ (createMorphSearch({ analyzer, metric, index }).explain('anaa', 'nnn', { maxDistance: 2 }))
+    const tied = e.pricing[0].cells.filter((/** @type {any} */ c) => c.skip === null && Math.abs(c.total - e.hit.distance) < 1e-9)
+    expect(tied.map((/** @type {any} */ c) => [c.i, c.k])).toEqual([[0, 3], [1, 4]])
+    expect(e.hit.stemSurface).toBe('ana')
+  })
+
+  it('完整重疊後面接後綴：詞幹只有重疊部分那一段（bcdp.md 第 12 節第 5 項的回歸測試）', () => {
+    const setup = fixed({ reduplication: [{ pattern: 'full' }] })
+    const { got, want } = compare(setup, ['dak'], 'dakdakan')
+    expect(want.get('dak')).toBeCloseTo(0.6, 9)
+    expect(got.get('dak')).toBeCloseTo(0.6, 9)
+  })
+
+  it('邊界向量不能是負數（剪枝的下界依賴這一點）', () => {
+    const metric = new WeightedEditDistance({ normalize: (s) => s })
+    const index = new FuzzyIndex(metric).addAll([['ab', 'ab']])
+    expect(() => index.searchChannels([{ query: ['a', 'b'], options: { start: [0, -0.1, Infinity], end: [Infinity, Infinity, 0] } }])).toThrow(/非負/)
+    expect(() => index.searchChannels([{ query: ['a', 'b'], options: { end: [Infinity, NaN, 0] } }])).toThrow(/非負/)
+  })
+
   it('重疊部分可以超過 4 個字元（Ca：首輔音群 4 個字元＋a）', () => {
     const setup = fixed({ reduplication: [{ pattern: 'Ca' }] })
     const { got, want } = compare(setup, ['bdknaku'], 'bdknabdknaku')
@@ -309,7 +396,7 @@ describe('固定案例：bcdp.md 1.6 修正過的項目與 1.7 的語意', () =>
   })
 
   // 各重疊型式各一例。查詢都是公開資料集中的詞，型式的歸類依 Li & Tsuchida (2001) p. 22、
-  // Lim & Zeitoun (2024) §51.3.2.2（見 bcdp.md 1.7）
+  // Lim & Zeitoun (2024) §51.3.2.2（見 bcdp.md 1.6）
   it.each(/** @type {Array<[string, string, string, number]>} */ ([
     ['Ca', 'dius', 'dadius', 0.3],
     ['CV', 'kiliw', 'kikiliw', 0.3],

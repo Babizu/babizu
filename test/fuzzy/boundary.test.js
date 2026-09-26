@@ -1,8 +1,10 @@
 /**
  * 邊界條件搜尋（構詞搜尋的基礎）的性質測試。對應 docs/bcdp.md 第 4–6 節的定理：
  *
- * - 定理 1／推論 1：帶起點向量 start 與終點向量 end 的詞圖搜尋，結果等於
+ * - 定理 1／推論 1：帶起點向量 start 與終點向量 end 的詞圖搜尋，在沒有詞首、詞尾規則時結果等於
  *     W(q, t) = min over i ≤ k of  start[i] + E(q[i..k), t) + end[k]
+ *   有詞首、詞尾規則時，所有有限起點（終點）都算詞首（詞尾），結果只會不大於上式（定理 1 (b)），
+ *   等於「每個起點各搜一次、其他起點仍標成詞首」的最小值
  * - 定理 2：加上邊界條件後剪枝仍然安全（結果與暴力法完全相同，一筆不漏）
  * - 沒有邊界條件時，行為與原本的搜尋完全相同
  */
@@ -119,6 +121,20 @@ describe('邊界條件搜尋：性質測試', () => {
         expect(actual, `query=${query}`).toEqual(expected)
       }
     }
+  })
+
+  it('定理 1 (b) 的實例：有詞首規則時，一次搜尋比逐段計算便宜（其他起點也算詞首）', () => {
+    const metric = new WeightedEditDistance({ rules: new RuleSet().add('k', 'g', 0.2, { position: 'initial' }), costs: { delete: 0.1 }, normalize: (s) => s })
+    const index = new FuzzyIndex(metric).addAll([['gxy', 'gxy']])
+    const I = Infinity
+    const start = [0, I, 0.5, I, I, I]
+    const end = [I, I, I, I, I, 0]
+    // 逐段計算：從 0 出發時 k 不在詞首（1.1）；從 2 出發是 0.5 ＋ 0.2
+    const perSegment = Math.min(start[0] + metric.distance('abkxy', 'gxy'), start[2] + metric.distance('kxy', 'gxy'))
+    expect(perSegment).toBeCloseTo(0.7, 9)
+    // 一次搜尋：從 0 出發，刪掉 a、b，在位置 2（也是有限起點）套用詞首規則
+    const [hit] = index.search('abkxy', { maxDistance: 2, start, end })
+    expect(hit.distance).toBeCloseTo(0.4, 9)
   })
 
   it('沒有邊界條件時結果不變；start = [0, ∞…]、end = [∞…, 0] 等於普通搜尋', () => {

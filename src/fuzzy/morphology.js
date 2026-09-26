@@ -37,7 +37,7 @@
 
 /**
  * @typedef {'Ca' | 'CV' | 'CVV' | 'CVCV' | 'CVCVC' | 'full'} ReduplicationPattern
- * 重疊的型式（docs/bcdp.md 1.7）。重疊部分放在詞幹前面，由詞幹 base 依模板產生：
+ * 重疊的型式（docs/bcdp.md 1.6）。重疊部分放在詞幹前面，由詞幹 base 依模板產生：
  * - Ca：首輔音（群）＋ a（`da~dius`、`la~luzuk`）
  * - CV：首輔音＋第一個元音（`ki~kiliw`、`du~dusa`）
  * - CVV：首輔音＋第一個元音重複兩次，即元音加長（`dee~depex`、`kii~kita`）
@@ -71,7 +71,7 @@ export const REDUPLICATION_PATTERNS = Object.freeze(['Ca', 'CV', 'CVV', 'CVCV', 
  * @typedef {object} MorphologySpec 語言設定檔的 `morphology` 區段
  * @property {number} [cost=0.3] 每個構詞步驟的預設成本
  * @property {number} [minStem=3] 詞幹最短長度（code point）
- * @property {number} [maxSteps=3] 前綴、後綴各自最多幾個（另加至多一個中綴、重疊或詞幹交替；見 docs/bcdp.md 1.7）
+ * @property {number} [maxSteps=3] 前綴、後綴各自最多幾個（另加至多一個中綴、重疊或詞幹交替；見 docs/bcdp.md 1.6）
  * @property {number} [lemmaDistance=0.3] 構詞命中時，詞幹部分允許的加權編輯距離（音變預算）。
  *   0 表示詞幹必須正好是詞庫中的詞；0.1–0.3 讓「另一個方言的衍生詞 → 這個方言的詞根」也找得到
  * @property {number} [affixDistance=0.2] 每個詞綴允許的加權編輯距離（詞綴本身的方言差異，例如 mine-／minu-）
@@ -132,7 +132,7 @@ const hasSpace = (/** @type {string} */ s) => /\s/u.test(s)
  * 檢查規格的結構，回傳錯誤訊息清單（空陣列表示沒有錯誤）。
  *
  * 除了型別與範圍，也檢查「會讓搜尋默默出錯」的情況：拼錯的欄位、詞綴含空白
- * （詞綴不跨越詞邊界，見 docs/bcdp.md 1.7）、非有限的成本。
+ * （詞綴不跨越詞邊界，見 docs/bcdp.md 1.6）、非有限的成本。
  * @param {unknown} spec
  * @returns {string[]}
  */
@@ -418,7 +418,7 @@ export function createAnalyzer(spec, normalize = (s) => s) {
     /** @type {Map<string, Analysis>} */
     const best = new Map()
     /**
-     * 步數預算與 BCDP 相同（docs/bcdp.md 1.2、1.7）：
+     * 步數預算與 BCDP 相同（docs/bcdp.md 1.2、1.6）：
      * - 前綴、後綴各自至多 maxSteps 個；另加至多一個非串接步驟（中綴、重疊或詞幹交替）
      * - 中綴與重疊位在「前綴鏈之內」的詞幹開頭：做了之後不能再剝前綴
      * - 重疊的模板只套用在詞幹上（不含後綴）：做了之後也不能再剝後綴

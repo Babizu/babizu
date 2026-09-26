@@ -6,10 +6,15 @@
  * 每一段的距離都以獨立的 refDistance（./ref-distance.js）計算，並套用該段的位置語意（bcdp.md 1.3）：
  * - 詞綴段：左緣算詞首；右緣只在真正的詞尾或空白前算詞尾；詞綴本身（標準形式）是完整的詞
  * - 詞幹段：兩端都算詞首、詞尾（當作一個完整的詞）
- * 不用詞綴圖表、不用詞圖、不剪枝、不用還原變體的上限，所以與正式實作沒有共同的演算法。
+ * 不用詞綴圖表、不用詞圖、不剪枝、不用還原變體的上限；重疊模板也在這裡以正規表示式另外寫一份
+ * （不用 analyzer.reduplicant），所以與正式實作沒有共同的演算法。
  *
- * 語意依 bcdp.md 1.7 的決定（包括「詞綴不跨越空白」）。正式實作尚未符合的地方，
- * 測試以 it.fails 標示（bcdp.md 1.6），修正後翻轉。
+ * 與正式實作共用的部分（誠實列出）：
+ * - 規格的正規化與預設值（createAnalyzer(...).spec）
+ * - 規則的展開與成本表（refContext 取自 metric.ruleSet.expand、metric.costs）
+ * 比對的粒度是「每個詞根的成本」，不比較說明中的切法（切法由 bcdp.md 1.2 的同分規則決定，另有固定案例）。
+ *
+ * 語意依 bcdp.md 1.6 的決定（包括「詞綴不跨越空白」）。
  *
  * 只適合小輸入：成本是指數級的。
  */
@@ -26,14 +31,17 @@ const round = (/** @type {number} */ x) => Math.round(x * 1e9) / 1e9
  * @param {string[]} input.lexicon 可作為詞根的詞
  * @param {any} input.spec createAnalyzer(...).spec（已正規化、已補預設值）
  * @param {number} input.maxDistance 總成本上限 B
- * @param {(pattern: string, base: string) => string | null} input.reduplicant 重疊部分（analyzer.reduplicant；
- *   只用這個模板函式本身，不用 reduplicantStems 的穩定引理）
  * @param {Map<string, string>} [input.why] 除錯用：傳入時，記下每個詞根最佳分析的文字描述
  * @returns {Map<string, number>} 詞根 → W_D（沒有 lemmaSpread 截斷）
  */
-export function refMorph(ctx, { query, lexicon, spec, maxDistance, reduplicant, why }) {
+export function refMorph(ctx, { query, lexicon, spec, maxDistance, why }) {
   const q = Array.from(query)
   const n = q.length
+  /** @type {Map<string, number>} */
+  const best = new Map()
+  // 限制 6：查詢至少要比 minStem 多一個字元（bcdp.md 1.2）
+  if (n < spec.minStem + 1) return best
+  const reduplicant = refTemplate(spec.vowels)
   const isB = (/** @type {string | undefined} */ ch) => ch !== undefined && ctx.boundaries.has(ch)
   const vowels = new Set(Array.from(spec.vowels))
   const slots = spec.maxSteps
@@ -57,7 +65,7 @@ export function refMorph(ctx, { query, lexicon, spec, maxDistance, reduplicant, 
    * @param {{form: string, cost: number}} affix
    */
   function affixCost(v, a, b, affix) {
-    for (let p = a; p < b; p++) if (isB(v[p])) return Infinity // 詞綴不跨越空白（bcdp.md 1.7）
+    for (let p = a; p < b; p++) if (isB(v[p])) return Infinity // 詞綴不跨越空白（bcdp.md 1.6）
     const d = refDistance(ctx, v, Array.from(affix.form), {
       lo: a,
       hi: b,
@@ -114,8 +122,6 @@ export function refMorph(ctx, { query, lexicon, spec, maxDistance, reduplicant, 
   /** 詞幹段 v[i..k) 對 t 的距離（整段當作一個詞） @param {string[]} v @param {number} i @param {number} k @param {string[]} t */
   const stemDistance = (v, i, k, t) => refDistance(ctx, v, t, { lo: i, hi: k })
 
-  /** @type {Map<string, number>} */
-  const best = new Map()
   const consider = (/** @type {string} */ term, /** @type {number} */ total, /** @type {() => string} */ describe) => {
     if (total > maxDistance + EPS) return
     const r = round(total)
@@ -129,7 +135,7 @@ export function refMorph(ctx, { query, lexicon, spec, maxDistance, reduplicant, 
   const P = prefixChart(q)
   /** S[k]：原查詢上由 k 開始的後綴鏈（至多 slots 個） */
   const S = Array.from({ length: n + 1 }, (_, k) => suffixChain(q, k, slots))
-  // 詞素交界不能在空白旁（bcdp.md 1.7）：接前綴的詞幹不以空白開頭、接後綴的詞幹不以空白結尾
+  // 詞素交界不能在空白旁（bcdp.md 1.6）：接前綴的詞幹不以空白開頭、接後綴的詞幹不以空白結尾
   for (let i = 1; i < n; i++) if (isB(q[i])) P[i] = Infinity
   for (let k = 1; k < n; k++) if (isB(q[k - 1])) S[k] = Infinity
 
@@ -212,4 +218,29 @@ export function refMorph(ctx, { query, lexicon, spec, maxDistance, reduplicant, 
     }
   }
   return best
+}
+
+/**
+ * 重疊模板的獨立寫法（bcdp.md 1.6 第 2 項、language-profile.md「重疊」）：以正規表示式直接寫出定義，
+ * 不共用 src/fuzzy/morphology.js 的程式。V 是元音字母，C 是其他字元；元音核是連續的元音。
+ * @param {string} vowels
+ * @returns {(pattern: string, base: string) => string | null}
+ */
+function refTemplate(vowels) {
+  // 字元類別中有特殊意義的 \ ] ^ - 要跳脫
+  const v = `[${Array.from(vowels).map((ch) => (/[\\\]^-]/.test(ch) ? `\\${ch}` : ch)).join('')}]`
+  const c = `[^${v.slice(1, -1)}]`
+  const re = (/** @type {string} */ body) => new RegExp(`^${body}`, 'u')
+  return (pattern, base) => {
+    if (pattern === 'full') return base
+    if (pattern === 'Ca') return `${re(`${c}*`).exec(base)?.[0] ?? ''}a`
+    if (pattern === 'CV') return re(`${c}*${v}`).exec(base)?.[0] ?? null
+    if (pattern === 'CVV') {
+      const m = re(`(${c}*)(${v})`).exec(base)
+      return m ? m[1] + m[2] + m[2] : null
+    }
+    if (pattern === 'CVCV') return re(`${c}*${v}+${c}+${v}+`).exec(base)?.[0] ?? null
+    if (pattern === 'CVCVC') return re(`${c}*${v}+${c}+${v}+${c}*`).exec(base)?.[0] ?? null
+    throw new RangeError(`未知的重疊型式 ${pattern}`)
+  }
 }

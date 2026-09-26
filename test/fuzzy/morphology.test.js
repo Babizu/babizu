@@ -50,7 +50,7 @@ describe('analyze：去詞綴', () => {
     expect(stems('bitudén')).not.toContain('bitut')
   })
 
-  it('詞幹最短長度與步數預算（與 BCDP 相同，docs/bcdp.md 1.7）', () => {
+  it('詞幹最短長度（詞庫詞至少 minStem 個字元）與步數預算（與 BCDP 相同，docs/bcdp.md 1.6 第 4 項）', () => {
     expect(stems('muan')).toEqual([]) // 剝掉後只剩 2 個字元
     const deep = analyzer.analyze('mupakabinaketan')
     const count = (/** @type {any} */ a, /** @type {string[]} */ types) => a.steps.filter((/** @type {any} */ s) => types.includes(s.type)).length
@@ -93,7 +93,7 @@ describe('analyze：去詞綴', () => {
   })
 })
 
-describe('重疊模板（docs/bcdp.md 1.7 第 2 項）', () => {
+describe('重疊模板（docs/bcdp.md 1.6 第 2 項）', () => {
   // 例子取自 Lim & Zeitoun (2024) §51.3.2.2 的歸類，詞見公開資料集
   const red = createAnalyzer({ vowels: 'aeiou' }).reduplicant
   it.each(/** @type {Array<[any, string, string | null]>} */ ([

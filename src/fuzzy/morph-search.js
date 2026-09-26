@@ -3,7 +3,7 @@
  *
  * 問題：查詢 q 是某個詞庫詞 t 的衍生形，而且可能帶著方言音變（詞幹或詞綴裡都可能有）。要求
  *
- *   W(q, t) = min over 0 ≤ i ≤ k ≤ n of  P[i] + E(q[i..k), t) + S[k]
+ *   W(q, t) = min over 0 ≤ i < k ≤ n of  P[i] + E(q[i..k), t) + S[k]
  *
  * - P[i]：把 q[0..i) 解析成前綴鏈的最小成本（每個前綴允許 affixDistance 以內的音變）
  * - S[k]：把 q[k..n) 解析成後綴鏈的最小成本
@@ -16,6 +16,9 @@
  *    遞推式、方言規則、剪枝都與普通模糊搜尋相同；普通搜尋是 P = [0, ∞…]、S = [∞…, 0] 的特例。
  * 3. 中綴、重疊、詞幹交替不是「加在外面」的，先在查詢上產生少數還原變體（在前綴鏈的終點拿掉中綴…），
  *    每個變體各跑一次步驟 2。
+ *
+ * 有詞首、詞尾規則時，步驟 2 的一次走訪只給出「不大於」上式的值（所有有限起點都算詞首，docs/bcdp.md 定理 1 (b)），
+ * 所以走訪只用來找候選（邊界歸零、上限 λ），每個候選的成本再逐段精確計價（priceTerm）。
  *
  * 模型的正式定義、正確性（定理 1–3）與它和 FST 聯合最佳解 W* 的關係見 docs/bcdp.md；
  * 性質測試見 test/fuzzy/boundary.test.js、test/fuzzy/morph-search.test.js。
@@ -71,6 +74,9 @@ const MAX_VARIANTS = 64
 
 /**
  * 建立構詞搜尋器。
+ *
+ * 詞綴索引在建立時就建好，詞綴圖表也會快取；之後若以 `metric.setRules` 換了方言規則，
+ * 快取的圖表不會跟著失效，要呼叫 clearCache（或重新建立構詞搜尋器）。
  * @param {object} deps
  * @param {import('./morphology.js').Analyzer} deps.analyzer 構詞規格（已正規化）
  * @param {import('./distance.js').WeightedEditDistance} deps.metric 與詞庫相同的距離函式
@@ -84,7 +90,7 @@ export function createMorphSearch({ analyzer, metric, index }) {
     return idx
   }
   const prefixIndex = affixIndex(spec.prefixes)
-  /** 詞邊界字元（預設為空白）：詞綴、中綴、重疊部分都不能包含或跨越它（docs/bcdp.md 1.7） */
+  /** 詞邊界字元（預設為空白）：詞綴、中綴、重疊部分都不能包含或跨越它（docs/bcdp.md 1.6） */
   const isBoundary = (/** @type {string | undefined} */ ch) => ch !== undefined && metric.boundaries.has(ch)
   /**
    * 詞幹部分在 λ 以內最多能改變幾個字元的長度：一般的增刪每字元至少 min(插入, 刪除) 成本；
@@ -118,7 +124,7 @@ export function createMorphSearch({ analyzer, metric, index }) {
     // 查詢從 k 到詞尾的整段（已正規化的 code point 陣列，原樣使用、不再正規化）：
     // 詞尾規則只在真正的詞尾或空白前適用（詞綴 trie 很淺，多出來的欄位不影響剪枝）。
     const piece = chars.slice(k)
-    // 詞綴不跨越空白（docs/bcdp.md 1.7）：只收 q[k..k+l) 不含邊界字元的 l
+    // 詞綴不跨越空白（docs/bcdp.md 1.6）：只收 q[k..k+l) 不含邊界字元的 l
     let limit = piece.length
     for (let l = 0; l < piece.length; l++) {
       if (isBoundary(piece[l])) {
@@ -225,7 +231,7 @@ export function createMorphSearch({ analyzer, metric, index }) {
     }
     const bestP = best(P)
     const bestS = best(S)
-    // 詞素交界不能在空白旁（docs/bcdp.md 1.7）：接前綴的詞幹不能以空白開頭，接後綴的詞幹不能以空白結尾。
+    // 詞素交界不能在空白旁（docs/bcdp.md 1.6）：接前綴的詞幹不能以空白開頭，接後綴的詞幹不能以空白結尾。
     // 詞綴本身已不含空白，所以只要遮掉「下一個字元是空白」的前綴鏈終點、「前一個字元是空白」的後綴鏈起點。
     // 片語中每個詞的構詞，交給搜尋引擎的逐詞搜尋。
     for (let i = 1; i < n; i++) if (isBoundary(chars[i])) bestP.cost[i] = Infinity

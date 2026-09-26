@@ -302,7 +302,7 @@ export class FuzzyIndex {
    *
    * 通道的 query 可以是字串（先經過 metric 的正規化），也可以是**已正規化的 code point 陣列**
    * （原樣使用、不再正規化）。構詞搜尋用後者：它的查詢片段取自已正規化的查詢，
-   * 再正規化一次可能改變片段（例如截掉頭尾空白），位置就會錯開（docs/bcdp.md 1.6）。
+   * 再正規化一次可能改變片段（例如截掉頭尾空白），位置就會錯開（docs/bcdp.md 第 11、12 節）。
    *
    * @param {Array<{query: string | string[], options?: SearchOptions}>} channels
    * @param {SearchStats} [stats] 累加統計（走訪節點數以實際走訪計，不按通道重複計算）
@@ -361,6 +361,10 @@ export class FuzzyIndex {
       const end = options.end ?? null
       if ((start && start.length !== n + 1) || (end && end.length !== n + 1)) {
         throw new RangeError(`start／end 的長度必須是查詢長度 + 1（${n + 1}）`)
+      }
+      // 剪枝的下界依賴「邊界成本不小於 0」（docs/bcdp.md 第 6 節）
+      for (const vec of [start, end]) {
+        if (vec && !Array.prototype.every.call(vec, (c) => c >= 0)) throw new RangeError('start／end 的值必須是非負數或 Infinity')
       }
       /**
        * rowsN[j]、rowsF[j]：路徑上第 j 層的兩種列；minN[j]、minF[j] 為各列最小值。
