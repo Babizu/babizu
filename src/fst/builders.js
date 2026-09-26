@@ -143,6 +143,8 @@ export function surfaceLexicon({ dawg, accept = () => true, spec, requireStep = 
   for (const r of spec.reduplication) {
     if (r.pattern !== 'Ca') throw new RangeError(`surfaceLexicon 不支援重疊型式 ${r.pattern}（只支援 Ca）`)
   }
+  // 環綴要記住左邊用了哪一個、右邊才能接對應的後綴，參考後端沒有這個狀態
+  if (spec.circumfixes?.length) throw new RangeError('surfaceLexicon 不支援環綴（circumfixes），請先去掉')
   for (const a of spec.alternations) {
     if (Array.from(a.underlying).length !== 1 || Array.from(a.surface).length !== 1) {
       throw new RangeError(`surfaceLexicon 只支援單一字元的詞幹交替（${a.underlying}>${a.surface}）`)

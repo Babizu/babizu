@@ -178,11 +178,16 @@ export function bcdpSteps(e) {
     proofRef: BCDP_DOC.junction,
   })
   e.variants.forEach((/** @type {any} */ v, /** @type {number} */ c) => {
+    // 中綴、重疊式的環綴：變體拿掉的是環綴的左邊，詞尾一定接它的後綴
+    const circumfix = v.op?.type === 'circumfix'
+    const key = circumfix && v.kind !== 'circumfix' ? 'circumfixInner' : v.kind
+    // 前綴式環綴的通道由後綴相同的幾個環綴共用：列出它們（還原變體說明第一個步驟，其他的在實驗室的通道清單中列出）
+    const form = v.kind === 'circumfix' && v.options?.length ? v.options.map(circumfixLabel).join('、') : circumfix ? circumfixLabel(v.op) : (v.op?.form ?? '')
     steps.push({
       kind: 'variant',
       phase: 'channels',
       focus: { channel: c },
-      note: { key: `lab.note.bcdp.channel.${v.kind}`, params: { text: v.text, form: v.op?.form ?? '' } },
+      note: { key: `lab.note.bcdp.channel.${key}`, params: { text: v.text, form, left: v.op?.left?.form ?? '' } },
       proofRef: v.op ? BCDP_DOC.variants : BCDP_DOC.walk,
     })
   })
@@ -263,4 +268,14 @@ export function bcdpStateAt(e, steps, index) {
 /** @param {number} x @param {number} lo @param {number} hi */
 function clamp(x, lo, hi) {
   return Math.max(lo, Math.min(hi, Math.floor(x)))
+}
+
+/**
+ * 環綴的寫法：前綴式 `ta-…-aw`、中綴式 `<in>…-an`、重疊式 `da~…-ay`。
+ * @param {{left: {type: string, form: string}, suffix: string}} step
+ */
+export function circumfixLabel(step) {
+  const { type, form } = step.left
+  const left = type === 'prefix' ? `${form}-` : type === 'infix' ? `<${form}>` : `${form}~`
+  return `${left}…-${step.suffix}`
 }

@@ -203,7 +203,9 @@
           "plain": "Channel “{text}”: no prefix, so the stem starts at the word start and needs at least one suffix.",
           "prefix": "Channel “{text}”: the stem starts from the merged prefix state; it may be followed by suffixes or end the word.",
           "infix": "Removing the infix <{form}> gives the restored variant “{text}”; the stem’s start is fixed in the query.",
-          "reduplication": "Removing the reduplicant “{form}” gives the restored variant “{text}”; the template fixes where the stem starts and how long it is."
+          "reduplication": "Removing the reduplicant “{form}” gives the restored variant “{text}”; the template fixes where the stem starts and how long it is.",
+          "circumfix": "Channel “{text}”: the stem follows the left part of circumfix {form} and must end with its suffix; both parts count as one step.",
+          "circumfixInner": "Removing the left part “{left}” of circumfix {form} gives the restored variant “{text}”: the stem start is fixed on the query and the stem must end with the circumfix suffix."
         },
         "walk": "Channel “{text}”: shares one walk of the lexicon with plain search; {visited} node(s) visited, {pruned} pruned; at word ends the stem couples with the suffixes, and {found} word(s) are within the limit.",
         "hits": "{count} root(s) found; only those with cost up to {cutoff} are kept.",
@@ -275,7 +277,9 @@
         "prefix": "after the prefixes",
         "infix": "infix <{form}> removed",
         "reduplication": "reduplicant {form} removed",
-        "afterPrefix": " (after a prefix)"
+        "afterPrefix": " (after a prefix)",
+        "circumfix": "circumfix {form}",
+        "circumfixInner": "left part “{left}” of circumfix {form} removed"
       },
       "walkResult": "{visited} node(s) visited, {found} word(s) within the limit",
       "alignment": "③ Whole-word alignment: {term}",
@@ -322,7 +326,8 @@
       "suffix": "Suffix",
       "infix": "Infix",
       "reduplication": "Reduplication",
-      "alternation": "Morphophonological change"
+      "alternation": "Morphophonological change",
+      "circumfix": "Circumfix"
     },
     "labLink": "Step through it in the Algorithm Lab →",
     "soundChanges": "Sound changes (matched over the whole word)",

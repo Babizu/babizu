@@ -22,7 +22,8 @@
 
 import { EDGE_JUNCTION, EDGE_WORD, EPSILON, roundCost } from './dp.js'
 import { FuzzyIndex } from './fuzzy-index.js'
-import { emptyEnd, emptyJunction, isReachable, mergeEndInto, mergeInto, toForwardEnd } from './junction.js'
+import { emptyEnd, emptyJunction, isReachable, mergeEndInto, mergeInto, minOf, toForwardEnd } from './junction.js'
+import { circumfixStep } from './morphology.js'
 
 /** @typedef {import('./fuzzy-index.js').JunctionState} JunctionState */
 /** @typedef {import('./fuzzy-index.js').JunctionEnd} JunctionEnd */
@@ -44,9 +45,11 @@ import { emptyEnd, emptyJunction, isReachable, mergeEndInto, mergeInto, toForwar
 
 /**
  * @typedef {object} MorphStepHit 命中說明中的一個構詞步驟
- * @property {'prefix' | 'suffix' | 'infix' | 'reduplication'} type
- * @property {string} form 標準形式（規格中的寫法；重疊是查詢中的重疊部分）
+ * @property {'prefix' | 'suffix' | 'infix' | 'reduplication' | 'circumfix'} type
+ * @property {string} form 標準形式（規格中的寫法；重疊是查詢中的重疊部分；環綴是「左邊…後綴」）
  * @property {string} [pattern] 重疊的型式
+ * @property {{type: 'prefix' | 'infix' | 'reduplication', form: string, pattern?: string}} [left] 環綴左邊的部分
+ * @property {string} [suffix] 環綴的後綴
  * @property {Gloss} gloss
  * @property {number} cost 步驟本身的成本（音變另外算在整個詞的對齊裡）
  */
@@ -57,14 +60,31 @@ import { emptyEnd, emptyJunction, isReachable, mergeEndInto, mergeInto, toForwar
  * @property {unknown[]} payloads
  * @property {number} distance 分析的成本：步驟成本＋整個詞的音變
  * @property {MorphStepHit[]} steps 由外而內
- * @property {{variant: number, prefixes: AffixEntry[], suffixes: AffixEntry[]}} analysis 用了哪一個通道、
- *   哪些前綴與後綴（由外而內），說明（explainHit）用
+ * @property {{variant: number, prefixes: AffixEntry[], suffixes: AffixEntry[], circumfix: Circumfix | null}} analysis
+ *   用了哪一個通道、哪些前綴與後綴（由外而內，不含環綴的兩側）、哪個環綴，說明（explainHit）用
+ */
+
+/**
+ * @typedef {object} Circumfix 環綴（已正規化）：左邊的部分（前綴、中綴，或重疊型式）與後綴
+ * @property {'prefix' | 'infix' | 'reduplication'} kind
+ * @property {string} left
+ * @property {string} suffix
+ * @property {Gloss} gloss
+ * @property {number} cost
  */
 
 /**
  * @typedef {object} Variant 一個搜尋通道：原查詢，或拿掉中綴、重疊部分的查詢
- * @property {'plain' | 'prefix' | 'infix' | 'reduplication'} kind plain：沒有前綴、至少一個後綴；
- *   prefix：至少一個前綴；infix、reduplication：還原變體
+ * @property {'plain' | 'prefix' | 'circumfix' | 'infix' | 'reduplication'} kind plain：沒有前綴、至少一個後綴；
+ *   prefix：至少一個前綴；circumfix：前綴式的環綴緊貼詞幹；infix、reduplication：還原變體（op 可以是環綴）
+ * @property {Circumfix | null} circumfix 這個通道的環綴（前綴式環綴的通道由後綴相同的幾個環綴共用，這裡是 null，
+ *   命中是哪一個由起點狀態的 tag 決定）
+ * @property {string | null} suffix 詞尾要接的環綴後綴（null：接一般的後綴鏈，或就是詞尾）
+ * @property {MorphStepHit[]} [options] 共用這個通道的步驟（前綴式環綴的通道：後綴相同的環綴；還原變體：單獨的中綴、重疊，
+ *   與用它當左邊的環綴），說明用
+ * @property {Array<{op: MorphStepHit, circumfix: Circumfix | null, suffix: string | null, cost: number}>} [members]
+ *   還原變體共用通道的各個步驟：成本移到詞尾耦合，詞尾取各步驟的最小值；命中是哪一個由出口決定
+ * @property {Level} [startState] 前綴式環綴的通道：合併後的起點狀態（tag 是環綴）
  * @property {string[]} chars 查詢（變體是還原後的查詢）
  * @property {MorphStepHit | null} op 非串接步驟
  * @property {number} start 變體的詞幹起點（固定）；−1 表示不固定
@@ -114,7 +134,23 @@ export function createMorphSearch({ analyzer, metric, index }) {
     ),
   ].map((s) => Array.from(s))
 
-  /** @type {Map<string, Level[]>} */
+  /** 環綴兩側：前綴式環綴的左邊（詞綴 trie）、所有環綴的後綴（鏡像、反轉） */
+  const circumfixes = /** @type {ReadonlyArray<Circumfix>} */ (spec.circumfixes ?? [])
+  const circPrefixIndex = new FuzzyIndex(metric)
+  for (const c of circumfixes) if (c.kind === 'prefix' && !circPrefixIndex.lookup(c.left)) circPrefixIndex.add(c.left, c.left)
+  const circSuffixIndex = new FuzzyIndex(mirror)
+  for (const c of circumfixes) if (!circSuffixIndex.lookup(reverse(c.suffix))) circSuffixIndex.add(reverse(c.suffix), c.suffix)
+  /** 中綴與重疊的用法：單獨的步驟，或環綴的左邊（詞尾另外要接環綴的後綴） */
+  /** @type {Array<{form: string, op: (left: string) => MorphStepHit, circumfix: Circumfix | null}>} */
+  const infixUses = []
+  for (const x of spec.infixes) infixUses.push({ form: x.form, op: () => ({ type: 'infix', form: x.form, gloss: x.gloss, cost: x.cost }), circumfix: null })
+  for (const c of circumfixes) if (c.kind === 'infix') infixUses.push({ form: c.left, op: (l) => /** @type {MorphStepHit} */ (circumfixStep(c, l)), circumfix: c })
+  /** @type {Array<{pattern: any, op: (red: string) => MorphStepHit, circumfix: Circumfix | null}>} */
+  const redupUses = []
+  for (const r of spec.reduplication) redupUses.push({ pattern: r.pattern, op: (red) => ({ type: 'reduplication', form: red, pattern: r.pattern, gloss: r.gloss, cost: r.cost }), circumfix: null })
+  for (const c of circumfixes) if (c.kind === 'reduplication') redupUses.push({ pattern: c.left, op: (red) => /** @type {MorphStepHit} */ (circumfixStep(c, red)), circumfix: c })
+
+  /** @type {Map<string, any>} 詞綴各層（Level[]）與環綴兩側（Map） */
   const cache = new Map()
 
   /**
@@ -168,6 +204,59 @@ export function createMorphSearch({ analyzer, metric, index }) {
   }
 
   /**
+   * 環綴一側的交界狀態：在環綴那一側的 trie（前綴式環綴的左邊，或鏡像、反轉的後綴）上，由詞首（詞尾）
+   * 與合併後的詞綴狀態各走訪一次，每個形式得到「它是最內層」時的交界狀態。
+   * tag 記下來源：0 ＝ 詞首（詞尾），1 ＝ 接在詞綴鏈之後（說明時由那裡再追詞綴鏈）。
+   * @param {FuzzyIndex} idx
+   * @param {string[]} x 查詢（後綴時是反轉的查詢）
+   * @param {Level} after 合併後的詞綴狀態
+   * @param {number} bound 總成本上限
+   * @param {string} tag 快取鍵的前綴
+   * @returns {Map<string, Level>} 形式 → 交界狀態（只有到得了的）
+   */
+  function sides(idx, x, after, bound, tag) {
+    const key = `${tag}|${bound}|${x.join('')}`
+    const cached = cache.get(key)
+    if (cached) {
+      cache.delete(key)
+      cache.set(key, cached)
+      return cached
+    }
+    const n = x.length
+    /** @type {Map<string, Level>} */
+    const out = new Map()
+    /** @type {Array<{from: Level | undefined, origin: number}>} */
+    const origins = [{ from: undefined, origin: 0 }]
+    if (isReachable(after)) origins.push({ from: after, origin: 1 })
+    for (const { from, origin } of origins) {
+      idx.searchChannels([
+        {
+          query: x,
+          options: {
+            maxDistance: bound,
+            from,
+            lockBoundary: true, // 詞綴不含空白
+            onJunction: (_form, state, payloads) => {
+              for (const form of new Set(/** @type {string[]} */ (payloads))) {
+                let level = out.get(form)
+                if (!level) out.set(form, (level = emptyJunction(n)))
+                mergeInto(level, state, 0, origin)
+              }
+            },
+          },
+        },
+      ])
+    }
+    for (const [form, level] of out) {
+      clip(level, bound)
+      if (!isReachable(level)) out.delete(form)
+    }
+    cache.set(key, out)
+    if (cache.size > CACHE_LIMIT) cache.delete(/** @type {string} */ (cache.keys().next().value))
+    return out
+  }
+
+  /**
    * 還原變體：在每個可能的詞幹起點 i（詞首，或某條前綴鏈的終點）拿掉中綴或重疊部分。
    * 變體的交界固定在查詢的位置上：詞幹由 i 開始（規則不跨越），並在允許的位置結束。
    * @param {string[]} chars
@@ -186,7 +275,7 @@ export function createMorphSearch({ analyzer, metric, index }) {
 
       // 中綴：詞幹首輔音之後、首元音之前（首輔音不能含空白：構詞不跨越詞邊界）
       const at = i + head.length
-      for (const x of head.some(isBoundary) ? [] : spec.infixes) {
+      for (const x of head.some(isBoundary) ? [] : infixUses) {
         const xs = Array.from(x.form)
         if (chars.slice(at, at + xs.length).join('') !== x.form) continue
         const reduced = [...chars.slice(0, at), ...chars.slice(at + xs.length)]
@@ -195,7 +284,10 @@ export function createMorphSearch({ analyzer, metric, index }) {
         yield {
           kind: 'infix',
           chars: reduced,
-          op: { type: 'infix', form: x.form, gloss: x.gloss, cost: x.cost },
+          op: x.op(x.form),
+          circumfix: x.circumfix,
+          suffix: x.circumfix?.suffix ?? null,
+          shape: `x|${prefixed}|${i}|${x.form}`,
           start: i,
           startCost,
           prefixed,
@@ -210,7 +302,7 @@ export function createMorphSearch({ analyzer, metric, index }) {
       // 所以複製的是查詢（方言）的形式；詞幹的長度只能是模板正好產生重疊部分的那些。
       // 重疊部分與詞幹之間是交界：交界上的增生（junctionInserts）不算在詞幹裡。
       // 重疊的詞幹開頭一定是交界，i ＝ 0 時由前綴鏈出發只會更貴，不必另外試
-      for (const r of prefixed && i === 0 ? [] : spec.reduplication) {
+      for (const r of prefixed && i === 0 ? [] : redupUses) {
         for (let len = 1; i + len < n; len++) {
           if (n - i - len < spec.minStem) break
           if (isBoundary(chars[i + len - 1])) break // 重疊部分不跨越空白
@@ -226,7 +318,10 @@ export function createMorphSearch({ analyzer, metric, index }) {
             yield {
               kind: 'reduplication',
               chars: [...chars.slice(0, i), ...chars.slice(i + len)],
-              op: { type: 'reduplication', form: red, pattern: r.pattern, gloss: r.gloss, cost: r.cost },
+              op: r.op(red),
+              circumfix: r.circumfix,
+              suffix: r.circumfix?.suffix ?? null,
+              shape: `r|${prefixed}|${i}|${len}|${s}|${r.pattern}`,
               start: i,
               startCost,
               prefixed,
@@ -254,6 +349,9 @@ export function createMorphSearch({ analyzer, metric, index }) {
    * @property {import('./fuzzy-index.js').SpreadCutoff} cutoff 各通道共用的相對上限（seed 給起點，走訪時收緊）
    * @property {boolean} truncated 還原變體超過 MAX_VARIANTS 而被截斷
    * @property {Map<string, AffixEntry[]>} [chains] 找回詞綴鏈的備忘（affixesOf）
+   * @property {{P: Map<string, Level>, Sm: Level, S: Map<string, {mirror: Level, end: JunctionEnd}>}} circ
+   *   環綴兩側：P 是前綴式環綴的左邊緊接在前綴鏈之後的狀態（依形式）；Sm 是各層後綴合併後的狀態（鏡像座標）；
+   *   S 是環綴的後綴緊接在後綴鏈之前的狀態（鏡像座標，與換回正向的耦合對象）
    */
 
   /**
@@ -285,7 +383,19 @@ export function createMorphSearch({ analyzer, metric, index }) {
     const variants = []
     /** @type {Prepared['channels']} */
     const channels = []
-    const plain = { start: -1, prefixed: false, cut: n, len: 0, ends: () => true }
+    // 環綴的兩側：各自是最內層（緊貼詞幹），外面可以再接一般的詞綴鏈
+    /** @type {Level} */
+    const Sm = emptyJunction(n)
+    suffixLevels.forEach((L, s) => mergeInto(Sm, L, 0, s + 1))
+    /** @type {Map<string, Level>} */
+    const circSuffixes = circumfixes.length ? sides(circSuffixIndex, [...chars].reverse(), Sm, maxDistance, 'cs') : new Map()
+    const circ = {
+      P: /** @type {Map<string, Level>} */ (circumfixes.some((c) => c.kind === 'prefix') ? sides(circPrefixIndex, chars, P, maxDistance, 'cp') : new Map()),
+      Sm,
+      S: new Map([...circSuffixes].map(([form, L]) => [form, { mirror: L, end: toForwardEnd(L, mirror.compiled) }])),
+    }
+
+    const plain = { start: -1, prefixed: false, cut: n, len: 0, ends: () => true, circumfix: null, suffix: null }
     // 沒有前綴：至少要有一個後綴
     if (suffixLevels.length) {
       variants.push({ kind: 'plain', chars, op: null, startEdge: EDGE_WORD, ...plain })
@@ -296,9 +406,41 @@ export function createMorphSearch({ analyzer, metric, index }) {
       variants.push({ kind: 'prefix', chars, op: null, startEdge: EDGE_JUNCTION, ...plain })
       channels.push({ query: chars, options: { maxDistance, cutoff, from: P, to: { row: S.row, pending: S.pending, word } } })
     }
+    // 前綴式的環綴：詞幹由它的左邊出發（成本加在起點），詞尾一定接它的後綴。後綴相同的環綴詞尾耦合的對象相同，
+    // 所以它們的起點（左邊的狀態加上環綴的成本）逐項取 min 合併成一個通道（定理 2）；tag 記著是哪一個環綴
+    /** @type {Map<string, {start: Level, options: MorphStepHit[]}>} */
+    const bySuffix = new Map()
+    for (const c of circumfixes) {
+      const Pc = c.kind === 'prefix' ? circ.P.get(c.left) : undefined
+      if (!Pc || !circ.S.has(c.suffix)) continue
+      let group = bySuffix.get(c.suffix)
+      if (!group) bySuffix.set(c.suffix, (group = { start: emptyJunction(n), options: [] }))
+      mergeInto(group.start, Pc, c.cost, c)
+      group.options.push(/** @type {MorphStepHit} */ (circumfixStep(c, c.left)))
+    }
+    for (const [suffix, { start, options }] of bySuffix) {
+      const Sc = /** @type {{end: JunctionEnd}} */ (circ.S.get(suffix))
+      // 起點與詞尾的成本都不小於它們的最小值：加起來已經超過上限的通道不可能有命中
+      const endMin = Math.min(...(/** @type {Float64Array} */ (Sc.end.row)), ...Sc.end.pending.map((q) => Math.min(...q.row)))
+      if (minOf(start) + endMin > maxDistance + EPSILON) continue
+      variants.push({ kind: 'circumfix', chars, op: null, startEdge: EDGE_JUNCTION, ...plain, suffix, options, startState: start })
+      channels.push({ query: chars, options: { maxDistance, cutoff, from: start, to: { row: Sc.end.row, pending: Sc.end.pending, word: null } } })
+    }
+    // 還原變體：同一個位置、同一種拿法（shape）的變體，拿掉之後的查詢、詞幹的起點與可以結束的位置都相同，
+    // 只差在步驟成本與詞尾接什麼（單獨的中綴、重疊接一般的後綴鏈或就是詞尾；環綴接它的後綴）。
+    // 把步驟成本移到詞尾（加法可以交換），詞尾取各步驟的最小值，就能共用一個通道（(min, +) 線性）
+    /** @type {Map<string, {v: any, members: NonNullable<Variant['members']>}>} */
+    const groups = new Map()
+    for (const v of restored(chars, P)) {
+      // 環綴（中綴、重疊式）的後綴對不上查詢的結尾時，這個步驟不可能命中
+      if (v.suffix !== null && !circ.S.has(v.suffix)) continue
+      let group = groups.get(v.shape)
+      if (!group) groups.set(v.shape, (group = { v, members: [] }))
+      group.members.push({ op: /** @type {MorphStepHit} */ (v.op), circumfix: v.circumfix, suffix: v.suffix, cost: /** @type {MorphStepHit} */ (v.op).cost })
+    }
     let truncated = false
     let count = 0
-    for (const v of restored(chars, P)) {
+    for (const { v, members } of groups.values()) {
       if (count++ >= MAX_VARIANTS) {
         truncated = true
         break
@@ -306,18 +448,22 @@ export function createMorphSearch({ analyzer, metric, index }) {
       const m = v.chars.length
       const original = (/** @type {number} */ x) => (x > v.cut ? x + v.len : x) // 變體上的位置 → 原查詢
       const from = new Float64Array(m + 1).fill(Infinity)
-      from[v.start] = v.startCost + /** @type {MorphStepHit} */ (v.op).cost
+      from[v.start] = v.startCost
       const row = new Float64Array(m + 1).fill(Infinity)
-      for (let x = 0; x <= m; x++) if (v.ends(x)) row[x] = S.row[original(x)]
       const vWord = new Float64Array(m + 1).fill(Infinity)
-      if (v.ends(m)) vWord[m] = 0
-      variants.push(v)
+      for (const member of members) {
+        const endRow = member.suffix === null ? S.row : /** @type {Float64Array} */ (/** @type {{end: JunctionEnd}} */ (circ.S.get(member.suffix)).end.row)
+        for (let x = 0; x <= m; x++) if (v.ends(x)) row[x] = Math.min(row[x], member.cost + endRow[original(x)])
+        if (member.suffix === null && v.ends(m)) vWord[m] = Math.min(vWord[m], member.cost)
+      }
+      const first = members[0]
+      variants.push({ ...v, op: first.op, circumfix: first.circumfix, suffix: first.suffix, members, ...(members.length > 1 ? { options: members.map((x) => x.op) } : {}) })
       channels.push({
         query: v.chars,
         options: { maxDistance, cutoff, from: { row: from, pending: [] }, startEdge: v.startEdge, to: { row, pending: [], word: vWord } },
       })
     }
-    return { query, chars, prefixLevels, suffixLevels, P, S, variants, channels, cutoff, truncated }
+    return { query, chars, prefixLevels, suffixLevels, P, S, circ, variants, channels, cutoff, truncated }
   }
 
   /**
@@ -395,19 +541,16 @@ export function createMorphSearch({ analyzer, metric, index }) {
   function affixesOf(prepared, c, result) {
     const v = prepared.variants[c]
     const options = prepared.channels[c].options
-    // 只有「接在前綴之後」的通道不知道詞幹從哪一格進來，要在詞幹上做一次追蹤 DP；其他通道的起點
+    // 「接在前綴之後」與前綴式環綴的通道不知道詞幹從哪一格進來，要在詞幹上做一次追蹤 DP；其他通道的起點
     // 是詞首或固定的位置，出口走訪時已經記下（與追蹤 DP 的結果相同，所以不必再算）
     const t =
-      v.kind === 'prefix' || !result.exit
+      v.kind === 'prefix' || v.kind === 'circumfix' || !result.exit
         ? metric.traceSegment(v.chars, Array.from(result.term), {
             from: options.from ?? null,
             startEdge: options.startEdge,
             exit: { kind: 'couple', to: /** @type {JunctionEnd} */ (options.to) },
           })
         : { entry: /** @type {Entry} */ ({ kind: 'start' }), exit: result.exit }
-    // 前綴：變體的起點固定在 v.start（有前綴鏈時由合併後的前綴狀態的那一格往回追）
-    /** @type {Entry} */
-    const entry = v.start >= 0 ? (v.prefixed ? { kind: 'row', x: v.start } : { kind: 'start' }) : t.entry
     // 詞綴鏈只取決於（哪一側、第幾層、從哪一格往回追），同一次查詢的命中常常共用，所以備忘在 prepared 上
     const memo = (prepared.chains ??= new Map())
     /** @param {string} side @param {number} level @param {Entry} at @param {() => AffixEntry[]} compute */
@@ -417,31 +560,82 @@ export function createMorphSearch({ analyzer, metric, index }) {
       if (!out) memo.set(key, (out = compute()))
       return out.slice()
     }
-    const prefixes =
-      entry.kind === 'start'
-        ? []
-        : chain('p', /** @type {number} */ (tagAt(prepared.P, entry) ?? 0), entry, () =>
-            chainFrom(metric, prepared.prefixLevels, /** @type {number} */ (tagAt(prepared.P, entry) ?? 0), entry, prepared.chars, (f) => Array.from(f)),
-          )
-    // 後綴：出口換成反向座標（位置 x → n − x；跨界狀態的 tail 反轉後是鏡像 trie 的節點）
+    /** 由合併後的前綴狀態 P 的一格往回追出前綴鏈 @param {Entry} at */
+    const prefixChain = (at) => {
+      if (at.kind === 'start') return []
+      const level = /** @type {number} */ (tagAt(prepared.P, at) ?? 0)
+      return chain('p', level, at, () => chainFrom(metric, prepared.prefixLevels, level, at, prepared.chars, (f) => Array.from(f)))
+    }
+    const reversed = [...prepared.chars].reverse()
+    /** 由合併後的後綴狀態（鏡像座標）的一格往回追出後綴鏈 @param {Entry} at @param {number} level */
+    const suffixChain = (at, level) => chain('s', level, at, () => chainFrom(mirror, prepared.suffixLevels, level, at, reversed, (f) => Array.from(f).reverse()))
+
+    /** @type {AffixEntry[]} */
+    let prefixes
+    /** 這個命中用的非串接步驟或環綴 */
+    let op = v.op
+    let circumfix = v.circumfix
+    let suffix = v.suffix
     const n = prepared.chars.length
+    if (v.members) {
+      // 共用通道的變體：出口的成本是哪一個步驟給的（同分取先列的，也就是單獨的步驟）
+      const exit = /** @type {any} */ (t.exit)
+      const x = exit.x > v.cut ? exit.x + v.len : exit.x
+      let best = Infinity
+      for (const member of v.members) {
+        let cost = Infinity
+        if (exit.kind === 'word') cost = member.suffix === null ? member.cost : Infinity
+        else {
+          const endRow = member.suffix === null ? prepared.S.row : /** @type {Float64Array} */ (/** @type {{end: JunctionEnd}} */ (prepared.circ.S.get(member.suffix)).end.row)
+          cost = member.cost + endRow[x]
+        }
+        if (cost < best) {
+          best = cost
+          ;({ op, circumfix, suffix } = member)
+        }
+      }
+    }
+    if (v.kind === 'circumfix') {
+      // 詞幹由合併後的起點進來：那一格的 tag 是哪一個環綴；環綴左邊的狀態再記著它是從詞首（0）
+      // 還是從前綴鏈之後（1）走過來的
+      circumfix = /** @type {Circumfix} */ (tagAt(/** @type {Level} */ (v.startState), t.entry))
+      op = /** @type {MorphStepHit} */ (circumfixStep(circumfix, circumfix.left))
+      const Pc = /** @type {Level} */ (prepared.circ.P.get(circumfix.left))
+      if (tagAt(Pc, t.entry) === 1) {
+        const back = metric.traceSegment(prepared.chars, Array.from(circumfix.left), { from: prepared.P, lock: true, exit: t.entry })
+        prefixes = prefixChain(back.entry)
+      } else prefixes = []
+    } else {
+      // 變體的起點固定在 v.start（有前綴鏈時由合併後的前綴狀態的那一格往回追）
+      prefixes = prefixChain(v.start >= 0 ? (v.prefixed ? { kind: 'row', x: v.start } : { kind: 'start' }) : t.entry)
+    }
+
+    // 後綴：出口換成反向座標（位置 x → n − x；跨界狀態的 tail 反轉後是鏡像 trie 的節點）
     const exit = t.exit
     /** @type {AffixEntry[]} */
     let suffixes = []
     if (exit.kind === 'row' || exit.kind === 'pending') {
       const x = exit.x > v.cut ? exit.x + v.len : exit.x
-      let level = 0
+      const to = /** @type {JunctionEnd} */ (options.to)
       /** @type {Entry} */
-      let back = { kind: 'row', x: n - x }
-      if (exit.kind === 'row') level = /** @type {number} */ (prepared.S.tags.row[x] ?? 0)
+      const back =
+        exit.kind === 'row'
+          ? { kind: 'row', x: n - x }
+          : { kind: 'pending', node: mirror.compiled.trieWalk(0, [...to.pending[/** @type {any} */ (exit).tail].tail].reverse()), x: n - x }
+      if (suffix !== null) {
+        // 環綴的後綴：它的狀態記著是從詞尾（0）還是從後綴鏈之前（1）走過來的
+        const Sc = /** @type {{mirror: Level}} */ (prepared.circ.S.get(suffix))
+        if (tagAt(Sc.mirror, back) === 1) {
+          const e = mirror.traceSegment(reversed, Array.from(suffix).reverse(), { from: prepared.circ.Sm, lock: true, exit: back })
+          if (e.entry.kind !== 'start') suffixes = suffixChain(e.entry, /** @type {number} */ (tagAt(prepared.circ.Sm, e.entry) ?? 0))
+        }
+      } else if (exit.kind === 'row') suffixes = suffixChain(back, /** @type {number} */ (prepared.S.tags.row[x] ?? 0))
       else {
         const tail = prepared.S.pending[/** @type {any} */ (exit).tail].tail
-        level = /** @type {number} */ (prepared.S.tags.pending.get(tail.join(''))?.[x] ?? 0)
-        back = { kind: 'pending', node: mirror.compiled.trieWalk(0, [...tail].reverse()), x: n - x }
+        suffixes = suffixChain(back, /** @type {number} */ (prepared.S.tags.pending.get(tail.join(''))?.[x] ?? 0))
       }
-      suffixes = chain('s', level, back, () => chainFrom(mirror, prepared.suffixLevels, level, back, [...prepared.chars].reverse(), (f) => Array.from(f).reverse()))
     }
-    return { prefixes, suffixes }
+    return { prefixes, suffixes, op, circumfix }
   }
 
   /**
@@ -468,16 +662,15 @@ export function createMorphSearch({ analyzer, metric, index }) {
     return sorted
       .filter((h) => h.distance <= cutoff)
       .map((h) => {
-        const v = prepared.variants[h.channel]
-        const { prefixes, suffixes } = affixesOf(prepared, h.channel, h.result)
+        const { prefixes, suffixes, op, circumfix } = affixesOf(prepared, h.channel, h.result)
         /** @type {MorphStepHit[]} */
-        const steps = [...prefixes.map((a) => affixStep('prefix', a)), ...(v.op ? [v.op] : []), ...suffixes.map((a) => affixStep('suffix', a))]
+        const steps = [...prefixes.map((a) => affixStep('prefix', a)), ...(op ? [op] : []), ...suffixes.map((a) => affixStep('suffix', a))]
         return {
           term: h.result.term,
           payloads: h.result.payloads,
           distance: roundCost(h.distance),
           steps,
-          analysis: { variant: h.channel, prefixes, suffixes },
+          analysis: { variant: h.channel, prefixes, suffixes, circumfix },
         }
       })
   }
@@ -490,15 +683,21 @@ export function createMorphSearch({ analyzer, metric, index }) {
    */
   function explainHit(prepared, hit) {
     const v = prepared.variants[hit.analysis.variant]
-    const { prefixes, suffixes } = hit.analysis
+    const { prefixes, suffixes, circumfix } = hit.analysis
+    /** @param {'prefix' | 'suffix'} type @param {string} form */
+    const affix = (type, form) => ({ chars: Array.from(form), lock: true, type, form })
+    // 環綴緊貼詞幹：前綴式的左邊是最內層的前綴，後綴是最內層的後綴（中綴、重疊式的左邊在詞幹上，變體已經拿掉）
+    const inner = circumfix?.kind === 'prefix' ? [affix('prefix', circumfix.left)] : []
     /** @type {Array<{chars: string[], lock: boolean, type: 'prefix' | 'stem' | 'suffix', form: string}>} */
     const segments = [
-      ...prefixes.map((a) => ({ chars: Array.from(a.form), lock: true, type: /** @type {const} */ ('prefix'), form: a.form })),
+      ...prefixes.map((a) => affix('prefix', a.form)),
+      ...inner,
       { chars: Array.from(hit.term), lock: false, type: /** @type {const} */ ('stem'), form: hit.term },
+      ...(circumfix ? [affix('suffix', circumfix.suffix)] : []),
       // 後綴由外而內，在詞中的順序要反過來
-      ...[...suffixes].reverse().map((a) => ({ chars: Array.from(a.form), lock: true, type: /** @type {const} */ ('suffix'), form: a.form })),
+      ...[...suffixes].reverse().map((a) => affix('suffix', a.form)),
     ]
-    const stem = prefixes.length
+    const stem = prefixes.length + inner.length
     /** @type {Parameters<typeof metric.explainSegments>[2]} */
     const options = {}
     if (v.kind === 'infix' || v.kind === 'reduplication') {
@@ -647,7 +846,16 @@ export function createMorphSearch({ analyzer, metric, index }) {
         crossingP: prepared.P.pending.map((p) => ({ head: metric.compiled.trieString(p.node), row: rowOf(p.row) })),
         crossingS: prepared.S.pending.map((p) => ({ tail: p.tail.join(''), row: rowOf(p.row) })),
       },
-      variants: prepared.variants.map((v) => ({ kind: v.kind, text: v.chars.join(''), chars: [...v.chars], op: v.op, start: v.start, prefixed: v.prefixed })),
+      variants: prepared.variants.map((v) => ({
+        kind: v.kind,
+        text: v.chars.join(''),
+        chars: [...v.chars],
+        op: v.op,
+        options: v.options ?? null,
+        start: v.start,
+        prefixed: v.prefixed,
+        suffix: v.suffix,
+      })),
       truncated: prepared.truncated,
       candidates: results.map((list) => list.map((r) => ({ term: r.term, distance: r.distance, exit: r.exit ?? null }))),
       walks: walks.map((events) => events.map((e) => ({ ...e, lowerBound: finite(/** @type {number} */ (e.lowerBound)) }))),

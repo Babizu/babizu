@@ -71,6 +71,19 @@ export const REDUPLICATION_PATTERNS = Object.freeze(['Ca', 'CV', 'CVV', 'CVCV', 
  */
 
 /**
+ * @typedef {object} CircumfixSpec 環綴：一個左邊的部分與一個後綴一起出現，合起來算**一個**構詞步驟
+ * （`ta-kita-aw`、`m<in>…-an`、`da~daux-ay`）。左邊的部分三選一：
+ * @property {string} [prefix] 前綴，例如 `ta`（`ta-…-aw`）
+ * @property {string} [infix] 中綴，例如 `in`（`<in>…-an`）
+ * @property {ReduplicationPattern} [reduplication] 重疊型式，例如 `Ca`（`Ca-…-ay`）
+ * @property {string} suffix 後綴，例如 `aw`
+ * @property {Gloss} [gloss]
+ * @property {number} [cost]
+ * 環綴緊貼著詞幹：左邊的部分是最內層的前綴（或詞幹上的中綴、重疊），後綴是最內層的後綴，
+ * 其他詞綴只能加在它們外面（docs/bcdp.md 1.2）。
+ */
+
+/**
  * @typedef {object} MorphologySpec 語言設定檔的 `morphology` 區段
  * @property {number} [cost=0.3] 每個構詞步驟的預設成本
  * @property {number} [minStem=3] 詞根（詞庫詞）最短長度（code point）；查詢至少要多一個字元
@@ -81,14 +94,18 @@ export const REDUPLICATION_PATTERNS = Object.freeze(['Ca', 'CV', 'CVV', 'CVCV', 
  * @property {AffixSpec[]} [suffixes]
  * @property {AffixSpec[]} [infixes] 插在詞幹首輔音（群）之後、首元音之前；元音開頭的詞幹則在最前面
  * @property {ReduplicationSpec[]} [reduplication]
+ * @property {CircumfixSpec[]} [circumfixes]
  * @property {AlternationSpec[]} [alternations]
  */
 
 /**
  * @typedef {object} MorphStep 一個構詞步驟（由外而內，也就是剝除的順序）
- * @property {'prefix' | 'suffix' | 'infix' | 'reduplication' | 'alternation'} type
- * @property {string} form 詞綴；重疊為實際的重疊部分；交替為 `underlying>surface`
+ * @property {'prefix' | 'suffix' | 'infix' | 'reduplication' | 'alternation' | 'circumfix'} type
+ * @property {string} form 詞綴；重疊為實際的重疊部分；交替為 `underlying>surface`；環綴為 `左邊…後綴`
  * @property {ReduplicationPattern} [pattern] 重疊的型式
+ * @property {{type: 'prefix' | 'infix' | 'reduplication', form: string, pattern?: ReduplicationPattern}} [left]
+ *   環綴左邊的部分（重疊的 form 是實際的重疊部分）
+ * @property {string} [suffix] 環綴的後綴
  * @property {Gloss} gloss
  * @property {number} cost
  */
@@ -125,12 +142,13 @@ const MAX_ANALYSES = 64
 const ANALYZE_MEMO_LIMIT = 4096
 
 /** 規格頂層允許的欄位（拼錯的欄位會被默默忽略，所以列為錯誤） */
-const SPEC_KEYS = new Set(['cost', 'minStem', 'maxSteps', 'lemmaSpread', 'vowels', 'prefixes', 'suffixes', 'infixes', 'reduplication', 'alternations'])
+const SPEC_KEYS = new Set(['cost', 'minStem', 'maxSteps', 'lemmaSpread', 'vowels', 'prefixes', 'suffixes', 'infixes', 'reduplication', 'circumfixes', 'alternations'])
 /** 各種項目允許的欄位；ref（出處）與 note（說明）供語言設定檔記錄依據，搜尋不使用 */
 const ENTRY_KEYS = {
   affix: new Set(['form', 'gloss', 'cost', 'ref', 'note']),
   reduplication: new Set(['pattern', 'gloss', 'cost', 'ref', 'note']),
   alternation: new Set(['underlying', 'surface', 'position', 'cost', 'ref', 'note']),
+  circumfix: new Set(['prefix', 'infix', 'reduplication', 'suffix', 'gloss', 'cost', 'ref', 'note']),
 }
 /** maxSteps 的上限：前綴、後綴各自最多這麼多層（圖表以 Int8Array 記槽位，也避免指數級的列舉） */
 const MAX_STEPS_LIMIT = 10
@@ -192,6 +210,27 @@ export function validateMorphology(spec) {
         unknownKeys(r, ENTRY_KEYS.reduplication, path)
       })
   }
+  if (s.circumfixes !== undefined) {
+    if (!Array.isArray(s.circumfixes)) errors.push('morphology.circumfixes 必須是陣列')
+    else
+      s.circumfixes.forEach((/** @type {any} */ c, /** @type {number} */ i) => {
+        const path = `morphology.circumfixes[${i}]`
+        const lefts = ['prefix', 'infix', 'reduplication'].filter((k) => c?.[k] !== undefined)
+        if (lefts.length !== 1) errors.push(`${path} 需要 prefix、infix、reduplication 三者之一（恰好一個）`)
+        for (const k of ['prefix', 'infix']) {
+          if (c?.[k] === undefined) continue
+          if (typeof c[k] !== 'string' || !c[k]) errors.push(`${path}.${k} 必須是非空字串`)
+          else if (hasSpace(c[k])) errors.push(`${path}.${k} 不能含空白（詞綴不跨越詞邊界）`)
+        }
+        if (c?.reduplication !== undefined && !REDUPLICATION_PATTERNS.includes(c.reduplication)) {
+          errors.push(`${path}.reduplication 必須是 ${REDUPLICATION_PATTERNS.join('、')} 之一`)
+        }
+        if (typeof c?.suffix !== 'string' || !c.suffix) errors.push(`${path}.suffix 必須是非空字串`)
+        else if (hasSpace(c.suffix)) errors.push(`${path}.suffix 不能含空白（詞綴不跨越詞邊界）`)
+        if (c?.cost !== undefined && !isCost(c.cost)) errors.push(`${path}.cost 必須是非負的有限數`)
+        unknownKeys(c, ENTRY_KEYS.circumfix, path)
+      })
+  }
   if (s.alternations !== undefined) {
     if (!Array.isArray(s.alternations)) errors.push('morphology.alternations 必須是陣列')
     else
@@ -240,7 +279,7 @@ export function alternationRules(spec) {
  * @property {() => void} clearCache 清掉 analyze 的備忘（量測冷快取時用）
  * @property {(stem: string, steps: MorphStep[]) => string} generate 還原詞綴
  * @property {(stem: string) => string[]} coreForms 詞幹在衍生詞中可能的核心形式（找衍生詞時用）
- * @property {(term: string, stem: string, limit?: number) => Array<{prefixes: Array<{form: string, gloss: Gloss, cost: number}>, segment: string, op: MorphStep | null, suffixes: Array<{form: string, gloss: Gloss, cost: number}>}>} derivations
+ * @property {(term: string, stem: string, limit?: number) => Array<{prefixes: Array<{form: string, gloss: Gloss, cost: number}>, segment: string, op: MorphStep | null, circumfix: MorphStep | null, suffixes: Array<{form: string, gloss: Gloss, cost: number}>}>} derivations
  *   衍生形方向的候選分析（「前綴鏈 · 核心形式 · 後綴鏈」的結構，交界上容許一個字元的出入）
  * @property {(term: string, stem: string, cores?: string[]) => boolean} mayDerive
  *   衍生形方向的候選條件：term 是否可能是「詞綴 · stem 的核心形式 · 詞綴」（交界上容許一個字元的出入）
@@ -283,6 +322,18 @@ export function createAnalyzer(spec, normalize = (s) => s) {
       cost: r.cost ?? cost,
     }),
   )
+  /** 環綴：kind 是左邊部分的種類，left 是它的形式（重疊時是型式） */
+  const circumfixes = (spec.circumfixes ?? [])
+    .map((c) =>
+      Object.freeze({
+        kind: /** @type {'prefix' | 'infix' | 'reduplication'} */ (c.prefix !== undefined ? 'prefix' : c.infix !== undefined ? 'infix' : 'reduplication'),
+        left: c.prefix !== undefined ? normalize(c.prefix) : c.infix !== undefined ? normalize(c.infix) : /** @type {string} */ (c.reduplication),
+        suffix: normalize(c.suffix),
+        gloss: glossOf(c.gloss),
+        cost: c.cost ?? cost,
+      }),
+    )
+    .filter((c) => c.left && c.suffix)
   const alternations = (spec.alternations ?? []).map((a) => ({
     underlying: normalize(a.underlying),
     surface: normalize(a.surface),
@@ -319,7 +370,11 @@ export function createAnalyzer(spec, normalize = (s) => s) {
   }
   const prefixesByFirst = bucket(prefixes, firstChar)
   const suffixesByLast = bucket(suffixes, lastChar)
-  const suffixesByFirst = bucket(suffixes, firstChar)
+  /** mayDerive 用：環綴兩側的部分也算詞綴（只是必要條件，放寬不影響結果） */
+  const circPrefixes = circumfixes.filter((c) => c.kind === 'prefix').map((c) => ({ form: c.left, gloss: c.gloss, cost: c.cost }))
+  const circSuffixes = circumfixes.map((c) => ({ form: c.suffix, gloss: c.gloss, cost: c.cost }))
+  const outerPrefixesByFirst = bucket([...prefixes, ...circPrefixes], firstChar)
+  const suffixesByFirst = bucket([...suffixes, ...circSuffixes], firstChar)
   /** @type {Array<{affix: typeof prefixes[number], length: number}>} */
   const none = []
   /** 詞首的輔音（群）：第一個元音之前的所有字元 @param {string} w */
@@ -496,6 +551,31 @@ export function createAnalyzer(spec, normalize = (s) => s) {
           }
         }
       }
+      // 環綴緊貼詞幹（最內層）：剝掉之後兩端都封閉；它算一個構詞步驟，不佔用前綴、後綴的步數，
+      // 也是那一個非串接步驟（之後不能再有中綴或重疊）
+      if (!op && !preClosed && !sufClosed && w) {
+        for (const c of circumfixes) {
+          if (!w.endsWith(c.suffix)) continue
+          const rest = w.slice(0, w.length - c.suffix.length)
+          if (c.kind === 'prefix') {
+            if (!rest.startsWith(c.left) || len(rest) - len(c.left) < minStem) continue
+            visit(rest.slice(c.left.length), [...steps, circumfixStep(c, c.left)], total + c.cost, pre, suf, true, true, true)
+          } else if (c.kind === 'infix') {
+            const head = onset(rest)
+            if (!rest.startsWith(c.left, head.length) || len(rest) - len(c.left) < minStem) continue
+            const inner = head + rest.slice(head.length + c.left.length)
+            if (onset(inner) !== head) continue
+            visit(inner, [...steps, circumfixStep(c, c.left)], total + c.cost, pre, suf, true, true, true)
+          } else {
+            const rc = Array.from(rest)
+            for (let k = 1; k <= rc.length - minStem; k++) {
+              const t = template(/** @type {ReduplicationPattern} */ (c.left), rc, k)
+              if (!t || !sameAsPrefix(rc, k, t)) continue
+              visit(rc.slice(k).join(''), [...steps, circumfixStep(c, rc.slice(0, k).join(''))], total + c.cost, pre, suf, true, true, true)
+            }
+          }
+        }
+      }
       if (op) return
       const chars = infixes.length || reduplication.length ? Array.from(w) : []
       let h = 0
@@ -540,6 +620,14 @@ export function createAnalyzer(spec, normalize = (s) => s) {
         w = head + s.form + w.slice(head.length)
       } else if (s.type === 'reduplication') {
         w = (reduplicant(/** @type {ReduplicationPattern} */ (s.pattern), w) ?? '') + w
+      } else if (s.type === 'circumfix' && s.left) {
+        const l = s.left
+        if (l.type === 'prefix') w = l.form + w
+        else if (l.type === 'infix') {
+          const head = onset(w)
+          w = head + l.form + w.slice(head.length)
+        } else w = (reduplicant(/** @type {ReduplicationPattern} */ (l.pattern), w) ?? '') + w
+        w += s.suffix ?? ''
       } else if (s.type === 'alternation') {
         const [underlying, surface] = s.form.split('>')
         if (w.endsWith(underlying)) w = w.slice(0, w.length - underlying.length) + surface
@@ -561,6 +649,13 @@ export function createAnalyzer(spec, normalize = (s) => s) {
     for (const r of reduplication) {
       const red = reduplicant(r.pattern, stem)
       if (red) out.add(red + stem)
+    }
+    for (const c of circumfixes) {
+      if (c.kind === 'infix') out.add(generate(stem, [step('infix', c.left, null, 0)]))
+      if (c.kind === 'reduplication') {
+        const red = reduplicant(/** @type {ReduplicationPattern} */ (c.left), stem)
+        if (red) out.add(red + stem)
+      }
     }
     for (const a of alternations) {
       if (a.position !== 'initial' && stem.endsWith(a.underlying)) out.add(stem.slice(0, stem.length - a.underlying.length) + a.surface)
@@ -588,8 +683,8 @@ export function createAnalyzer(spec, normalize = (s) => s) {
     const pre = new Float64Array(L + 1).fill(Infinity)
     pre[0] = 0
     for (let p = 0; p < L; p++) {
-      if (pre[p] >= maxSteps) continue
-      for (const { affix } of prefixesByFirst.get(charAt(term, p)) ?? none) {
+      if (pre[p] > maxSteps) continue
+      for (const { affix } of outerPrefixesByFirst.get(charAt(term, p)) ?? none) {
         if (term.startsWith(affix.form, p)) pre[p + affix.form.length] = Math.min(pre[p + affix.form.length], pre[p] + 1)
       }
     }
@@ -604,7 +699,8 @@ export function createAnalyzer(spec, normalize = (s) => s) {
     const near = (/** @type {Float64Array} */ arr, /** @type {number} */ at) => Math.min(arr[at - 1] ?? Infinity, arr[at] ?? Infinity, arr[at + 1] ?? Infinity)
     for (const core of cores) {
       for (let p = term.indexOf(core); p !== -1; p = term.indexOf(core, p + 1)) {
-        if (near(pre, p) <= maxSteps && near(suf, p + core.length) <= maxSteps) return true
+        // 環綴兩側各多一個部分，所以上限是 maxSteps ＋ 1
+        if (near(pre, p) <= maxSteps + 1 && near(suf, p + core.length) <= maxSteps + 1) return true
       }
     }
     return false
@@ -619,9 +715,9 @@ export function createAnalyzer(spec, normalize = (s) => s) {
    * @param {string} stem
    * @param {number} [limit=32] 最多列出幾種
    * @returns {Array<{prefixes: Array<{form: string, gloss: Gloss, cost: number}>, segment: string, op: MorphStep | null,
-   *   suffixes: Array<{form: string, gloss: Gloss, cost: number}>}>}
-   *   prefixes、suffixes 由外而內；segment 是詞幹在底層字串中的樣子（中綴、重疊的核心形式含非串接的部分；
-   *   構詞音變的核心形式用詞幹本身，讓 DP 算它的成本）
+   *   circumfix: MorphStep | null, suffixes: Array<{form: string, gloss: Gloss, cost: number}>}>}
+   *   prefixes、suffixes 由外而內（不含環綴的兩側）；segment 是詞幹在底層字串中的樣子（中綴、重疊的核心形式含
+   *   非串接的部分；構詞音變的核心形式用詞幹本身，讓 DP 算它的成本）；circumfix 是環綴（緊貼詞幹）
    */
   function derivations(term, stem, limit = 32) {
     /** @type {Array<{form: string, segment: string, op: MorphStep | null}>} */
@@ -684,7 +780,51 @@ export function createAnalyzer(spec, normalize = (s) => s) {
                 const key = `${pre.map((a) => a.form).join('+')}|${core.segment}|${core.op?.form ?? ''}|${suf.map((a) => a.form).join('+')}`
                 if (seen.has(key) || out.length >= limit) continue
                 seen.add(key)
-                out.push({ prefixes: pre, segment: core.segment, op: core.op, suffixes: suf })
+                out.push({ prefixes: pre, segment: core.segment, op: core.op, circumfix: null, suffixes: suf })
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // 環綴：左邊的部分緊貼詞幹（前綴接在核心形式左邊；中綴、重疊已在核心形式裡），後綴接在右邊；
+    // 兩個交界各容許一個字元的出入，外面再接原樣的前綴鏈、後綴鏈
+    /** 同一個重疊型式的重疊部分只算一次 @type {Map<string, string | null>} */
+    const reds = new Map()
+    for (const c of circumfixes) {
+      // 後綴（前綴式還有左邊）根本不在 term 裡的環綴不必試：大多數環綴在這裡就略過
+      if (!term.includes(c.suffix) || (c.kind === 'prefix' && !term.includes(c.left))) continue
+      /** @type {Array<{form: string, segment: string, left: string}>} */
+      const inner = []
+      if (c.kind === 'prefix') {
+        for (const core of cores) if (!core.op) inner.push({ form: core.form, segment: core.segment, left: c.left })
+      } else if (c.kind === 'infix') {
+        const f = generate(stem, [step('infix', c.left, null, 0)])
+        inner.push({ form: f, segment: f, left: c.left })
+      } else {
+        let red = reds.get(c.left)
+        if (red === undefined) reds.set(c.left, (red = reduplicant(/** @type {ReduplicationPattern} */ (c.left), stem)))
+        if (red) inner.push({ form: red + stem, segment: red + stem, left: red })
+      }
+      for (const core of inner) {
+        /** @type {MorphStep | null} */
+        let circ = null
+        for (let p = term.indexOf(core.form); p !== -1 && out.length < limit; p = term.indexOf(core.form, p + 1)) {
+          const q = p + core.form.length
+          for (const p2 of [p, p - 1, p + 1]) {
+            const start = c.kind === 'prefix' ? p2 - c.left.length : p2
+            if (start < 0 || (c.kind === 'prefix' && !term.startsWith(c.left, start))) continue
+            for (const q2 of [q, q + 1, q - 1]) {
+              if (!term.startsWith(c.suffix, q2)) continue
+              for (const pre of preAt.get(start) ?? []) {
+                for (const suf of sufAt.get(q2 + c.suffix.length) ?? []) {
+                  const key = `${pre.map((a) => a.form).join('+')}|${core.segment}|${core.left}…${c.suffix}|${suf.map((a) => a.form).join('+')}`
+                  if (seen.has(key) || out.length >= limit) continue
+                  seen.add(key)
+                  circ ??= circumfixStep(c, core.left)
+                  out.push({ prefixes: pre, segment: core.segment, op: null, circumfix: circ, suffixes: suf })
+                }
               }
             }
           }
@@ -715,6 +855,7 @@ export function createAnalyzer(spec, normalize = (s) => s) {
       suffixes: Object.freeze(suffixes),
       infixes: Object.freeze(infixes),
       reduplication: Object.freeze(reduplication),
+      circumfixes: Object.freeze(circumfixes),
       alternations: Object.freeze(alternations.map((a) => Object.freeze({ ...a }))),
     }),
   }
@@ -729,6 +870,23 @@ export function createAnalyzer(spec, normalize = (s) => s) {
  */
 function step(type, form, gloss, cost) {
   return { type, form, gloss, cost }
+}
+
+/**
+ * 環綴的步驟：form 是「左邊…後綴」，left 記下左邊部分的種類與實際的形式（重疊是實際的重疊部分）。
+ * @param {{kind: 'prefix' | 'infix' | 'reduplication', left: string, suffix: string, gloss: Gloss, cost: number}} c
+ * @param {string} leftForm
+ * @returns {MorphStep}
+ */
+export function circumfixStep(c, leftForm) {
+  return {
+    type: 'circumfix',
+    form: `${leftForm}…${c.suffix}`,
+    left: c.kind === 'reduplication' ? { type: c.kind, form: leftForm, pattern: /** @type {ReduplicationPattern} */ (c.left) } : { type: c.kind, form: leftForm },
+    suffix: c.suffix,
+    gloss: c.gloss,
+    cost: c.cost,
+  }
 }
 
 /** @param {number} x */

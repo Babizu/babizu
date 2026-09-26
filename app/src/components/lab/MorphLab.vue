@@ -103,8 +103,18 @@ const levelRows = computed(() => {
 
 // ── ② 通道 ──
 /** 通道的說明 @param {any} v */
-const channelLabel = (v) =>
-  t(`lab.morph.channel.${v.kind}`, { form: v.op?.form ?? '' }) + (v.op && v.prefixed ? t('lab.morph.channel.afterPrefix') : '')
+const channelLabel = (v) => {
+  // 前綴式環綴的通道由後綴相同的幾個環綴共用：列出它們
+  if (v.kind === 'circumfix') return t('lab.morph.channel.circumfix', { form: (v.options ?? []).map(formatMorphStep).join('、') })
+  // 還原變體：同一種拿法的步驟（單獨的中綴、重疊，與用它當左邊的環綴）共用一個通道，逐一列出
+  /** @param {any} op */
+  const one = (op) =>
+    op.type === 'circumfix'
+      ? t('lab.morph.channel.circumfixInner', { form: formatMorphStep(op), left: op.left.form })
+      : t(`lab.morph.channel.${v.kind}`, { form: op.form })
+  const label = v.op ? (v.options ?? [v.op]).map(one).join('；') : t(`lab.morph.channel.${v.kind}`, { form: '' })
+  return label + (v.op && v.prefixed ? t('lab.morph.channel.afterPrefix') : '')
+}
 
 // ── ③ 整個詞的對齊 ──
 /** 各詞素依序排列，交界以｜分開 */
@@ -117,7 +127,8 @@ const stepCost = computed(() => (e.value?.hit?.steps ?? []).reduce((/** @type {n
 const pieces = computed(() => {
   const all = e.value?.hit?.steps ?? []
   const of = (/** @type {string[]} */ types) => all.filter((/** @type {any} */ s) => types.includes(s.type))
-  return { before: of(['prefix', 'reduplication']), inner: of(['infix']), after: of(['suffix']).reverse() }
+  // 環綴緊貼詞幹，放在前綴之後（晶片上寫成 ta-…-aw）
+  return { before: of(['prefix', 'reduplication', 'circumfix']), inner: of(['infix']), after: of(['suffix']).reverse() }
 })
 
 /** 面板是否已經輪到（目前階段之後的面板淡化） */

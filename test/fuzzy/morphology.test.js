@@ -93,6 +93,47 @@ describe('analyze：去詞綴', () => {
   })
 })
 
+describe('環綴：一個步驟，緊貼詞幹', () => {
+  const circ = createAnalyzer({
+    ...SPEC,
+    suffixes: [...SPEC.suffixes, { form: 'aw' }, { form: 'ay' }],
+    circumfixes: [
+      { prefix: 'ta', suffix: 'aw', gloss: 'HORT' },
+      { infix: 'in', suffix: 'an' },
+      { reduplication: 'Ca', suffix: 'ay', cost: 0.2 },
+    ],
+  })
+  const find = (/** @type {string} */ w, /** @type {string} */ stem) => circ.analyze(w).find((a) => a.stem === stem)
+
+  it('前綴式：ta-…-aw 算一步（0.3），比前綴＋後綴（0.6）便宜', () => {
+    const a = /** @type {any} */ (find('takitaaw', 'kita'))
+    expect(a.cost).toBeCloseTo(0.3, 9)
+    expect(a.steps).toEqual([{ type: 'circumfix', form: 'ta…aw', left: { type: 'prefix', form: 'ta' }, suffix: 'aw', gloss: 'HORT', cost: 0.3 }])
+    expect(circ.generate('kita', a.steps)).toBe('takitaaw')
+  })
+
+  it('中綴式、重疊式；外面還可以再加前綴', () => {
+    const a = /** @type {any} */ (find('binaketan', 'baket'))
+    expect(a.steps.map((s) => s.form)).toEqual(['in…an'])
+    const b = /** @type {any} */ (find('mudadauxay', 'daux'))
+    expect(b.steps.map((s) => s.form)).toEqual(['mu', 'da…ay'])
+    expect(b.cost).toBeCloseTo(0.5, 9)
+    expect(circ.generate('daux', b.steps)).toBe('mudadauxay')
+  })
+
+  it('環綴裡面不能再有詞綴：ta-pa-kita-aw 不是 ta-…-aw 包住 pa-kita', () => {
+    expect(circ.analyze('tapakitaaw').some((a) => a.stem === 'kita' && a.steps.some((s) => s.type === 'circumfix'))).toBe(false)
+  })
+
+  it('核心形式與衍生形方向的結構（derivations）', () => {
+    expect(circ.coreForms('baket')).toContain('binaket')
+    const d = circ.derivations('mutakitaw', 'kita')
+    // 交界上的元音合併（kita-aw → kitaw）：後綴的位置容許一個字元的出入
+    expect(d.some((x) => x.circumfix?.form === 'ta…aw' && x.prefixes.map((a) => a.form).join() === 'mu')).toBe(true)
+    expect(circ.mayDerive('mutakitaw', 'kita')).toBe(true)
+  })
+})
+
 describe('重疊模板（docs/bcdp.md 1.6 第 2 項）', () => {
   // 例子取自 Lim & Zeitoun (2024) §51.3.2.2 的歸類，詞見公開資料集
   const red = createAnalyzer({ vowels: 'aeiou' }).reduplicant
@@ -180,6 +221,13 @@ describe('mayDerive：衍生的必要條件', () => {
         infixes: rnd(2) ? [{ form: word(1, 2) }] : [],
         reduplication: rnd(3) ? [{ pattern: REDUPLICATION_PATTERNS[rnd(REDUPLICATION_PATTERNS.length)] }] : [],
         alternations: rnd(2) ? [{ underlying: 't', surface: 'd' }] : [],
+        circumfixes: rnd(2)
+          ? [
+              { prefix: word(1, 2), suffix: word(1, 2) },
+              ...(rnd(2) ? [{ infix: word(1, 1), suffix: word(1, 2) }] : []),
+              ...(rnd(2) ? [{ reduplication: /** @type {any} */ (REDUPLICATION_PATTERNS[rnd(REDUPLICATION_PATTERNS.length)]), suffix: word(1, 2) }] : []),
+            ]
+          : [],
       })
       const { spec } = analyzer
       for (let k = 0; k < 150; k++) {
@@ -188,7 +236,10 @@ describe('mayDerive：衍生的必要條件', () => {
         if (k % 2) {
           /** @type {any[]} */
           const steps = []
-          if (spec.reduplication.length && rnd(2)) steps.push({ type: 'reduplication', form: '', pattern: spec.reduplication[0].pattern })
+          if (spec.circumfixes.length && rnd(3) === 0) {
+            const c = spec.circumfixes[rnd(spec.circumfixes.length)]
+            steps.push({ type: 'circumfix', form: '', left: { type: c.kind, form: c.kind === 'reduplication' ? '' : c.left, pattern: c.left }, suffix: c.suffix })
+          } else if (spec.reduplication.length && rnd(2)) steps.push({ type: 'reduplication', form: '', pattern: spec.reduplication[0].pattern })
           else if (spec.infixes.length && rnd(3) === 0) steps.push({ type: 'infix', form: spec.infixes[0].form })
           if (rnd(2)) steps.unshift({ type: 'suffix', form: spec.suffixes[rnd(spec.suffixes.length)].form })
           if (rnd(2)) steps.unshift({ type: 'prefix', form: spec.prefixes[rnd(spec.prefixes.length)].form })
@@ -196,7 +247,7 @@ describe('mayDerive：衍生的必要條件', () => {
         }
         for (const a of analyzer.analyze(w)) {
           checked++
-          for (const s of a.steps) reached.add(s.pattern ?? s.type)
+          for (const s of a.steps) reached.add(s.type === 'circumfix' ? 'circumfix' : (s.pattern ?? s.type))
           expect(analyzer.mayDerive(w, a.stem), `${w} → ${a.stem}：${JSON.stringify(a.steps.map((s) => [s.type, s.form]))}`).toBe(true)
         }
         // 反方向：隨機的詞幹多半不成立（確認這個條件真的有篩選作用）
@@ -205,13 +256,17 @@ describe('mayDerive：衍生的必要條件', () => {
     }
     expect(checked).toBeGreaterThan(2000)
     expect(rejected).toBeGreaterThan(1000)
-    expect([...reached].sort()).toEqual(['prefix', 'suffix', 'infix', 'alternation', ...REDUPLICATION_PATTERNS].sort())
+    expect([...reached].sort()).toEqual(['prefix', 'suffix', 'infix', 'alternation', 'circumfix', ...REDUPLICATION_PATTERNS].sort())
   })
 })
 
 describe('generate：還原詞綴', () => {
   it('每個分析都能還原成原詞形（隨機詞形的性質測試，含所有重疊型式）', () => {
-    const everyPattern = createAnalyzer({ ...SPEC, reduplication: REDUPLICATION_PATTERNS.map((pattern) => ({ pattern })) })
+    const everyPattern = createAnalyzer({
+      ...SPEC,
+      reduplication: REDUPLICATION_PATTERNS.map((pattern) => ({ pattern })),
+      circumfixes: [{ prefix: 'ta', suffix: 'aw' }, { infix: 'in', suffix: 'an' }, { reduplication: 'CV', suffix: 'en' }],
+    })
     let seed = 42
     const rnd = (/** @type {number} */ n) => (seed = (seed * 16807) % 2147483647) % n
     const letters = 'abdiklmnpstuxz'
@@ -221,13 +276,17 @@ describe('generate：還原詞綴', () => {
       let stem = ''
       for (let k = 0; k < 3 + rnd(4); k++) stem += letters[rnd(letters.length)]
       const steps = []
-      const kinds = ['prefix', 'suffix', 'infix', 'reduplication']
+      const kinds = ['prefix', 'suffix', 'infix', 'reduplication', 'circumfix']
       for (let k = 0; k < rnd(4); k++) {
         const type = kinds[rnd(kinds.length)]
         if (type === 'prefix') steps.push({ type, form: SPEC.prefixes[rnd(3)].form, gloss: null, cost: 0.3 })
         if (type === 'suffix') steps.push({ type, form: SPEC.suffixes[rnd(3)].form, gloss: null, cost: 0.3 })
         if (type === 'infix') steps.push({ type, form: SPEC.infixes[rnd(2)].form, gloss: null, cost: 0.3 })
         if (type === 'reduplication') steps.push({ type, form: '', pattern: REDUPLICATION_PATTERNS[rnd(REDUPLICATION_PATTERNS.length)], gloss: null, cost: 0.3 })
+        if (type === 'circumfix') {
+          const c = everyPattern.spec.circumfixes[rnd(3)]
+          steps.push({ type, form: '', left: { type: c.kind, form: c.left, pattern: c.left }, suffix: c.suffix, gloss: null, cost: 0.3 })
+        }
       }
       words.push(everyPattern.generate(stem, steps))
     }
@@ -280,6 +339,12 @@ describe('規格檢查', () => {
     ['已移除的 before', { alternations: [{ underlying: 't', surface: 'd', before: ['an'] }] }, /morphology\.alternations\[0\]\.before 已移除/],
     ['交替含空白', { alternations: [{ underlying: 't ', surface: 'd' }] }, /morphology\.alternations\[0\].*空白/],
     ['元音含空白', { vowels: 'a e' }, /morphology\.vowels/],
+    ['環綴沒有左邊', { circumfixes: [{ suffix: 'aw' }] }, /morphology\.circumfixes\[0\].*恰好一個/],
+    ['環綴有兩個左邊', { circumfixes: [{ prefix: 'ta', infix: 'in', suffix: 'aw' }] }, /morphology\.circumfixes\[0\].*恰好一個/],
+    ['環綴的重疊型式拼錯', { circumfixes: [{ reduplication: 'CA', suffix: 'ay' }] }, /morphology\.circumfixes\[0\]\.reduplication/],
+    ['環綴沒有後綴', { circumfixes: [{ prefix: 'ta' }] }, /morphology\.circumfixes\[0\]\.suffix/],
+    ['環綴含空白', { circumfixes: [{ prefix: 'ta ', suffix: 'aw' }] }, /morphology\.circumfixes\[0\]\.prefix.*空白/],
+    ['環綴的未知欄位', { circumfixes: [{ prefix: 'ta', suffix: 'aw', form: 'x' }] }, /morphology\.circumfixes\[0\]\.form.*未知/],
   ]))('拒絕非法輸入：%s', (_name, spec, message) => {
     const errors = validateMorphology(spec)
     expect(errors.some((e) => message.test(e)), errors.join('；')).toBe(true)

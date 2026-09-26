@@ -7,6 +7,7 @@
 
 import site from 'virtual:babizu/site'
 import { QUALITY_STATUSES } from '@babizu/schema/constants.js'
+import { circumfixLabel } from '@babizu/fuzzy/steps.js'
 import { locale, t, tr } from '@/i18n.js'
 
 export { QUALITY_STATUSES }
@@ -89,14 +90,15 @@ export function formatStep(step) {
 }
 
 /**
- * 構詞步驟的寫法：前綴 `mu-`、後綴 `-an`、中綴 `<in>`、重疊 `ba-`、詞幹交替 `t→d`。
- * @param {{type: string, form: string}} step
+ * 構詞步驟的寫法：前綴 `mu-`、後綴 `-an`、中綴 `<in>`、重疊 `ba-`、詞幹交替 `t→d`、環綴 `ta-…-aw`。
+ * @param {{type: string, form: string, left?: {type: string, form: string}, suffix?: string}} step
  */
 export function formatMorphStep(step) {
   if (step.type === 'prefix' || step.type === 'reduplication') return `${step.form}-`
   if (step.type === 'suffix') return `-${step.form}`
   if (step.type === 'infix') return `<${step.form}>`
   if (step.type === 'alternation') return step.form.replace('>', '→')
+  if (step.type === 'circumfix' && step.left) return circumfixLabel(/** @type {any} */ (step))
   return step.form
 }
 
@@ -119,11 +121,19 @@ export function morphGloss(gloss) {
  */
 export function morphSummary(analysis) {
   const outerFirst = analysis.steps
-  const before = outerFirst.filter((s) => s.type === 'prefix' || s.type === 'reduplication')
-  const inner = outerFirst.filter((s) => s.type === 'infix' || s.type === 'alternation')
+  const before = outerFirst.filter((s) => s.type === 'prefix' || s.type === 'reduplication').map(formatMorphStep)
+  const inner = outerFirst.filter((s) => s.type === 'infix' || s.type === 'alternation').map(formatMorphStep)
   // 後綴由外而內記錄，由左而右顯示要反過來
-  const after = outerFirst.filter((s) => s.type === 'suffix').reverse()
-  return [...before.map(formatMorphStep), analysis.stem, ...inner.map(formatMorphStep), ...after.map(formatMorphStep)].join(' + ')
+  const after = outerFirst.filter((s) => s.type === 'suffix').reverse().map(formatMorphStep)
+  // 環綴緊貼詞幹：左邊是最內層的前綴（或詞幹上的中綴、重疊），後綴是最內層的後綴
+  const circ = /** @type {any} */ (outerFirst.find((s) => s.type === 'circumfix'))
+  if (circ?.left) {
+    const { type, form } = circ.left
+    if (type === 'infix') inner.unshift(`<${form}>`)
+    else before.push(type === 'prefix' ? `${form}-` : `${form}~`)
+    after.unshift(`-${circ.suffix}`)
+  }
+  return [...before, analysis.stem, ...inner, ...after].join(' + ')
 }
 
 /**

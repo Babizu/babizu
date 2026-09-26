@@ -91,6 +91,12 @@ function randomMorphSetup(random) {
     // 一至兩種重疊型式（可能相同，createAnalyzer 照單全收；重複的型式也要與窮舉一致）
     reduplication: random() < 0.8 ? Array.from({ length: 1 + Math.floor(random() * 2) }, () => ({ pattern: pick(random, [...REDUPLICATION_PATTERNS]) })) : [],
     alternations: random() < 0.7 ? [{ underlying: 't', surface: 'd', cost: 0.05 }] : [],
+    // 環綴（三種左邊各有機會出現）：成本比兩個詞綴分開算便宜
+    circumfixes: [
+      ...(random() < 0.6 ? [{ prefix: pick(random, ['ta', 'ka']), suffix: pick(random, ['aw', 'i', 'an']), cost: 0.3 }] : []),
+      ...(random() < 0.4 ? [{ infix: 'in', suffix: pick(random, ['an', 'i']), cost: 0.3 }] : []),
+      ...(random() < 0.4 ? [{ reduplication: pick(random, ['Ca', 'CV']), suffix: pick(random, ['ay', 'an']), cost: 0.3 }] : []),
+    ],
   }
   // 規則 aa → '' 權重 0 只是為了讓 RuleSet 的組合多樣；拿掉以免成本為 0 的刪除讓一切都便宜
   const cleaned = RuleSet.fromTable(rules.toJSON().filter((r) => !(r.target === '' && r.weight === 0)))
@@ -119,6 +125,22 @@ function randomMorphSetup(random) {
  */
 function derive(random, { spec, analyzer, roots, alphabet, glottal, merge }) {
   let w = pick(random, roots)
+  // 環綴：緊貼詞幹，外面偶爾再加一個前綴
+  if (spec.circumfixes.length && random() < 0.25) {
+    const c = pick(random, spec.circumfixes)
+    let core = w
+    if (c.kind === 'prefix') core = c.left + w
+    else if (c.kind === 'infix') {
+      const head = analyzer.onset(w)
+      core = head + c.left + w.slice(head.length)
+    } else core = (analyzer.reduplicant(c.left, w) ?? '') + w
+    let right = c.suffix
+    // 環綴的後綴前也是交界：構詞音變 t → d、元音合併照樣發生
+    if (spec.alternations.length && core.endsWith('t') && random() < 0.7) core = `${core.slice(0, -1)}d`
+    if (merge && right[0] === core.at(-1) && random() < 0.7) right = right.slice(1)
+    const outer = random() < 0.3 ? pick(random, spec.prefixes).form : ''
+    return outer + core + right
+  }
   if (spec.infixes.length && random() < 0.2) {
     const head = analyzer.onset(w)
     w = head + spec.infixes[0].form + w.slice(head.length)
@@ -189,7 +211,7 @@ describe('參考實作：BCDP 模型', () => {
           const e = search.explainHit(p, h).explanation
           const steps = h.steps.reduce((a, s) => a + s.cost, 0)
           expect(roundCost(e.distance + steps), `${query} → ${h.term}：${JSON.stringify(h.steps.map((s) => s.form))}`).toBeCloseTo(h.distance, 7)
-          for (const s of h.steps) if (s.type !== 'prefix' && s.type !== 'suffix') reach(s.pattern ?? s.type)
+          for (const s of h.steps) if (s.type !== 'prefix' && s.type !== 'suffix') reach(s.type === 'circumfix' ? `circumfix:${s.left?.type}` : (s.pattern ?? s.type))
           for (const note of search.notesOf(p, h)) {
             if (note.category === '構詞音變') reach('alternation')
             if (note.where === 'junction' && note.target === '' && note.source === "'") reach('glottal')
@@ -202,7 +224,7 @@ describe('參考實作：BCDP 模型', () => {
         const want = refMorph(ctx, { query, lexicon: roots, spec, maxDistance, why })
         const terms = new Set([...got.keys(), ...want.keys()])
         for (const t of terms) {
-          const detail = `seed=${seed} round=${round} query=${query} term=${t}；參考：${why.get(t) ?? '—'}；規格：${JSON.stringify({ prefixes: spec.prefixes.map((a) => a.form), suffixes: spec.suffixes.map((a) => a.form), infixes: spec.infixes.map((a) => a.form), red: spec.reduplication.map((r) => r.pattern), alt: spec.alternations, rules: metric.ruleSet.expand().map((r) => `${r.source}>${r.target}:${r.position}${r.junction ? ':J' : ''}`) })}`
+          const detail = `seed=${seed} round=${round} query=${query} term=${t}；參考：${why.get(t) ?? '—'}；規格：${JSON.stringify({ prefixes: spec.prefixes.map((a) => a.form), suffixes: spec.suffixes.map((a) => a.form), infixes: spec.infixes.map((a) => a.form), red: spec.reduplication.map((r) => r.pattern), circ: spec.circumfixes.map((c) => `${c.kind}:${c.left}…${c.suffix}`), alt: spec.alternations, rules: metric.ruleSet.expand().map((r) => `${r.source}>${r.target}:${r.position}${r.junction ? ':J' : ''}`) })}`
           expect(got.get(t) ?? Infinity, detail).toBeCloseTo(want.get(t) ?? Infinity, 7)
         }
         compared++
@@ -212,7 +234,7 @@ describe('參考實作：BCDP 模型', () => {
   })
 
   it('reaching check：上面的隨機測試涵蓋每種重疊型式、中綴、構詞音變、跨界規則與交界上的增生', () => {
-    for (const kind of [...REDUPLICATION_PATTERNS, 'infix', 'alternation', 'crossing', 'glottal']) {
+    for (const kind of [...REDUPLICATION_PATTERNS, 'infix', 'alternation', 'crossing', 'glottal', 'circumfix:prefix', 'circumfix:infix', 'circumfix:reduplication']) {
       expect(reached.get(kind) ?? 0, `${kind}：${JSON.stringify([...reached])}`).toBeGreaterThanOrEqual(3)
     }
   })
@@ -342,13 +364,25 @@ describe('固定案例', () => {
   })
 
   it('最大測試：還原變體超過上限 64 時標記 truncated，保留前面的變體，不會當掉', () => {
+    // 很多個前綴鏈的終點（ki- 重複）× 每種重疊型式與長度：拿法不同的變體超過 64 個
+    const setup = fixed({ maxSteps: 10, prefixes: [{ form: 'ki' }], reduplication: REDUPLICATION_PATTERNS.map((pattern) => ({ pattern })) })
+    const index = new FuzzyIndex(setup.metric).addAll([['kita', 'kita']])
+    const search = createMorphSearch({ analyzer: setup.analyzer, metric: setup.metric, index })
+    const query = `${'ki'.repeat(12)}ta`
+    const prepared = /** @type {NonNullable<ReturnType<typeof search.prepare>>} */ (search.prepare(query, 3))
+    expect(prepared.truncated).toBe(true)
+    expect(prepared.variants.filter((v) => v.kind === 'reduplication' || v.kind === 'infix')).toHaveLength(64)
+    expect(() => search.search(query, { maxDistance: 3 })).not.toThrow()
+  })
+
+  it('同一種拿法的步驟共用一個通道：重複的重疊型式不會增加通道', () => {
     const setup = fixed({ reduplication: Array.from({ length: 70 }, () => ({ pattern: 'CV' })) })
     const index = new FuzzyIndex(setup.metric).addAll([['kita', 'kita']])
     const search = createMorphSearch({ analyzer: setup.analyzer, metric: setup.metric, index })
     const prepared = /** @type {NonNullable<ReturnType<typeof search.prepare>>} */ (search.prepare('kikita', 1))
-    expect(prepared.truncated).toBe(true)
-    expect(prepared.variants.filter((v) => v.kind === 'reduplication')).toHaveLength(64)
-    expect(() => search.search('kikita', { maxDistance: 1 })).not.toThrow()
+    expect(prepared.truncated).toBe(false)
+    expect(prepared.variants.filter((v) => v.kind === 'reduplication')).toHaveLength(1)
+    expect(search.search('kikita', { maxDistance: 1 }).map((h) => [h.term, h.distance])).toEqual([['kita', 0.3]])
   })
 
   it('查詢不比 minStem 長時不做構詞搜尋', () => {

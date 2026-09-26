@@ -37,6 +37,8 @@ const records = [
   rec('mudox', 'word', 'mudox', '喝了（方言）'),
   rec('s1', 'sentence', 'yaku ka mudaux dalum.', '我喝水'),
   rec('s2', 'sentence', 'binaket ni yaku.', '被我打了'),
+  rec('kita', 'word', 'kita', '看'),
+  rec('takitaaw', 'word', 'takitaaw', '看吧（勸說）'),
 ]
 
 /** @param {object} profile */
@@ -149,6 +151,31 @@ describe('第二版：派生詞列表與音變 ∘ 構詞的聯合搜尋', () =>
 
   it('已移除的 lemmaDistance 會得到清楚的錯誤（音變改以整個詞計算）', () => {
     expect(() => engineWith({ ...PAZEH_PROFILE, morphology: { ...MORPHOLOGY, lemmaDistance: 0 } })).toThrow(/lemmaDistance 已移除/)
+  })
+})
+
+describe('環綴：兩側一起算一個步驟', () => {
+  // 只有環綴 ta-…-aw、<in>…-an，沒有單獨的 ta-、-aw：只能以環綴分析
+  const circ = engineWith({
+    ...PAZEH_PROFILE,
+    morphology: { ...MORPHOLOGY, prefixes: [{ form: 'mu' }], suffixes: [], circumfixes: [{ prefix: 'ta', suffix: 'aw', gloss: 'HORT' }, { infix: 'in', suffix: 'an' }] },
+  })
+
+  it('詞根相符：takitaaw → kita，一個步驟 0.3', () => {
+    const hit = circ.search('takitaaw', { fields: ['native'] }).entries.find((h) => h.matchType === 'lemma' && h.term === 'kita')
+    expect(hit?.distance).toBeCloseTo(0.3, 9)
+    expect(hit?.analysis?.steps).toEqual([expect.objectContaining({ type: 'circumfix', form: 'ta…aw', suffix: 'aw', left: { type: 'prefix', form: 'ta' } })])
+  })
+
+  it('外面再加前綴、中綴式的環綴：mubinaketan → baket', () => {
+    const hit = circ.search('mubinaketan', { fields: ['native'] }).entries.find((h) => h.matchType === 'lemma' && h.term === 'baket')
+    expect(hit?.analysis?.steps.map((s) => s.form)).toEqual(['mu', 'in…an'])
+  })
+
+  it('衍生形：查 kita 找到 takitaaw，說明是環綴', () => {
+    const hit = circ.search('kita', { fields: ['native'] }).entries.find((h) => h.term === 'takitaaw')
+    expect(hit?.matchType).toBe('derived')
+    expect(hit?.analysis?.steps.map((s) => s.form)).toEqual(['ta…aw'])
   })
 })
 

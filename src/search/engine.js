@@ -171,8 +171,6 @@ const DERIVED_SOUND_DISTANCE = 0.2
 /** 衍生形方向跨查詢保留的編譯結果個數（每個詞兩份，約數 KB） */
 const PLAN_CACHE_LIMIT = 4096
 
-
-
 /**
  * 把前綴／包含命中換算成「等效距離」，好跟模糊命中一起排序。
  *
@@ -712,10 +710,16 @@ export class SearchEngine {
           /** @type {{cost: number, steps: import('../fuzzy/morph-search.js').MorphStepHit[], segments: any[]} | null} */
           let best = null
           for (const d of morphology.derivations(term, stem)) {
+            const circ = d.circumfix
+            /** @param {'prefix' | 'suffix'} type @param {string} form */
+            const affix = (type, form) => ({ chars: Array.from(form), lock: true, type })
+            // 環綴緊貼詞幹：前綴式的左邊是最內層的前綴，後綴是最內層的後綴（中綴、重疊式的左邊已在詞幹段裡）
             const segments = [
-              ...d.prefixes.map((a) => ({ chars: Array.from(a.form), lock: true, type: /** @type {const} */ ('prefix') })),
+              ...d.prefixes.map((a) => affix('prefix', a.form)),
+              ...(circ?.left?.type === 'prefix' ? [affix('prefix', circ.left.form)] : []),
               { chars: Array.from(d.segment), lock: false, type: /** @type {const} */ ('stem') },
-              ...[...d.suffixes].reverse().map((a) => ({ chars: Array.from(a.form), lock: true, type: /** @type {const} */ ('suffix') })),
+              ...(circ?.suffix ? [affix('suffix', circ.suffix)] : []),
+              ...[...d.suffixes].reverse().map((a) => affix('suffix', a.form)),
             ]
             const sound = this.metric.jointDistance(x, segments, DERIVED_SOUND_DISTANCE, plans)
             if (sound > DERIVED_SOUND_DISTANCE + 1e-9) continue
@@ -723,6 +727,7 @@ export class SearchEngine {
             const steps = [
               ...d.prefixes.map((a) => ({ type: /** @type {const} */ ('prefix'), form: a.form, gloss: a.gloss, cost: a.cost })),
               ...(d.op ? [/** @type {any} */ (d.op)] : []),
+              ...(circ ? [/** @type {any} */ (circ)] : []),
               ...d.suffixes.map((a) => ({ type: /** @type {const} */ ('suffix'), form: a.form, gloss: a.gloss, cost: a.cost })),
             ]
             const cost = steps.reduce((sum, st) => sum + st.cost, 0) + sound

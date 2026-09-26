@@ -203,7 +203,9 @@
           "plain": "通道「{text}」：沒有前綴，詞幹從詞首開始，至少要接一個後綴。",
           "prefix": "通道「{text}」：詞幹從合併後的前綴狀態開始，之後可以接後綴，也可以就是詞尾。",
           "infix": "拿掉中綴 <{form}>，得到還原變體「{text}」：詞幹的起點固定在查詢上。",
-          "reduplication": "拿掉重疊部分「{form}」，得到還原變體「{text}」：詞幹的起點與長度由重疊模板決定。"
+          "reduplication": "拿掉重疊部分「{form}」，得到還原變體「{text}」：詞幹的起點與長度由重疊模板決定。",
+          "circumfix": "通道「{text}」：詞幹接在環綴 {form} 的左邊之後，詞尾一定接它的後綴；兩側合起來算一個步驟。",
+          "circumfixInner": "拿掉環綴 {form} 的左邊「{left}」，得到還原變體「{text}」：詞幹的起點固定在查詢上，詞尾一定接它的後綴。"
         },
         "walk": "通道「{text}」：與普通搜尋共用一次詞圖走訪，走訪 {visited} 個節點、剪掉 {pruned} 個；走到詞尾時與後綴耦合，{found} 個詞在上限內。",
         "hits": "找到 {count} 個詞根，只保留成本在 {cutoff} 以內的。",
@@ -275,7 +277,9 @@
         "prefix": "接在前綴之後",
         "infix": "拿掉中綴 <{form}>",
         "reduplication": "拿掉重疊部分 {form}",
-        "afterPrefix": "（接在前綴之後）"
+        "afterPrefix": "（接在前綴之後）",
+        "circumfix": "環綴 {form}",
+        "circumfixInner": "拿掉環綴 {form} 的左邊「{left}」"
       },
       "walkResult": "走訪 {visited} 個節點，{found} 個詞在上限內",
       "alignment": "③ 整個詞的對齊：{term}",
@@ -322,7 +326,8 @@
       "suffix": "後綴",
       "infix": "中綴",
       "reduplication": "重疊",
-      "alternation": "構詞音變"
+      "alternation": "構詞音變",
+      "circumfix": "環綴"
     },
     "labLink": "在演算法實驗室逐步觀察 →",
     "soundChanges": "音變（整個詞一起比對）",

@@ -2,7 +2,7 @@
  * @file BCDP 模型的窮舉參考實作（測試用的仲裁者）。
  *
  * 完全依照 docs/bcdp.md 第 1 節的定義，直接列舉所有「分析」：
- *   前綴鏈 π ·（中綴或重疊 ω）· 詞根 t · 後綴鏈 σ
+ *   前綴鏈 π ·（中綴或重疊 ω，或緊貼詞幹的環綴）· 詞根 t · 後綴鏈 σ
  * 每個分析的成本是步驟成本的和，加上查詢與整個底層字串 π·t·σ 的聯合對齊（ref-joint.js：
  * 規則可以跨越交界、詞首詞尾規則與構詞音變在交界適用、空白只能在詞幹內消耗）。
  * 中綴、重疊是查詢上的模板：在查詢上拿掉，交界固定在查詢的位置上（ref-joint 的 pinIn／pinOut）。
@@ -73,87 +73,102 @@ export function refMorph(ctx, { query, lexicon, spec, maxDistance, why }) {
   }
 
   const terms = lexicon.filter((t) => t !== query && Array.from(t).length >= spec.minStem)
+  /** 環綴：null 表示沒有環綴；前綴式的左邊是最內層的前綴，後綴是最內層的後綴 */
+  const circumfixes = [null, ...(spec.circumfixes ?? [])]
   for (const t of terms) {
     const tc = Array.from(t)
     for (const pre of prefixChains) {
-      const p = Array.from(text(pre))
       for (const suf of suffixChains) {
-        const s = Array.from(text(suf))
-        const J1 = p.length
-        const J2 = J1 + tc.length
-        // 每個詞素之間都是交界：前綴與前綴、前綴與詞幹、詞幹與後綴、後綴與後綴
-        /** @type {number[]} */
-        const junctions = []
-        let at = 0
-        for (const a of pre) junctions.push((at += Array.from(a.form).length))
-        at = J2
-        for (const a of suf) {
-          junctions.push(at)
-          at += Array.from(a.form).length
-        }
-        const u = [...p, ...tc, ...s]
-        const steps = sum(pre) + sum(suf)
-        // 音變的成本不小於 0：光是步驟就超過上限的分析不必算（只是省時間，結果不變）
-        if (steps > maxDistance + EPS) continue
-
-        // 串接：至少一個詞綴
-        if (pre.length + suf.length > 0) {
-          const d = refJoint(ctx, q, u, { junctions, stem: [J1, J2] })
-          put(t, steps + d, `${text(pre)}-${t}-${text(suf)}：${steps} + ${d}`)
-        }
-
-        // 還原變體：詞幹起點 i 固定在查詢上；沒有前綴時只能在詞首
-        for (let i = 0; i < n; i++) {
-          if (pre.length === 0 && i > 0) break
-          // 中綴：詞幹首輔音之後、首元音之前；首輔音不含空白；拿掉後首輔音不變、剩下的至少 minStem 個字元
-          let h = i
-          while (h < n && !vowels.has(q[h])) h++
-          const head = q.slice(i, h)
-          if (!head.some(isB)) {
-            for (const x of spec.infixes) {
-              if (steps + x.cost > maxDistance + EPS) continue
-              const xs = Array.from(x.form)
-              if (q.slice(h, h + xs.length).join('') !== x.form) continue
-              const reduced = [...q.slice(0, h), ...q.slice(h + xs.length)]
-              if (reduced.length - i < spec.minStem) continue
-              let h2 = i
-              while (h2 < reduced.length && !vowels.has(reduced[h2])) h2++
-              if (h2 !== h) continue
-              const allowed = new Set(Array.from({ length: reduced.length + 1 }, (_, e) => e).filter((e) => e > h))
-              const d = refJoint(ctx, reduced, u, {
-                junctions,
-                stem: [J1, J2],
-                pinIn: { b: J1, a: i },
-                pinOut: { b: J2, allowed: suf.length ? allowed : new Set(allowed.has(reduced.length) ? [reduced.length] : []) },
-              })
-              put(t, steps + x.cost + d, `${text(pre)}-<${x.form}>${t}-${text(suf)}：${steps + x.cost} + ${d}`)
-            }
+        for (const c of circumfixes) {
+          const left = c?.kind === 'prefix' ? Array.from(c.left) : []
+          const right = c ? Array.from(c.suffix) : []
+          const p = [...Array.from(text(pre)), ...left]
+          const J1 = p.length
+          const J2 = J1 + tc.length
+          // 每個詞素之間都是交界：前綴與前綴、前綴與詞幹、詞幹與後綴、後綴與後綴（環綴的兩側也是詞素）
+          /** @type {number[]} */
+          const junctions = []
+          let at = 0
+          for (const a of pre) junctions.push((at += Array.from(a.form).length))
+          if (left.length) junctions.push(J1)
+          at = J2
+          if (right.length) {
+            junctions.push(at)
+            at += right.length
           }
-          // 重疊：q[i..i+len) 是重疊部分（不含空白），詞幹的表面形式由 s（略過交界上的增生）開始
-          for (const r of spec.reduplication) {
-            if (steps + r.cost > maxDistance + EPS) continue
-            for (let len = 1; i + len < n; len++) {
-              if (n - i - len < spec.minStem) break
-              const red = q.slice(i, i + len)
-              if (red.some(isB)) break
-              const starts = [i + len]
-              for (const g of inserts) if (q.slice(i + len, i + len + Array.from(g).length).join('') === g) starts.push(i + len + Array.from(g).length)
-              for (const st of starts) {
-                const base = q.slice(st)
-                if (base.length < spec.minStem) continue
-                /** @type {number[]} */
-                const ends = []
-                for (let L = 1; L <= base.length; L++) if (reduplicant(r.pattern, base.slice(0, L).join('')) === red.join('')) ends.push(st - len + L)
-                if (!ends.length) continue
-                const reduced = [...q.slice(0, i), ...q.slice(i + len)]
-                const allowed = new Set(ends)
+          for (const a of suf) {
+            junctions.push(at)
+            at += Array.from(a.form).length
+          }
+          const u = [...p, ...tc, ...right, ...Array.from(text(suf))]
+          const steps = sum(pre) + sum(suf) + (c?.cost ?? 0)
+          // 音變的成本不小於 0：光是步驟就超過上限的分析不必算（只是省時間，結果不變）
+          if (steps > maxDistance + EPS) continue
+          const label = `${text(pre)}-${c ? `[${c.left}…${c.suffix}]` : ''}${t}-${text(suf)}`
+
+          // 串接：至少一個詞綴（前綴式的環綴本身就是一個步驟）
+          if ((c === null && pre.length + suf.length > 0) || c?.kind === 'prefix') {
+            const d = refJoint(ctx, q, u, { junctions: [...new Set(junctions)], stem: [J1, J2] })
+            put(t, steps + d, `${label}：${steps} + ${d}`)
+          }
+
+          // 還原變體：詞幹起點 i 固定在查詢上；沒有前綴時只能在詞首。
+          // 環綴的中綴、重疊式只用它自己的左邊（成本已經算在 steps 裡），詞尾一定接它的後綴
+          const infixes = c === null ? spec.infixes : c.kind === 'infix' ? [{ form: c.left, cost: 0 }] : []
+          const reds = c === null ? spec.reduplication : c.kind === 'reduplication' ? [{ pattern: c.left, cost: 0 }] : []
+          const hasSuffix = suf.length > 0 || c !== null
+          for (let i = 0; i < n; i++) {
+            if (pre.length === 0 && i > 0) break
+            // 中綴：詞幹首輔音之後、首元音之前；首輔音不含空白；拿掉後首輔音不變、剩下的至少 minStem 個字元
+            let h = i
+            while (h < n && !vowels.has(q[h])) h++
+            const head = q.slice(i, h)
+            if (!head.some(isB)) {
+              for (const x of infixes) {
+                if (steps + x.cost > maxDistance + EPS) continue
+                const xs = Array.from(x.form)
+                if (q.slice(h, h + xs.length).join('') !== x.form) continue
+                const reduced = [...q.slice(0, h), ...q.slice(h + xs.length)]
+                if (reduced.length - i < spec.minStem) continue
+                let h2 = i
+                while (h2 < reduced.length && !vowels.has(reduced[h2])) h2++
+                if (h2 !== h) continue
+                const allowed = new Set(Array.from({ length: reduced.length + 1 }, (_, e) => e).filter((e) => e > h))
                 const d = refJoint(ctx, reduced, u, {
-                  junctions: [...new Set([J1, ...junctions])], // 詞幹開頭是「重疊部分｜詞幹」的交界
+                  junctions,
                   stem: [J1, J2],
                   pinIn: { b: J1, a: i },
-                  pinOut: { b: J2, allowed: suf.length ? allowed : new Set(allowed.has(reduced.length) ? [reduced.length] : []) },
+                  pinOut: { b: J2, allowed: hasSuffix ? allowed : new Set(allowed.has(reduced.length) ? [reduced.length] : []) },
                 })
-                put(t, steps + r.cost + d, `${text(pre)}-${red.join('')}~${t}-${text(suf)}：${steps + r.cost} + ${d}`)
+                put(t, steps + x.cost + d, `${text(pre)}-<${x.form}>${t}-${c ? c.suffix : ''}${text(suf)}：${steps + x.cost} + ${d}`)
+              }
+            }
+            // 重疊：q[i..i+len) 是重疊部分（不含空白），詞幹的表面形式由 s（略過交界上的增生）開始
+            for (const r of reds) {
+              if (steps + r.cost > maxDistance + EPS) continue
+              for (let len = 1; i + len < n; len++) {
+                if (n - i - len < spec.minStem) break
+                const red = q.slice(i, i + len)
+                if (red.some(isB)) break
+                const starts = [i + len]
+                for (const g of inserts) if (q.slice(i + len, i + len + Array.from(g).length).join('') === g) starts.push(i + len + Array.from(g).length)
+                for (const st of starts) {
+                  const base = q.slice(st)
+                  if (base.length < spec.minStem) continue
+                  /** @type {number[]} */
+                  const ends = []
+                  for (let L = 1; L <= base.length; L++) if (reduplicant(r.pattern, base.slice(0, L).join('')) === red.join('')) ends.push(st - len + L)
+                  if (!ends.length) continue
+                  const reduced = [...q.slice(0, i), ...q.slice(i + len)]
+                  const allowed = new Set(ends)
+                  const d = refJoint(ctx, reduced, u, {
+                    junctions: [...new Set([J1, ...junctions])], // 詞幹開頭是「重疊部分｜詞幹」的交界
+                    stem: [J1, J2],
+                    pinIn: { b: J1, a: i },
+                    pinOut: { b: J2, allowed: hasSuffix ? allowed : new Set(allowed.has(reduced.length) ? [reduced.length] : []) },
+                  })
+                  put(t, steps + r.cost + d, `${text(pre)}-${red.join('')}~${t}-${c ? c.suffix : ''}${text(suf)}：${steps + r.cost} + ${d}`)
+                }
               }
             }
           }
