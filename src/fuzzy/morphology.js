@@ -574,7 +574,7 @@ export function createAnalyzer(spec, normalize = (s) => s) {
    * 其中前綴鏈、後綴鏈是詞綴原樣的串接（至多各 maxSteps 個），核心形式（coreForms）是詞幹本身，
    * 或加了中綴、重疊、構詞音變後的樣子。詞綴與核心形式的交界上容許一個字元的出入：交界上的增生
    * （例如喉塞音 tau'alawan）、元音合併（ta-dusa-aw → tadusaw）都只影響交界旁的一個字元。
-   * 這是衍生形方向的定義的一部分（docs/bcdp.md 第 11 節）：詞典中的衍生詞是標準寫法，
+   * 這是衍生形方向的定義的一部分（docs/bcdp.md 第 10 節）：詞典中的衍生詞是標準寫法，
    * 詞綴不會有方言音變；成立的候選再以 BCDP 驗證（詞庫只有 stem）。
    * 例外：詞幹沒有元音時，中綴的位置（首輔音之後）會落到後綴裡，核心形式不連續，這時一律回傳 true。
    * @param {string} term
@@ -614,7 +614,7 @@ export function createAnalyzer(spec, normalize = (s) => s) {
    * 衍生形方向的候選分析：term 拆成「前綴鏈 · 核心形式 · 後綴鏈」的所有方式——詞綴原樣（至多各 maxSteps 個），
    * 詞綴與核心形式的交界上容許一個字元的出入（交界上的增生、元音合併）。這裡只列出結構；
    * 每一種都要再以整個詞的聯合對齊驗證（WeightedEditDistance.jointDistance），交界上的出入、
-   * 構詞音變的成本都在那裡計算（docs/bcdp.md 第 11 節）。
+   * 構詞音變的成本都在那裡計算（docs/bcdp.md 第 10 節）。
    * @param {string} term
    * @param {string} stem
    * @param {number} [limit=32] 最多列出幾種

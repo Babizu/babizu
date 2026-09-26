@@ -131,7 +131,7 @@ states(j) = { child(s, Y[j-1]) : s ∈ states(j-1) ∪ {root} }
 - **狀態是某個 target 的結尾**：這個 target 以長度 t = depth(s) 結束在 j，對應規則的來源列是第 j − t 列。
 - **狀態還能延伸成更長的 target**：第 r = j − depth(s) 列可以經由更長的規則跳過第 j 列。第 4 節的剪枝下界要加入 min(第 r 列) + jump(s)，其中 jump(s) 是經過 s 的更長 target 的最小權重。
 
-狀態只依賴路徑，與查詢無關，所以多通道搜尋（[bcdp.md](bcdp.md) 第 8 節）中每個詞圖節點只算一次，所有通道共用。
+狀態只依賴路徑，與查詢無關，所以多通道搜尋（[bcdp.md](bcdp.md) 第 7 節）中每個詞圖節點只算一次，所有通道共用。
 
 ### 6.3 計算一列
 
@@ -173,7 +173,7 @@ CPU 剖析顯示，時間的 43% 花在 `fillRow`，而其中大部分是這些�
 | 標準，含構詞 | 12.87／60.73 ms | 4.24／28.12 ms | 3.0× |
 | 寬鬆，含構詞 | 29.82／119.83 ms | 9.26／40.66 ms | 3.2× |
 
-當時含構詞的 p95 仍偏高，來源不是詞圖搜尋，而是「衍生形」方向對每個候選詞重跑列舉式構詞分析。2026-09 的改動（必要條件 `mayDerive`、分析備忘等，見 [bcdp.md](bcdp.md) 第 11、13 節）之後，含構詞・標準的 p95 是 10–12 ms。
+當時含構詞的 p95 仍偏高，來源不是詞圖搜尋，而是「衍生形」方向對每個候選詞重跑列舉式構詞分析。2026-09 的改動（必要條件 `mayDerive`、分析備忘等）之後，含構詞・標準的 p95 是 10–12 ms；改成整個詞計算音變之後的數字見 [bcdp.md](bcdp.md) 第 13 節。
 
 ## 8. 短查詢與前綴：為什麼還需要另一套索引
 
@@ -296,7 +296,7 @@ DAWG 則是幾個 TypedArray（CSR 格式的 `edgeStart`／`edgeTarget`、邊標
 - **詞根相符**（`lemma`）：查衍生詞，找到詞根。例如 `minudox` → `daux-`：`minu-` ＋ `dox`，其中 dox → daux 是 o→au 的方言音變。
 - **衍生形**（`derived`）：查詞根，找到詞庫與例句中由它衍生的詞，包括中綴與重疊形式。
 
-「詞根相符」使用 **BCDP（Boundary-Coupled DP，邊界耦合 DP）**：前綴鏈與後綴鏈的成本各算成一張「位置 → 成本」的圖表，當作本文件 DP 的第 0 列（`start`）與詞尾附加成本（`end`）；中綴、重疊與詞幹交替先「還原」成查詢的變體，每個變體帶著自己的邊界向量，與普通模糊搜尋共用一次詞圖走訪（`FuzzyIndex.searchChannels`）。第 1–6 節的遞推式與剪枝都不變：start 只改第 0 列、end 只加在詞尾，另外把有限起點（終點）標成額外的詞首（詞尾），所有轉移成本仍然非負，所以剪枝的下界照樣成立。因為這些額外的詞首、詞尾對整次走訪都有效，有詞首、詞尾規則時走訪的值可能低於逐段計算的值；BCDP 只拿走訪找候選，成本另外逐段精確計算（bcdp.md 第 4、9 節）。
+「詞根相符」使用 **BCDP（Boundary-Coupled DP，邊界耦合 DP）**：一個分析的成本是構詞步驟的成本，加上查詢與整個底層字串（詞綴 · 詞根 · 詞綴）的加權編輯距離，同一套方言規則對整個詞計算，可以跨越詞素交界。DP 走到一個交界時，之後的計算只需要**交界狀態**（交界上的一列，加上還沒走完、跨越交界的規則），不同來源的交界狀態逐項取 min 就能精確合併。所以前綴鏈、後綴鏈各自一層一層走詞綴 trie、合併成一個狀態；詞幹與普通模糊搜尋共用一次詞圖走訪（`FuzzyIndex.searchChannels`），起點是合併後的前綴狀態，走到詞尾時與後綴狀態耦合，得到的就是精確成本。第 1–6 節的遞推式不變；交界狀態的值都不小於 0，所以剪枝的下界照樣成立，另外再用詞尾耦合的位能與「最佳 ＋ `lemmaSpread`」的相對上限收緊（bcdp.md 第 4–7 節）。
 
 正式定義、推導、正確性證明、複雜度、實作技巧、驗證方法與實測，都在 [bcdp.md](bcdp.md)。
 
@@ -321,15 +321,15 @@ const data = index.serialize() // FuzzyIndex.deserialize(data, metric)
 
 | 類別／函式 | 說明 |
 |---|---|
-| `WeightedEditDistance` | `distance`、`normalizedDistance(q, c, 'max' \| 'sum' \| 'query')`、`explain`、`setRules`、`setCosts`（正規化函式不可替換）；同一個查詢對很多候選字串時：`prepareQuery(prepare(q))` 一次，再 `distancePrepared(plan, prepare(c))` |
+| `WeightedEditDistance` | `distance`、`normalizedDistance(q, c, 'max' \| 'sum' \| 'query')`、`explain`、`setRules`、`setCosts`（正規化函式不可替換）；同一個查詢對很多候選字串時：`prepareQuery(prepare(q))` 一次，再 `distancePrepared(plan, prepare(c))`；構詞用：`mirror()`（鏡像距離函式）、`jointDistance`／`explainSegments`（幾個詞素接起來的聯合對齊） |
 | `RuleSet` | `add(source, target, weight, { position, bidirectional, category })`、`RuleSet.fromTable(groups)`、`enable`／`disable(category)`、`categories()` |
 | `CostModel` | 基本成本與單一字元覆寫 |
 | `FuzzyIndex` | `add`、`addAll`、`lookup`、`search`、`searchWithStats`、`freeze`、`terms`、`payloads`、`dawg`、`serialize`／`deserialize` |
 | `createNormalizer(options)` | 建立正規化函式；`DEFAULT_CHAR_MAP` 是預設字元對應 |
 | `createMetricFromProfile`、`createRulesFromProfile`、`validateProfile` | 由語言設定檔建立 |
 | `createAnalyzer(spec, normalize)` | 構詞分析器：`analyze`（去詞綴）、`generate`（還原詞綴）、`coreForms` |
-| `createMorphSearch({ analyzer, metric, index })` | 構詞搜尋 BCDP（[bcdp.md](bcdp.md)）：`search`、`prepare`／`finish`（搭配多通道走訪）、`charts` |
-| `FuzzyIndex.searchChannels(channels)` | 多通道走訪；每個通道可帶 `start`／`end` 邊界向量與 `onTerminal` 回呼 |
+| `createMorphSearch({ analyzer, metric, index })` | 構詞搜尋 BCDP（[bcdp.md](bcdp.md)）：`search`、`prepare`／`seed`／`finish`（搭配多通道走訪）、`explain`（演算法實驗室）、`notesOf` |
+| `FuzzyIndex.searchChannels(channels)` | 多通道走訪；每個通道可帶交界狀態 `from`（起點）、`to`（詞尾耦合）、`onJunction`（回報詞尾的交界狀態）、`lockBoundary`、`cutoff`（共用的相對上限）；`start`／`end` 是沒有跨界表的簡寫 |
 | `babizu/fst`（實驗性） | 通用 WFST：`compose`、`shortestDistance`、`editTransducer`、`surfaceLexicon`、`fstLemmaSearch` |
 
 搜尋引擎（`babizu/search`）在此之上處理記錄、斷詞、釋義搜尋與結果排序：

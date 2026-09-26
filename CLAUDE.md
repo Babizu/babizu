@@ -23,7 +23,7 @@ node bin/babizu.js build ../pazeh-kaxabu     # 用本機框架建真實站台
 
 | 位置 | 內容 |
 |---|---|
-| `src/fuzzy/` | 加權編輯距離＋DAWG 詞圖搜尋（`fuzzy-index.js`，含邊界條件與多通道走訪）＋語言設定檔（`profile.js`）＋構詞（`morphology.js` 列舉分析、`morph-search.js` 聯合搜尋 BCDP，見 `docs/bcdp.md`），零依賴；各有「與暴力計算比對」的性質測試 |
+| `src/fuzzy/` | 加權編輯距離＋DAWG 詞圖搜尋（`fuzzy-index.js`，含交界狀態與多通道走訪；`junction.js` 交界狀態的合併）＋語言設定檔（`profile.js`）＋構詞（`morphology.js` 列舉分析、`morph-search.js` 聯合搜尋 BCDP，見 `docs/bcdp.md`），零依賴；各有「與暴力計算比對」的性質測試 |
 | `src/fst/` | 實驗性的通用 WFST 參考後端，只供評估；不要接到網站 |
 | `src/schema/` | JSON Schema（`json/`）、代碼表（`constants.js`）、工廠函式；`dialects` 允許值由站台設定注入 |
 | `src/search/` | `text.js`（`createTextTools(profile)`）、`build.js`（索引）、`engine.js`（查詢），建置端與 Worker 共用 |

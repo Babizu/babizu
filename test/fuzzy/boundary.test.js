@@ -1,11 +1,11 @@
 /**
- * 邊界條件搜尋（構詞搜尋的基礎）的性質測試。對應 docs/bcdp.md 第 4–6 節的定理：
+ * 邊界條件搜尋的性質測試。start、end 兩個向量是沒有跨界表的交界狀態（docs/bcdp.md 第 4 節）：
  *
- * - 定理 1／推論 1：帶起點向量 start 與終點向量 end 的詞圖搜尋，在沒有詞首、詞尾規則時結果等於
+ * - 沒有詞首、詞尾規則時，結果等於逐段計算
  *     W(q, t) = min over i ≤ k of  start[i] + E(q[i..k), t) + end[k]
- *   有詞首、詞尾規則時，所有有限起點（終點）都算詞首（詞尾），結果只會不大於上式（定理 1 (b)），
- *   等於「每個起點各搜一次、其他起點仍標成詞首」的最小值
- * - 定理 2：加上邊界條件後剪枝仍然安全（結果與暴力法完全相同，一筆不漏）
+ * - 有詞首、詞尾規則時，底層的位置 0 與詞尾耦合的位置都是詞素交界：詞首、詞尾規則在那裡適用，
+ *   查詢側不另外檢查（1.3 第 2 項）。一次搜尋等於「每個起點各搜一次」的最小值（(min, +) 線性，定理 2）
+ * - 剪枝仍然安全（第 7 節）：結果與暴力法完全相同，一筆不漏
  * - 沒有邊界條件時，行為與原本的搜尋完全相同
  */
 
@@ -99,8 +99,8 @@ describe('邊界條件搜尋：性質測試', () => {
         const start = randomBoundary(random, n + 1, 0)
         const end = randomBoundary(random, n + 1, n)
         const maxDistance = Math.round(random() * 25) / 10
-        // 詞首／詞尾的判定依整個 start／end 向量而定，所以單一起點的搜尋仍帶著同一組「額外詞首位置」：
-        // 以 ∞ 以外的極大值（1e6）標記其他起點，讓它們算詞首但不會被選為起點
+        // 單一起點的搜尋：其他起點以極大值（1e6）代替，不會被選為起點（交界語意與起點無關，
+        // 所以這只是把 min 拆開來算，驗證 (min, +) 線性）
         /** @type {Map<string, number>} */
         const best = new Map()
         for (let i = 0; i <= n; i++) {
@@ -123,16 +123,16 @@ describe('邊界條件搜尋：性質測試', () => {
     }
   })
 
-  it('定理 1 (b) 的實例：有詞首規則時，一次搜尋比逐段計算便宜（其他起點也算詞首）', () => {
+  it('交界語意的實例：詞首規則在交界上不檢查查詢側，所以比「把片段當成獨立的詞」便宜', () => {
     const metric = new WeightedEditDistance({ rules: new RuleSet().add('k', 'g', 0.2, { position: 'initial' }), costs: { delete: 0.1 }, normalize: (s) => s })
     const index = new FuzzyIndex(metric).addAll([['gxy', 'gxy']])
     const I = Infinity
     const start = [0, I, 0.5, I, I, I]
     const end = [I, I, I, I, I, 0]
-    // 逐段計算：從 0 出發時 k 不在詞首（1.1）；從 2 出發是 0.5 ＋ 0.2
+    // 把片段當成獨立的詞：從 0 出發時 k 不在詞首（1.1）；從 2 出發是 0.5 ＋ 0.2
     const perSegment = Math.min(start[0] + metric.distance('abkxy', 'gxy'), start[2] + metric.distance('kxy', 'gxy'))
     expect(perSegment).toBeCloseTo(0.7, 9)
-    // 一次搜尋：從 0 出發，刪掉 a、b，在位置 2（也是有限起點）套用詞首規則
+    // 交界語意：從 0 出發，刪掉 a、b；底層的 g 在交界（位置 0）上，詞首規則適用，查詢側不檢查
     const [hit] = index.search('abkxy', { maxDistance: 2, start, end })
     expect(hit.distance).toBeCloseTo(0.4, 9)
   })

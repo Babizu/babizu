@@ -50,7 +50,7 @@ describe('analyze：去詞綴', () => {
     expect(stems('bitud')).not.toContain('bitut') // 沒有後綴：不是詞素交界
   })
 
-  it('詞幹最短長度（詞庫詞至少 minStem 個字元）與步數預算（與 BCDP 相同，docs/bcdp.md 1.6 第 4 項）', () => {
+  it('詞幹最短長度（詞庫詞至少 minStem 個字元）與步數預算（與 BCDP 相同，docs/bcdp.md 1.6 第 6 項）', () => {
     expect(stems('muan')).toEqual([]) // 剝掉後只剩 2 個字元
     const deep = analyzer.analyze('mupakabinaketan')
     const count = (/** @type {any} */ a, /** @type {string[]} */ types) => a.steps.filter((/** @type {any} */ s) => types.includes(s.type)).length
