@@ -196,32 +196,30 @@
         "rejected": "「{prefix}」是詞，但距離 {distance} 超過上限 {bound}；子樹中可能還有更近的詞，繼續往下。"
       },
       "bcdp": {
-        "relaxP": "前綴圖表 P[{at}] ＝ {cost}：「{surface}」對應前綴 {form}-（距離 {distance}），這條鏈用了 {slot} 個前綴。",
-        "relaxS": "後綴圖表 S[{at}] ＝ {cost}：「{surface}」對應後綴 -{form}（距離 {distance}），這條鏈用了 {slot} 個後綴。",
-        "mask": "{count} 個位置在空白旁：詞素交界不能在空白旁，這些位置的鏈不能用。",
-        "variant": {
-          "original": "原查詢「{text}」本身是一個通道：詞幹可以從 {starts} 個位置開始、在 {ends} 個位置結束。",
-          "infix": "拿掉中綴 <{form}>，得到還原變體「{text}」，帶著自己的邊界向量。",
-          "reduplication": "拿掉重疊部分「{form}」，得到還原變體「{text}」；詞幹的長度由重疊模板決定。",
-          "alternation": "還原詞幹交替 {form}，得到還原變體「{text}」。"
+        "levelPrefix": "前綴第 {level} 層：所有「恰好 {level} 個前綴」的鏈，在最內側交界的狀態逐項取 min 合併，{count} 格有值。每一層只走一次前綴 trie。",
+        "levelSuffix": "後綴第 {level} 層：由詞尾往內，用鏡像的規則走後綴 trie，「恰好 {level} 個後綴」的鏈合併成一列，{count} 格有值。",
+        "merge": "各層前綴合併成詞幹的起點（{prefix} 格有值），各層後綴合併成詞尾的耦合（{suffix} 格有值）；另有 {crossing} 個還沒走完、會跨越交界的規則。",
+        "channel": {
+          "plain": "通道「{text}」：沒有前綴，詞幹從詞首開始，至少要接一個後綴。",
+          "prefix": "通道「{text}」：詞幹從合併後的前綴狀態開始，之後可以接後綴，也可以就是詞尾。",
+          "infix": "拿掉中綴 <{form}>，得到還原變體「{text}」：詞幹的起點固定在查詢上。",
+          "reduplication": "拿掉重疊部分「{form}」，得到還原變體「{text}」：詞幹的起點與長度由重疊模板決定。"
         },
-        "walk": "通道「{text}」：邊界歸零、以 λ ＝ {lambda} 為上限走訪詞圖。走訪 {visited} 個節點、剪掉 {pruned} 個，找到 {candidates} 個候選。",
-        "skip": {
-          "whole": "「{stem}」是整個查詢，屬於普通的模糊命中，不算構詞。",
-          "length": "「{stem}」與「{term}」長度差太多，不可能在 λ 以內，不必計算。",
-          "lambda": "「{stem}」對「{term}」的距離 {distance} 超過 λ ＝ {lambda}，不算。"
-        },
-        "price": "詞幹「{stem}」：{start} ＋ {distance} ＋ {end} ＝ {total}。",
+        "walk": "通道「{text}」：與普通搜尋共用一次詞圖走訪，走訪 {visited} 個節點、剪掉 {pruned} 個；走到詞尾時與後綴耦合，{found} 個詞在上限內。",
         "hits": "找到 {count} 個詞根，只保留成本在 {cutoff} 以內的。",
-        "hit": "「{term}」的最佳分析，成本 {distance}（{steps} 個構詞步驟）。",
-        "tooShort": "查詢太短：至少要比詞幹最短長度（{minStem}）多一個字元，才做構詞搜尋。",
+        "hit": "「{term}」的最佳分析，成本 {distance}（{steps} 個構詞步驟）。下面逐步列出整個詞的對齊。",
+        "tooShort": "查詢太短：至少要比詞根最短長度（{minStem}）多一個字元，才做構詞搜尋。",
         "miss": {
           "same": "「{term}」就是查詢本身，屬於普通的模糊命中。",
-          "short": "「{term}」比詞幹的最短長度還短。",
-          "notCandidate": "沒有任何切法讓詞幹在 λ ＝ {lambda} 以內對到「{term}」，所以它不是候選。",
-          "lambda": "「{term}」是候選，但每一種切法的詞幹距離都超過 λ ＝ {lambda}。",
+          "short": "「{term}」比詞根的最短長度還短。",
           "bound": "「{term}」最好的分析也超過總成本上限 {maxDistance}。",
           "spread": "「{term}」的成本超過截斷線 {cutoff}（最佳命中 ＋ lemmaSpread），所以沒有列出。"
+        },
+        "align": {
+          "substitute": "「{source}」換成「{target}」，成本 {cost}。",
+          "delete": "刪掉查詢中的「{source}」，成本 {cost}。",
+          "insert": "補上「{target}」，成本 {cost}。",
+          "rule": "規則「{source}」→「{target}」，成本 {cost}。"
         }
       }
     },

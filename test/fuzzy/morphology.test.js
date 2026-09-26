@@ -14,7 +14,7 @@ const SPEC = {
   suffixes: [{ form: 'an' }, { form: 'en' }, { form: 'un' }],
   infixes: [{ form: 'in' }, { form: 'a' }],
   reduplication: [{ pattern: 'Ca' }],
-  alternations: [{ underlying: 't', surface: 'd', before: ['an', 'un'] }],
+  alternations: [{ underlying: 't', surface: 'd' }],
 }
 const analyzer = createAnalyzer(SPEC)
 const stems = (/** @type {string} */ w) => analyzer.analyze(w).map((a) => a.stem)
@@ -42,12 +42,12 @@ describe('analyze：去詞綴', () => {
     expect(stems('aalep')).toContain('alep')
   })
 
-  it('詞幹交替只發生在指定的後綴前', () => {
+  it('構詞音變（詞幹末的 t → d）在後綴前還原', () => {
     const a = analyzer.analyze('bitudun').find((x) => x.stem === 'bitut')
     expect(a?.steps.map((s) => s.type)).toEqual(['suffix', 'alternation'])
     expect(a?.cost).toBeCloseTo(0.6)
-    // -en 不在 before 清單中：只剝後綴，不還原 t
-    expect(stems('bitudén')).not.toContain('bitut')
+    expect(stems('bituden')).toContain('bitut') // 任何後綴前都可以（before 已移除）
+    expect(stems('bitud')).not.toContain('bitut') // 沒有後綴：不是詞素交界
   })
 
   it('詞幹最短長度（詞庫詞至少 minStem 個字元）與步數預算（與 BCDP 相同，docs/bcdp.md 1.6 第 4 項）', () => {
@@ -56,7 +56,7 @@ describe('analyze：去詞綴', () => {
     const count = (/** @type {any} */ a, /** @type {string[]} */ types) => a.steps.filter((/** @type {any} */ s) => types.includes(s.type)).length
     for (const a of deep) {
       expect(count(a, ['prefix'])).toBeLessThanOrEqual(3) // 前綴至多 maxSteps 個
-      expect(count(a, ['suffix'])).toBeLessThanOrEqual(count(a, ['alternation']) ? 4 : 3) // 交替時可以多一個
+      expect(count(a, ['suffix'])).toBeLessThanOrEqual(3) // 後綴至多 maxSteps 個（構詞音變不另外佔步數）
       expect(count(a, ['infix', 'reduplication', 'alternation'])).toBeLessThanOrEqual(1) // 非串接步驟至多一個
     }
     // 三個前綴＋中綴＋後綴，共五步：前後綴各自計數，所以找得到
@@ -179,7 +179,7 @@ describe('mayDerive：衍生的必要條件', () => {
         suffixes: Array.from({ length: 1 + rnd(4) }, () => ({ form: word(1, 2) })),
         infixes: rnd(2) ? [{ form: word(1, 2) }] : [],
         reduplication: rnd(3) ? [{ pattern: REDUPLICATION_PATTERNS[rnd(REDUPLICATION_PATTERNS.length)] }] : [],
-        alternations: rnd(2) ? [{ underlying: 't', surface: 'd', before: rnd(2) ? [word(1, 2)] : undefined }] : [],
+        alternations: rnd(2) ? [{ underlying: 't', surface: 'd' }] : [],
       })
       const { spec } = analyzer
       for (let k = 0; k < 150; k++) {
@@ -263,7 +263,11 @@ describe('規格檢查', () => {
   // 「沒觸發過的錯誤路徑，就等於沒處理」）。合法的邊界值則必須通過。
   it.each(/** @type {Array<[string, any, RegExp]>} */ ([
     ['成本為 Infinity', { cost: Infinity }, /morphology\.cost/],
-    ['成本為 NaN', { lemmaDistance: NaN }, /morphology\.lemmaDistance/],
+    ['成本為 NaN', { lemmaSpread: NaN }, /morphology\.lemmaSpread/],
+    ['已移除的 lemmaDistance', { lemmaDistance: 0.3 }, /morphology\.lemmaDistance 已移除/],
+    ['已移除的 affixDistance', { affixDistance: 0.2 }, /morphology\.affixDistance 已移除/],
+    ['構詞音變的位置拼錯', { alternations: [{ underlying: 't', surface: 'd', position: 'end' }] }, /morphology\.alternations\[0\]\.position/],
+    ['構詞音變兩側都空', { alternations: [{ underlying: '', surface: '' }] }, /morphology\.alternations\[0\]/],
     ['minStem 不是整數', { minStem: 2.5 }, /morphology\.minStem.*整數/],
     ['minStem 為 0', { minStem: 0 }, /morphology\.minStem/],
     ['maxSteps 不是整數', { maxSteps: 1.5 }, /morphology\.maxSteps.*整數/],
@@ -273,7 +277,7 @@ describe('規格檢查', () => {
     ['詞綴的未知欄位', { suffixes: [{ form: 'an', costs: 0.2 }] }, /morphology\.suffixes\[0\]\.costs.*未知/],
     ['重疊的成本為負', { reduplication: [{ pattern: 'Ca', cost: -0.1 }] }, /morphology\.reduplication\[0\]\.cost/],
     ['交替的成本為負', { alternations: [{ underlying: 't', surface: 'd', cost: -1 }] }, /morphology\.alternations\[0\]\.cost/],
-    ['交替的 before 含空字串', { alternations: [{ underlying: 't', surface: 'd', before: [''] }] }, /morphology\.alternations\[0\]\.before/],
+    ['已移除的 before', { alternations: [{ underlying: 't', surface: 'd', before: ['an'] }] }, /morphology\.alternations\[0\]\.before 已移除/],
     ['交替含空白', { alternations: [{ underlying: 't ', surface: 'd' }] }, /morphology\.alternations\[0\].*空白/],
     ['元音含空白', { vowels: 'a e' }, /morphology\.vowels/],
   ]))('拒絕非法輸入：%s', (_name, spec, message) => {
@@ -282,11 +286,14 @@ describe('規格檢查', () => {
   })
 
   it('合法的邊界值通過', () => {
-    expect(validateMorphology({ cost: 0, minStem: 1, maxSteps: 0, lemmaDistance: 0, affixDistance: 0, lemmaSpread: 0 })).toEqual([])
+    expect(validateMorphology({ cost: 0, minStem: 1, maxSteps: 0, lemmaSpread: 0 })).toEqual([])
     expect(
       validateMorphology({
         prefixes: [{ form: 'mu', gloss: { zh: '主事焦點' }, cost: 0.2, ref: 'Lim & Zeitoun 2024 §51.2.4', note: '異體見 me-、mi-、m-' }],
-        alternations: [{ underlying: 'p', surface: 'b', before: ['i'], cost: 0.05, ref: '詞典 p.19' }],
+        alternations: [
+          { underlying: 'p', surface: 'b', position: 'final', cost: 0.05, ref: '詞典 p.19' },
+          { underlying: '', surface: "'", position: 'any' },
+        ],
         reduplication: [{ pattern: 'Ca', cost: 0.3, gloss: null }],
       }),
     ).toEqual([])

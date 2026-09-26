@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest'
 import en from '../../locales/en.json' with { type: 'json' }
 import zhTW from '../../locales/zh-TW.json' with { type: 'json' }
 import { createAnalyzer, createMorphSearch, FuzzyIndex, REDUPLICATION_PATTERNS, RuleSet, WeightedEditDistance } from '../../src/fuzzy/index.js'
+import { alternationRules } from '../../src/fuzzy/morphology.js'
 import { bcdpStateAt, bcdpSteps, dawgStateAt, dawgSteps, DISTANCE_PARAMS, dpStateAt, dpSteps } from '../../src/fuzzy/steps.js'
 import { createRandom, pick, randomString } from './helpers.js'
 
@@ -72,13 +73,13 @@ describe('詞圖搜尋的步驟', () => {
 })
 
 describe('BCDP 的步驟', () => {
-  it('隨機規格：最後一步的圖表等於 explain 的圖表，變體、通道、計價格都走完；每個說明鍵都有文字', () => {
+  it('隨機規格：最後一步的狀態走完每一層、每個通道與整個詞的對齊；階段依序；每個說明鍵都有文字', () => {
     const random = createRandom(59)
     let checked = 0
+    let aligned = 0
     for (let round = 0; round < 20; round++) {
-      const vowels = ['a', 'i', 'u']
-      const letters = [...vowels, 'b', 'd', 'k', 'n', 't']
-      const analyzer = createAnalyzer({
+      const letters = ['a', 'i', 'u', 'b', 'd', 'k', 'n', 't']
+      const spec = {
         vowels: 'aiu',
         minStem: 2,
         maxSteps: 2,
@@ -86,9 +87,11 @@ describe('BCDP 的步驟', () => {
         suffixes: [{ form: 'an' }, { form: randomString(random, letters, 1, 2) }],
         infixes: [{ form: 'in' }],
         reduplication: [{ pattern: pick(random, [...REDUPLICATION_PATTERNS]) }],
-        alternations: [{ underlying: 't', surface: 'd', before: ['an'] }],
-      })
-      const metric = new WeightedEditDistance({ rules: new RuleSet().add('t', 'd', 0.1).add('au', 'o', 0.1), normalize: (s) => s })
+        alternations: [{ underlying: 't', surface: 'd', cost: 0.05 }],
+      }
+      const analyzer = createAnalyzer(spec)
+      const rules = new RuleSet().add('t', 'd', 0.1).add('au', 'o', 0.1).add('aa', 'a', 0.1).addTable(alternationRules(spec))
+      const metric = new WeightedEditDistance({ rules, normalize: (s) => s })
       const roots = [...new Set(Array.from({ length: 12 }, () => randomString(random, letters, 3, 5)))]
       const index = new FuzzyIndex(metric).addAll(roots.map((w) => [w, w]))
       const search = createMorphSearch({ analyzer, metric, index })
@@ -103,39 +106,32 @@ describe('BCDP 的步驟', () => {
           expect(last.result).toBe(true)
           if (e.tooShort) continue
           checked++
-          expect(last.P).toEqual(e.charts.P)
-          expect(last.S).toEqual(e.charts.S)
-          expect(last.variants).toBe(e.variants.length)
+          expect(last.prefixLevels).toBe(e.prefixLevels.length)
+          expect(last.suffixLevels).toBe(e.suffixLevels.length)
+          expect(last.merged).toBe(true)
+          expect(last.channels).toBe(e.variants.length)
           expect(last.walks).toBe(e.walks.length)
-          const cells = (e.pricing ?? []).reduce((n, p) => n + p.cells.length, 0)
-          expect(last.priced.reduce((n, list) => n + list.length, 0)).toBe(cells)
-          // 階段的順序固定：圖表 → 變體 → 走訪 → 計價 → 結果
-          const order = ['charts', 'variants', 'walk', 'pricing', 'result']
+          if (e.alignment) {
+            aligned++
+            expect(last.aligned).toBe(e.alignment.steps.length)
+          }
+          // 階段的順序固定：各層 → 通道 → 結果 → 對齊
+          const order = ['levels', 'channels', 'result', 'alignment']
           const phases = steps.map((s) => order.indexOf(s.phase))
           expect(phases).toEqual([...phases].sort((a, b) => a - b))
           // 可任意跳
           const middle = Math.floor(steps.length / 2)
           expect(bcdpStateAt(e, steps, middle)).toEqual(bcdpStateAt(e, steps, middle))
+          expect(bcdpStateAt(e, steps, -1)).toMatchObject({ prefixLevels: 0, merged: false, result: false })
         }
       }
     }
     expect(checked).toBeGreaterThan(100)
-  })
-
-  it('同一個位置有多條鏈時，圖表取最小值（後面較貴的槽位不能蓋掉前面較便宜的）', () => {
-    // 位置 2 先由 mu-（一個前綴，0.3）到達，後來 m- ＋ u-（兩個前綴，0.6）也到達
-    const analyzer = createAnalyzer({ minStem: 3, maxSteps: 2, prefixes: [{ form: 'mu' }, { form: 'm' }, { form: 'u' }] })
-    const metric = new WeightedEditDistance({ normalize: (s) => s })
-    const index = new FuzzyIndex(metric).addAll([['daux', 'daux']])
-    const e = /** @type {any} */ (createMorphSearch({ analyzer, metric, index }).explain('mudaux', 'daux'))
-    const steps = bcdpSteps(e)
-    expect(steps.filter((s) => s.kind === 'relax' && /** @type {any} */ (s.focus).at === 2)).toHaveLength(2)
-    expect(bcdpStateAt(e, steps, steps.length - 1).P).toEqual(e.charts.P)
-    expect(e.charts.P[2]).toBeCloseTo(0.3, 9)
+    expect(aligned).toBeGreaterThan(10)
   })
 
   it('距離參數的清單涵蓋所有說明中的成本', () => {
-    for (const key of ['value', 'distance', 'total', 'lambda', 'cutoff']) expect(DISTANCE_PARAMS.has(key)).toBe(true)
-    for (const key of ['i', 'j', 'at', 'count', 'visited']) expect(DISTANCE_PARAMS.has(key)).toBe(false)
+    for (const key of ['value', 'distance', 'total', 'cutoff', 'cost', 'maxDistance']) expect(DISTANCE_PARAMS.has(key)).toBe(true)
+    for (const key of ['i', 'j', 'at', 'count', 'visited', 'level']) expect(DISTANCE_PARAMS.has(key)).toBe(false)
   })
 })

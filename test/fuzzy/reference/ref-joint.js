@@ -52,13 +52,16 @@ export function refJoint(ctx, x, u, options = {}) {
   const xFinal = (/** @type {number} */ a) => a === n || isB(x[a])
   const uInitial = (/** @type {number} */ b) => b === 0 || isB(u[b - 1])
   const uFinal = (/** @type {number} */ b) => b === m || isB(u[b])
+  // 前綴和（只是為了快；定義不變）：X 前 a 個字元中的空白數、U 前 b 個位置中的交界數
+  const spaces = [0]
+  for (let a = 0; a < n; a++) spaces.push(spaces[a] + (isB(x[a]) ? 1 : 0))
+  const seams = [0]
+  for (let b = 0; b <= m; b++) seams.push(seams[b] + (J.has(b) ? 1 : 0))
   /** X[a0..a) 含有空白 */
-  const spends = (/** @type {number} */ a0, /** @type {number} */ a) => {
-    for (let p = a0; p < a; p++) if (isB(x[p])) return true
-    return false
-  }
-  /** 範圍 (b0, b) 內嚴格包含幾個交界 */
-  const inside = (/** @type {number} */ b0, /** @type {number} */ b) => junctionList.filter((J0) => b0 < J0 && J0 < b).length
+  const spends = (/** @type {number} */ a0, /** @type {number} */ a) => spaces[a] - spaces[a0] > 0
+  /** 範圍 (b0, b) 內嚴格包含幾個交界：位置 b0 + 1 … b − 1 */
+  const inside = (/** @type {number} */ b0, /** @type {number} */ b) => (b - b0 >= 2 ? seams[b] - seams[b0 + 1] : 0)
+  void junctionList
   /** 一個操作是否合法（與規則種類無關的部分）：X 範圍 [a0, a)、U 範圍 [b0, b) */
   const legal = (/** @type {number} */ a0, /** @type {number} */ a, /** @type {number} */ b0, /** @type {number} */ b) => {
     for (const pin of pins) if (b0 < pin.b && pin.b < b) return false // 固定的交界不能被跨越
@@ -75,6 +78,9 @@ export function refJoint(ctx, x, u, options = {}) {
     for (let k = 0; k < pattern.length; k++) if (arr[end - pattern.length + k] !== pattern[k]) return false
     return true
   }
+  // 每條規則：X 在哪些位置以 source 結尾、U 在哪些位置以 target 結尾（先算好）
+  const xMatch = rules.map((r) => Array.from({ length: n + 1 }, (_, a) => endsWith(x, a, r.source)))
+  const uMatch = rules.map((r) => Array.from({ length: m + 1 }, (_, b) => endsWith(u, b, r.target)))
 
   /** @type {Float64Array[]} D[b][a] */
   const D = Array.from({ length: m + 1 }, () => new Float64Array(n + 1).fill(Infinity))
@@ -87,9 +93,10 @@ export function refJoint(ctx, x, u, options = {}) {
     if (a > 0 && legal(a - 1, a, b, b)) best = Math.min(best, D[b][a - 1] + costs.del(x[a - 1]))
     if (!onlyXOps && b > 0 && legal(a, a, b - 1, b)) best = Math.min(best, D[b - 1][a] + costs.ins(u[b - 1]))
     if (!onlyXOps && a > 0 && b > 0 && legal(a - 1, a, b - 1, b)) best = Math.min(best, D[b - 1][a - 1] + costs.sub(x[a - 1], u[b - 1]))
-    for (const r of rules) {
+    for (let ri = 0; ri < rules.length; ri++) {
+      const r = rules[ri]
       if (onlyXOps && r.target.length > 0) continue
-      if (!endsWith(x, a, r.source) || !endsWith(u, b, r.target)) continue
+      if (!xMatch[ri][a] || !uMatch[ri][b]) continue
       const a0 = a - r.source.length
       const b0 = b - r.target.length
       if (a0 === a && b0 === b) continue

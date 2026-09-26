@@ -7,10 +7,10 @@
  *
  * 每一步：
  * - kind：這一步的種類（決定畫面怎麼標示）
- * - phase：所屬的階段（BCDP 的四個面板；DP、詞圖只有一個階段）
+ * - phase：所屬的階段（BCDP 的各個面板；DP、詞圖只有一個階段）
  * - focus：目前焦點（哪一格、哪個節點）
  * - note：說明文字的語系鍵與參數（`t(note.key, note.params)`）
- * - proofRef：對應的文件段落（選填），例如 `bcdp.md#5-詞綴圖表是最短路徑`
+ * - proofRef：對應的文件段落（選填），例如 `bcdp.md#4-交界狀態`
  */
 
 /**
@@ -26,16 +26,17 @@
  * 說明參數中哪些是距離或成本（顯示前以 formatDistance 格式化；null 表示 ∞）；其餘是索引、個數或文字。
  */
 export const DISTANCE_PARAMS = Object.freeze(
-  new Set(['value', 'from', 'stepCost', 'distance', 'cost', 'lowerBound', 'bound', 'start', 'end', 'total', 'lambda', 'maxDistance', 'cutoff']),
+  new Set(['value', 'from', 'stepCost', 'distance', 'cost', 'lowerBound', 'bound', 'start', 'end', 'total', 'maxDistance', 'cutoff']),
 )
 
 /** bcdp.md 各節的錨點（GitHub 的標題錨點規則） */
 const BCDP_DOC = {
-  charts: 'bcdp.md#5-詞綴圖表是最短路徑',
-  variants: 'bcdp.md#7-非串接步驟還原變體',
-  walk: 'bcdp.md#8-多通道一次走訪',
-  pricing: 'bcdp.md#9-兩階段候選與計價',
-  result: 'bcdp.md#10-正確性與複雜度',
+  junction: 'bcdp.md#4-交界狀態',
+  levels: 'bcdp.md#5-詞綴一層一層合併',
+  variants: 'bcdp.md#6-非串接步驟還原變體',
+  walk: 'bcdp.md#7-詞幹一次走訪與耦合',
+  alignment: 'bcdp.md#8-說明找回詞綴鏈與整個詞的對齊',
+  result: 'bcdp.md#9-正確性與複雜度',
 }
 
 // ── 動態規劃表 ─────────────────────────────────────────────────────────
@@ -139,13 +140,17 @@ export function dawgStateAt(steps, index) {
 
 // ── BCDP ───────────────────────────────────────────────────────────────
 
+/** 一列中有值（不是 null）的格數 @param {Array<number | null>} row */
+const finiteCount = (row) => row.filter((v) => v !== null).length
+
 /**
  * BCDP 的步驟（morphSearch.explain 的結果）：
- * 1. 詞綴圖表：每一次**有更新**的鬆弛一步；有位置因為空白而遮掉時，另加一步說明
- * 2. 還原變體：每個變體一步
- * 3. 詞圖走訪：每個通道一步（走訪了幾個節點、剪掉幾個、找到幾個候選）
- * 4. 計價：指定詞根時，每個變體上的每一格一步
+ * 1. 前綴、後綴各層：每一層一步（這一層合併了幾格）
+ * 2. 合併：各層前綴合併成詞幹的起點、各層後綴合併成詞尾的耦合，另有幾個跨界狀態
+ * 3. 通道：每個通道一步（原查詢或還原變體）
+ * 4. 詞圖走訪：每個通道一步（走訪了幾個節點、找到幾個詞）
  * 5. 結果：一步
+ * 6. 指定詞根而且命中時：整個詞的對齊中，每個不是「相同」的轉移一步
  * @param {any} e morphSearch.explain(...) 的結果
  * @returns {Step[]}
  */
@@ -156,152 +161,103 @@ export function bcdpSteps(e) {
     steps.push({ kind: 'result', phase: 'result', focus: null, note: { key: 'lab.note.bcdp.tooShort', params: { minStem: e.params.minStem } } })
     return steps
   }
-  for (const r of e.charts.relaxations) {
-    if (!r.improved) continue
-    const at = r.table === 'P' ? r.to : r.from
-    steps.push({
-      kind: 'relax',
-      phase: 'charts',
-      focus: { table: r.table, slot: r.slot, at, from: r.from, to: r.to },
-      note: {
-        key: `lab.note.bcdp.relax${r.table}`,
-        params: { at, form: r.form, surface: e.chars.slice(r.from, r.to).join(''), distance: r.distance, cost: r.cost, slot: r.slot },
-      },
-      proofRef: BCDP_DOC.charts,
-    })
-  }
-  const masked = maskedPositions(e)
-  if (masked.length) {
-    steps.push({ kind: 'mask', phase: 'charts', focus: { positions: masked }, note: { key: 'lab.note.bcdp.mask', params: { count: masked.length } }, proofRef: BCDP_DOC.charts })
-  }
-  e.variants.forEach((/** @type {any} */ v, /** @type {number} */ vi) => {
+  e.prefixLevels.forEach((/** @type {Array<number | null>} */ row, /** @type {number} */ s) => {
+    steps.push({ kind: 'level', phase: 'levels', focus: { side: 'prefix', level: s + 1 }, note: { key: 'lab.note.bcdp.levelPrefix', params: { level: s + 1, count: finiteCount(row) } }, proofRef: BCDP_DOC.levels })
+  })
+  e.suffixLevels.forEach((/** @type {Array<number | null>} */ row, /** @type {number} */ s) => {
+    steps.push({ kind: 'level', phase: 'levels', focus: { side: 'suffix', level: s + 1 }, note: { key: 'lab.note.bcdp.levelSuffix', params: { level: s + 1, count: finiteCount(row) } }, proofRef: BCDP_DOC.levels })
+  })
+  steps.push({
+    kind: 'merge',
+    phase: 'levels',
+    focus: null,
+    note: {
+      key: 'lab.note.bcdp.merge',
+      params: { prefix: finiteCount(e.merged.P), suffix: finiteCount(e.merged.S), crossing: e.merged.crossingP.length + e.merged.crossingS.length },
+    },
+    proofRef: BCDP_DOC.junction,
+  })
+  e.variants.forEach((/** @type {any} */ v, /** @type {number} */ c) => {
     steps.push({
       kind: 'variant',
-      phase: 'variants',
-      focus: { variant: vi },
-      note: {
-        key: v.op ? `lab.note.bcdp.variant.${v.op.type}` : 'lab.note.bcdp.variant.original',
-        params: { text: v.text, form: v.op?.form ?? null, starts: v.starts.length, ends: v.ends.length },
-      },
-      proofRef: BCDP_DOC.variants,
+      phase: 'channels',
+      focus: { channel: c },
+      note: { key: `lab.note.bcdp.channel.${v.kind}`, params: { text: v.text, form: v.op?.form ?? '' } },
+      proofRef: v.op ? BCDP_DOC.variants : BCDP_DOC.walk,
     })
   })
-  e.walks.forEach((/** @type {NodeEvent[]} */ walk, /** @type {number} */ vi) => {
+  e.walks.forEach((/** @type {NodeEvent[]} */ walk, /** @type {number} */ c) => {
     steps.push({
       kind: 'walk',
-      phase: 'walk',
-      focus: { variant: vi },
+      phase: 'channels',
+      focus: { channel: c },
       note: {
         key: 'lab.note.bcdp.walk',
-        params: {
-          text: e.variants[vi].text,
-          visited: walk.length,
-          pruned: walk.filter((ev) => ev.pruned).length,
-          candidates: e.candidates[vi].length,
-          lambda: e.params.lemmaDistance,
-        },
+        params: { text: e.variants[c].text, visited: walk.length, pruned: walk.filter((ev) => ev.pruned).length, found: e.candidates[c].length },
       },
       proofRef: BCDP_DOC.walk,
     })
   })
-  for (const p of e.pricing ?? []) {
-    for (const cell of p.cells) {
-      steps.push({
-        kind: cell.skip ? 'skip' : 'price',
-        phase: 'pricing',
-        focus: { variant: p.variant, i: cell.i, k: cell.k },
-        note: {
-          key: cell.skip ? `lab.note.bcdp.skip.${cell.skip}` : 'lab.note.bcdp.price',
-          params: {
-            stem: e.variants[p.variant].chars.slice(cell.i, cell.k).join(''),
-            term: e.term,
-            distance: cell.distance ?? null,
-            start: cell.start ?? null,
-            end: cell.end ?? null,
-            total: cell.total ?? null,
-            lambda: e.params.lemmaDistance,
-          },
-        },
-        proofRef: BCDP_DOC.pricing,
-      })
-    }
-  }
   steps.push({
     kind: 'result',
     phase: 'result',
     focus: null,
-    note: e.term === null
-      ? { key: 'lab.note.bcdp.hits', params: { count: e.hits.length, cutoff: e.cutoff } }
-      : e.hit
-        ? { key: 'lab.note.bcdp.hit', params: { term: e.term, distance: e.hit.distance, steps: e.hit.steps.length } }
-        : { key: `lab.note.bcdp.miss.${e.reason}`, params: { term: e.term, lambda: e.params.lemmaDistance, maxDistance: e.params.maxDistance, cutoff: e.cutoff } },
+    note:
+      e.term === null
+        ? { key: 'lab.note.bcdp.hits', params: { count: e.hits.length, cutoff: e.cutoff } }
+        : e.hit
+          ? { key: 'lab.note.bcdp.hit', params: { term: e.term, distance: e.hit.distance, steps: e.hit.steps.length } }
+          : { key: `lab.note.bcdp.miss.${e.reason}`, params: { term: e.term, maxDistance: e.params.maxDistance, cutoff: e.cutoff } },
     proofRef: BCDP_DOC.result,
   })
+  if (e.alignment) {
+    e.alignment.steps.forEach((/** @type {any} */ st, /** @type {number} */ k) => {
+      if (st.op === 'match') return
+      steps.push({
+        kind: 'align',
+        phase: 'alignment',
+        focus: { step: k },
+        note: { key: `lab.note.bcdp.align.${st.op}`, params: { source: st.source, target: st.target, cost: st.cost } },
+        proofRef: BCDP_DOC.alignment,
+      })
+    })
+  }
   return steps
 }
 
 /**
- * 圖表遮掉的位置（詞素交界不能在空白旁）：鬆弛後有值、最後卻是 ∞ 的位置。
- * @param {any} e
- * @returns {Array<{table: 'P' | 'S', at: number}>}
- */
-function maskedPositions(e) {
-  /** @type {Array<{table: 'P' | 'S', at: number}>} */
-  const out = []
-  for (const table of /** @type {const} */ (['P', 'S'])) {
-    const slots = table === 'P' ? e.charts.Pslots : e.charts.Sslots
-    const final = table === 'P' ? e.charts.P : e.charts.S
-    for (let at = 0; at < final.length; at++) {
-      const any = slots.some((/** @type {Array<number | null>} */ row) => row[at] !== null)
-      if (any && final[at] === null) out.push({ table, at })
-    }
-  }
-  return out
-}
-
-/**
  * 第 index 步時的 BCDP 畫面狀態：
- * - P、S：目前為止的圖表（每個位置取各槽位的最小值；遮掉的位置在遮罩那一步之後才變成 null）
- * - phase：目前的階段；variants、walks：已經顯示到第幾個變體、第幾個通道
- * - priced：已經計價的格（依變體分組）；result：是否已到最後一步
+ * - prefixLevels、suffixLevels：已經顯示到第幾層；merged：合併後的起點與耦合是否已顯示
+ * - channels、walks：已經顯示到第幾個通道、第幾次走訪
+ * - result：結果是否已顯示；aligned：整個詞的對齊已經顯示到第幾步（對齊步驟的序號 ＋ 1）
  * @param {any} e
  * @param {Step[]} steps
  * @param {number} index
  */
 export function bcdpStateAt(e, steps, index) {
   const k = clamp(index, -1, steps.length - 1)
-  const n = e.chars.length
-  /** @type {Array<number | null>} */
-  const P = Array.from({ length: n + 1 }, (_, i) => (i === 0 ? 0 : null))
-  /** @type {Array<number | null>} */
-  const S = Array.from({ length: n + 1 }, (_, i) => (i === n ? 0 : null))
-  let variants = 0
+  let prefixLevels = 0
+  let suffixLevels = 0
+  let merged = false
+  let channels = 0
   let walks = 0
-  /** @type {Array<Array<{i: number, k: number}>>} */
-  const priced = (e.variants ?? []).map(() => [])
+  let result = false
+  let aligned = 0
   for (let s = 0; s <= k; s++) {
     const step = steps[s]
     const f = /** @type {any} */ (step.focus)
-    if (step.kind === 'relax') {
-      const table = f.table === 'P' ? P : S
-      const cost = /** @type {number} */ (step.note.params.cost)
-      if (table[f.at] === null || cost < /** @type {number} */ (table[f.at])) table[f.at] = cost
-    } else if (step.kind === 'mask') {
-      for (const m of f.positions) (m.table === 'P' ? P : S)[m.at] = null
-    } else if (step.kind === 'variant') variants = f.variant + 1
-    else if (step.kind === 'walk') walks = f.variant + 1
-    else if (step.kind === 'price' || step.kind === 'skip') priced[f.variant].push({ i: f.i, k: f.k })
+    if (step.kind === 'level') {
+      if (f.side === 'prefix') prefixLevels = f.level
+      else suffixLevels = f.level
+    } else if (step.kind === 'merge') merged = true
+    else if (step.kind === 'variant') channels = f.channel + 1
+    else if (step.kind === 'walk') walks = f.channel + 1
+    else if (step.kind === 'result') result = true
+    else if (step.kind === 'align') aligned = f.step + 1
   }
-  return {
-    phase: k >= 0 ? steps[k].phase : 'charts',
-    focus: k >= 0 ? steps[k].focus : null,
-    P,
-    S,
-    variants,
-    walks,
-    priced,
-    result: k >= steps.length - 1,
-  }
+  // 最後一步：對齊全部顯示（包含最後一個不是「相同」的步驟之後的相同字元）
+  if (k === steps.length - 1 && e.alignment) aligned = e.alignment.steps.length
+  return { phase: k >= 0 ? steps[k].phase : 'levels', focus: k >= 0 ? steps[k].focus : null, prefixLevels, suffixLevels, merged, channels, walks, result, aligned }
 }
 
 /** @param {number} x @param {number} lo @param {number} hi */

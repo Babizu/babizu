@@ -226,6 +226,66 @@ describe('交界狀態：一段一段走 ＝ 整個詞的聯合對齊', () => {
     }
   })
 
+  it('explainSegments：整個詞的說明與聯合對齊相同，對齊各步的成本加起來等於距離', () => {
+    const random = createRandom(6007)
+    let checked = 0
+    for (let round = 0; round < 300; round++) {
+      const metric = randomMetric(random)
+      const ctx = refJointContext(metric)
+      const p = randomString(random, letters, 1, 3)
+      const t = randomString(random, letters, 1, 4)
+      const s = randomString(random, letters, 1, 3)
+      const x = queryFrom(random, p + t + s)
+      const e = metric.explainSegments(x, [
+        { chars: Array.from(p), lock: true },
+        { chars: Array.from(t) },
+        { chars: Array.from(s), lock: true },
+      ])
+      const want = refJoint(ctx, x, Array.from(p + t + s), { junctions: [p.length, p.length + t.length], stem: [p.length, p.length + t.length] })
+      expect(close(e.distance, want), `p=${p} t=${t} s=${s} x=${x.join('')}：${e.distance} ≠ ${want}`).toBe(true)
+      if (want === Infinity) continue
+      checked++
+      const sum = e.alignment.reduce((a, step) => a + step.cost, 0)
+      expect(sum).toBeCloseTo(e.distance, 9)
+      expect(e.path[0]).toEqual([0, 0])
+    }
+    expect(checked).toBeGreaterThan(200)
+  })
+
+  it('explainSegments 的固定交界 ＝ 聯合對齊「經過指定的格子」', () => {
+    const random = createRandom(6011)
+    for (let round = 0; round < 300; round++) {
+      const metric = randomMetric(random)
+      const ctx = refJointContext(metric)
+      const p = randomString(random, letters, 1, 2)
+      const t = randomString(random, letters, 1, 4)
+      const s = randomString(random, letters, 1, 2)
+      const x = queryFrom(random, p + t + s)
+      const at = Math.floor(random() * (x.length + 1))
+      const allowed = new Set([Math.floor(random() * (x.length + 1)), Math.floor(random() * (x.length + 1))])
+      const e = metric.explainSegments(
+        x,
+        [
+          { chars: Array.from(p), lock: true },
+          { chars: Array.from(t) },
+          { chars: Array.from(s), lock: true },
+        ],
+        { pinStart: { segment: 1, x: at }, pinEnd: { segment: 1, allowed } },
+      )
+      const J1 = p.length
+      const J2 = J1 + t.length
+      const want = refJoint(ctx, x, Array.from(p + t + s), {
+        junctions: [J1, J2],
+        stem: [J1, J2],
+        pinIn: { b: J1, a: at },
+        pinOut: { b: J2, allowed },
+      })
+      expect(close(e.distance, want), `p=${p} t=${t} s=${s} x=${x.join('')} at=${at} allowed=${[...allowed]}：${e.distance} ≠ ${want}`).toBe(true)
+      const sum = e.alignment.reduce((a, step) => a + step.cost, 0)
+      if (want < Infinity) expect(Math.abs(sum - e.distance) < 1e-9, `p=${p} t=${t} s=${s} x=${x.join("")} at=${at} allowed=${[...allowed]} sum=${sum} d=${e.distance} path=${JSON.stringify(e.path)} steps=${e.alignment.map((a) => `${a.op}:${a.source}>${a.target}@${a.cost}`)}`).toBe(true)
+    }
+  })
+
   it('剪枝：上限內的結果與不剪枝相同', () => {
     const random = createRandom(9203)
     for (let round = 0; round < 200; round++) {

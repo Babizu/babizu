@@ -79,14 +79,19 @@ export const FUZZINESS = Object.freeze({
  */
 
 /**
+ * @typedef {AlignmentNote & {where: 'prefix' | 'stem' | 'suffix' | 'junction'}} MorphNote
+ *   構詞命中的一個音變：落在前綴、詞幹、後綴，或詞素交界（交界上的增生、跨越交界的規則）
+ */
+
+/**
  * @typedef {object} LemmaAnalysis
  * @property {string} stem 詞幹（詞庫中的寫法）
  * @property {Array<import('../fuzzy/morph-search.js').MorphStepHit>} steps 由外而內的構詞步驟
- *   （詞綴本身有音變時，step.surface 是查詢中的寫法）
- * @property {number} cost 總成本（構詞步驟＋詞綴音變＋詞幹音變）
- * @property {string} [stemSurface] 詞根相符時，查詢中對應詞幹的那一段（與 stem 不同表示詞幹有音變）
- * @property {number} [stemDistance] 詞幹部分的加權編輯距離
- * @property {AlignmentNote[] | null} [stemAlignment] 詞幹音變的對齊說明（只為前幾筆結果計算）
+ * @property {number} cost 總成本：構詞步驟＋整個詞的音變（docs/bcdp.md 1.2）
+ * @property {string} [variantOf] 衍生形方向以查詢的方言變體當詞根時，查詢本身
+ * @property {number} [variantDistance] 查詢 → 方言變體的距離
+ * @property {MorphNote[] | null} [notes] 整個詞的音變說明（只為前幾筆結果計算）；
+ *   衍生形方向用了方言變體時，查詢 → 變體的音變也在內（where 為 stem）
  */
 
 /** @typedef {'fuzzy' | 'prefix' | 'lemma' | 'derived' | 'substring'} MatchType */
@@ -158,6 +163,13 @@ const LEMMA_EXTRA_DISTANCE = 0.6
 /** 查詢的方言變體也拿來找衍生形：只取距離這麼小、且全由方言規則構成的模糊命中 */
 const DIALECT_VARIANT_DISTANCE = 0.3
 
+/**
+ * 衍生形方向（查詞根、找衍生詞）允許的音變：詞典中的衍生詞是標準寫法，音變只來自詞素交界
+ * （喉塞音增生、元音合併、構詞音變），一兩條規則的成本就夠
+ */
+const DERIVED_SOUND_DISTANCE = 0.2
+
+
 
 /**
  * 把前綴／包含命中換算成「等效距離」，好跟模糊命中一起排序。
@@ -214,6 +226,17 @@ export class SearchEngine {
     this._termIndex = null
     /** @type {{key: string, indices: number[]} | null} */
     this._listCache = null
+    /** @type {WeakMap<LemmaAnalysis, () => MorphNote[]>} 構詞命中的音變說明（需要時才計算） */
+    this._lazyNotes = new WeakMap()
+  }
+
+  /**
+   * 構詞搜尋的總成本上限：min(1, 該模糊程度的門檻 ＋ 0.6)。
+   * @param {string} key
+   * @param {typeof FUZZINESS[Fuzziness]} level
+   */
+  _lemmaMax(key, level) {
+    return Math.min(LEMMA_MAX_DISTANCE, level.maxDistance(Array.from(key).length) + LEMMA_EXTRA_DISTANCE)
   }
 
   /**
@@ -238,8 +261,7 @@ export class SearchEngine {
     if (!this.morphSearch) return null
     const key = this.text.searchKey(query)
     const level = FUZZINESS[fuzziness] ?? FUZZINESS.normal
-    const maxDistance = Math.min(LEMMA_MAX_DISTANCE, level.maxDistance(Array.from(key).length) + LEMMA_EXTRA_DISTANCE)
-    return this.morphSearch.explain(key, term === null ? null : this.text.searchKey(term), { maxDistance })
+    return this.morphSearch.explain(key, term === null ? null : this.text.searchKey(term), { maxDistance: this._lemmaMax(key, level) })
   }
 
   /**
@@ -475,10 +497,7 @@ export class SearchEngine {
     for (const hit of response.entries.slice(0, explainLimit)) {
       if (hit.matchType === 'fuzzy' && hit.distance > 0) hit.alignment = this.explainNotes(key, hit.term)
       const a = hit.analysis
-      if (a && a.stemAlignment === undefined) {
-        // 詞根相符：查詢中的詞幹 → 詞庫詞幹；衍生形：查詢 → 方言變體詞幹
-        a.stemAlignment = a.stemSurface && a.stemSurface !== a.stem ? this.explainNotes(a.stemSurface, a.stem) : null
-      }
+      if (a && a.notes === undefined) a.notes = this._lazyNotes.get(a)?.() ?? null
     }
 
     // 例句：每個查詢詞都要在句中出現（模糊），距離相加排序。
@@ -604,7 +623,7 @@ export class SearchEngine {
     /** @type {TermMatch[]} */
     let lemma = []
     if (fuzzy) {
-      const prepared = morphology ? /** @type {NonNullable<typeof this.morphSearch>} */ (this.morphSearch).prepare(key) : null
+      const prepared = morphology ? /** @type {NonNullable<typeof this.morphSearch>} */ (this.morphSearch).prepare(key, this._lemmaMax(key, level)) : null
       const { results, morph } = this._fuzzyTerms(key, level, response, prepared)
       if (prepared) lemma = this._lemmaTerms(key, level, prepared, morph)
       for (const r of results) {
@@ -641,14 +660,16 @@ export class SearchEngine {
   }
 
   /**
-   * 衍生形（還原詞綴方向）：詞庫中去詞綴後正好是查詢的詞，包括語料句子裡的詞。
+   * 衍生形（還原詞綴方向）：詞庫中分析得出詞幹正好是查詢的詞，包括語料句子裡的詞。
    *
-   * 不必列舉所有詞綴組合：前綴、後綴只加在外面，所以衍生詞一定含有詞幹的某個「核心形式」
-   * （詞幹本身，或加了中綴、重疊、詞幹交替後的樣子）。先用「字元 → 詞」索引找出含核心形式的詞，
-   * 再用構詞分析驗證，分析結果的詞幹必須正好是查詢。
+   * 與詞根相符是同一個模型：分析的成本是構詞步驟加上整個詞的音變（規則可以跨越詞素交界）。
+   * 候選先用「字元 → 詞」索引找含有詞根核心形式的詞，再列出「前綴鏈 · 核心形式 · 後綴鏈」的結構
+   * （詞綴原樣、交界上容許一個字元的出入，morphology.derivations），逐一以整個詞的聯合對齊
+   * （metric.jointDistance）驗證。衍生詞是標準寫法，整個詞的音變不能超過 DERIVED_SOUND_DISTANCE
+   * （docs/bcdp.md 第 11 節）。
    *
-   * 查詢的方言變體（variants：純規則、距離小的模糊命中詞）也各當一次詞幹，
-   * 成本加上變體本身的距離，說明中附上查詢 → 變體的對齊。
+   * 查詢的方言變體（variants：純規則、距離小的模糊命中詞）也各當一次詞根，
+   * 成本加上變體本身的距離，說明中附上查詢 → 變體的音變。
    *
    * @param {string} key
    * @param {TermMatch[]} [variants]
@@ -657,6 +678,7 @@ export class SearchEngine {
    */
   _derivedTerms(key, variants = []) {
     const morphology = /** @type {import('../fuzzy/morphology.js').Analyzer} */ (this.text.morphology)
+    const search = /** @type {NonNullable<typeof this.morphSearch>} */ (this.morphSearch)
     const { terms } = this._ensureTermIndex()
     /** @type {Map<string, TermMatch>} */
     const out = new Map()
@@ -669,26 +691,41 @@ export class SearchEngine {
           const term = terms[id]
           if (term === key || term === stem || seen.has(term)) continue
           seen.add(term)
-          // 大部分候選只是碰巧含有核心形式：先用必要條件排除，不必逐一分析（結果不變）
-          if (!morphology.mayDerive(term, stem, cores)) continue
-          const a = morphology.analyze(term).find((x) => x.stem === stem)
-          if (!a) continue
-          const distance = Math.round((a.cost + offset) * 1e9) / 1e9
+          // 候選分析的結構（詞綴原樣、交界上容許一個字元的出入），逐一以整個詞的聯合對齊驗證
+          const x = Array.from(term)
+          /** 同一個候選詞的各種分析共用編譯結果 @type {Map<string, any>} */
+          const plans = new Map()
+          /** @type {{cost: number, steps: import('../fuzzy/morph-search.js').MorphStepHit[], segments: any[]} | null} */
+          let best = null
+          for (const d of morphology.derivations(term, stem)) {
+            const segments = [
+              ...d.prefixes.map((a) => ({ chars: Array.from(a.form), lock: true, type: /** @type {const} */ ('prefix') })),
+              { chars: Array.from(d.segment), lock: false, type: /** @type {const} */ ('stem') },
+              ...[...d.suffixes].reverse().map((a) => ({ chars: Array.from(a.form), lock: true, type: /** @type {const} */ ('suffix') })),
+            ]
+            const sound = this.metric.jointDistance(x, segments, DERIVED_SOUND_DISTANCE, plans)
+            if (sound > DERIVED_SOUND_DISTANCE + 1e-9) continue
+            /** @type {import('../fuzzy/morph-search.js').MorphStepHit[]} */
+            const steps = [
+              ...d.prefixes.map((a) => ({ type: /** @type {const} */ ('prefix'), form: a.form, gloss: a.gloss, cost: a.cost })),
+              ...(d.op ? [/** @type {any} */ (d.op)] : []),
+              ...d.suffixes.map((a) => ({ type: /** @type {const} */ ('suffix'), form: a.form, gloss: a.gloss, cost: a.cost })),
+            ]
+            const cost = steps.reduce((sum, st) => sum + st.cost, 0) + sound
+            if (!best || cost < best.cost - 1e-9 || (Math.abs(cost - best.cost) <= 1e-9 && steps.length < best.steps.length)) best = { cost, steps, segments }
+          }
+          if (!best) continue
+          const distance = Math.round((best.cost + offset) * 1e9) / 1e9
           const prev = out.get(term)
           if (prev && prev.distance <= distance) continue
-          out.set(term, {
-            term,
-            payloads: this.index.payloads[id],
-            distance,
-            matchType: 'derived',
-            analysis: {
-              stem,
-              steps: a.steps,
-              cost: distance,
-              // 方言變體：說明「查詢 → 詞幹」的音變（stemSurface 借用為查詢本身）
-              ...(offset > 0 ? { stemSurface: key, stemDistance: offset } : {}),
-            },
-          })
+          /** @type {LemmaAnalysis} */
+          const analysis = { stem, steps: best.steps, cost: distance, ...(offset > 0 ? { variantOf: key, variantDistance: offset } : {}) }
+          const segments = best.segments
+          this._lazyNotes.set(analysis, () => [
+            ...(offset > 0 ? this.explainNotes(key, stem).map((n) => ({ ...n, where: /** @type {const} */ ('stem') })) : []),
+            ...search.notesFor(x, segments),
+          ])
+          out.set(term, { term, payloads: this.index.payloads[id], distance, matchType: 'derived', analysis })
         }
       }
     }
@@ -735,35 +772,26 @@ export class SearchEngine {
   /**
    * 詞根相符（去詞綴方向）：音變 ∘ 構詞 ∘ 詞庫的聯合搜尋 BCDP（babizu/fuzzy 的 morph-search.js）。
    *
-   * 前綴鏈、後綴鏈的成本先算成兩張圖表，當作詞圖 DP 的起始列與詞尾附加成本，一次走訪就同時處理
-   * 「詞綴＋詞幹＋方言音變」，詞綴本身的音變（mine-／minu-）也在內。
-   * 總成本上限＝ min(1, 該模糊程度的門檻 ＋ 0.6)；詞幹部分的音變另受規格的 lemmaDistance 限制。
-   * 精確模式不做（精確只比對拼寫相同的詞）。
+   * 分析的成本是構詞步驟加上整個詞的音變：同一套方言規則對整個詞計算，可以跨越詞素交界
+   * （ta-dusa-aw → tadusaw），詞首、詞尾規則與構詞音變在交界也適用（docs/bcdp.md 第 1 節）。
+   * 總成本上限＝ min(1, 該模糊程度的門檻 ＋ 0.6)。精確模式不做（精確只比對拼寫相同的詞）。
    *
    * @param {string} key
    * @param {typeof FUZZINESS[Fuzziness]} level
    * @param {ReturnType<NonNullable<SearchEngine['morphSearch']>['prepare']>} prepared
-   * @param {import('../fuzzy/fuzzy-index.js').SearchResult[][]} results 各還原變體通道的候選
+   * @param {import('../fuzzy/fuzzy-index.js').SearchResult[][]} results 各通道的結果
    * @returns {TermMatch[]}
    * @private
    */
   _lemmaTerms(key, level, prepared, results) {
     if (!prepared) return []
     const search = /** @type {NonNullable<typeof this.morphSearch>} */ (this.morphSearch)
-    const maxDistance = Math.min(LEMMA_MAX_DISTANCE, level.maxDistance(Array.from(key).length) + LEMMA_EXTRA_DISTANCE)
-    return search.finish(prepared, results, maxDistance).map((h) => ({
-      term: h.term,
-      payloads: h.payloads,
-      distance: h.distance,
-      matchType: /** @type {MatchType} */ ('lemma'),
-      analysis: {
-        stem: h.term,
-        steps: h.steps,
-        cost: h.distance,
-        stemSurface: h.stemSurface,
-        stemDistance: h.stemDistance,
-      },
-    }))
+    return search.finish(prepared, results, this._lemmaMax(key, level)).map((h) => {
+      /** @type {LemmaAnalysis} */
+      const analysis = { stem: h.term, steps: h.steps, cost: h.distance }
+      this._lazyNotes.set(analysis, () => search.notesOf(prepared, h))
+      return { term: h.term, payloads: h.payloads, distance: h.distance, matchType: /** @type {MatchType} */ ('lemma'), analysis }
+    })
   }
 
   /**

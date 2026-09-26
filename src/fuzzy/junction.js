@@ -58,6 +58,73 @@ export function mergeInto(into, state, add, tag) {
 }
 
 /**
+ * 交界狀態裡最小的值（剪枝用：之後的成本只會更大）。
+ * @param {JunctionState} state
+ */
+export function minOf(state) {
+  let min = Math.min(...state.row)
+  for (const p of state.pending) min = Math.min(min, ...p.row)
+  return min
+}
+
+/**
+ * 每個值加上 c 的複本（例如詞綴本身的成本）。
+ * @param {JunctionState} state
+ * @param {number} c
+ * @returns {JunctionState}
+ */
+export function shifted(state, c) {
+  return {
+    row: Float64Array.from(state.row, (v) => v + c),
+    pending: state.pending.map((p) => ({ node: p.node, row: Float64Array.from(p.row, (v) => v + c) })),
+  }
+}
+
+/**
+ * 空的詞尾耦合狀態。
+ * @param {number} n
+ * @returns {JunctionEnd & {tags: {row: unknown[], pending: Map<string, unknown[]>}}}
+ */
+export function emptyEnd(n) {
+  return { row: new Float64Array(n + 1).fill(Infinity), pending: [], word: null, tags: { row: new Array(n + 1).fill(null), pending: new Map() } }
+}
+
+/**
+ * 把一個詞尾耦合狀態逐項取 min 合併進 into（跨界表以 tail 字串對應），並記下每一格來自哪一個 tag。
+ * @param {ReturnType<typeof emptyEnd>} into
+ * @param {JunctionEnd} end
+ * @param {unknown} tag
+ */
+export function mergeEndInto(into, end, tag) {
+  const n = into.row.length
+  if (end.row) {
+    for (let x = 0; x < n; x++) {
+      if (end.row[x] < into.row[x]) {
+        into.row[x] = end.row[x]
+        into.tags.row[x] = tag
+      }
+    }
+  }
+  for (const p of end.pending) {
+    const key = p.tail.join('')
+    let target = into.pending.find((q) => q.tail.join('') === key)
+    if (!target) {
+      target = { tail: p.tail, row: new Float64Array(n).fill(Infinity) }
+      into.pending.push(target)
+      into.tags.pending.set(key, new Array(n).fill(null))
+    }
+    const tags = /** @type {unknown[]} */ (into.tags.pending.get(key))
+    for (let x = 0; x < n; x++) {
+      if (p.row[x] < target.row[x]) {
+        target.row[x] = p.row[x]
+        tags[x] = tag
+      }
+    }
+  }
+  return into
+}
+
+/**
  * 是否有任何有限值。
  * @param {JunctionState} state
  */

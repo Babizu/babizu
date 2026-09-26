@@ -3,7 +3,7 @@
  */
 
 import { CostModel } from './costs.js'
-import { CompiledRules, fillRow, PathMatcher, prepareColumn, roundCost, EPSILON } from './dp.js'
+import { advanceCrossing, CompiledRules, createCrossing, EDGE_JUNCTION, EDGE_NONE, EDGE_WORD, fillRow, jumpBound, PathMatcher, prepareColumn, roundCost, EPSILON } from './dp.js'
 import { createNormalizer } from './normalize.js'
 import { resolveNormalization } from './normalization.js'
 import { RuleSet } from './rules.js'
@@ -275,6 +275,430 @@ export class WeightedEditDistance {
       order,
       finalColumns: Array.from({ length: m + 1 }, (_, jj) => this._isWordEnd(y, jj)),
     }
+  }
+
+  /**
+   * 整個詞（幾個詞素接起來）的聯合對齊說明，與構詞搜尋同一套交界語意（docs/bcdp.md 1.3）：
+   * 一段一段計算，段與段之間以交界狀態銜接（交界列＋跨界的規則），所以跨越交界的規則、交界上的
+   * 構詞音變都會出現在對齊中。回傳整張表（所有段的欄接在一起）、回溯路徑與對齊；
+   * 對齊的每一步另外標出它在底層字串上的範圍，呼叫端可以據此分到各詞素。
+   *
+   * @param {string[]} x 查詢（已正規化）
+   * @param {Array<{chars: string[], lock?: boolean}>} segments 各詞素；lock：詞綴（不能消耗查詢的空白）
+   * @param {object} [options]
+   * @param {number} [options.startEdge=EDGE_WORD] 第一段的開頭是詞首還是交界（重疊的詞幹開頭是交界）
+   * @param {{segment: number, x: number}} [options.pinStart] 第 segment 段必須由查詢位置 x 開始（中綴、重疊）
+   * @param {{segment: number, allowed: Set<number>}} [options.pinEnd] 第 segment 段必須在 allowed 的某個位置結束
+   * @returns {Explanation & {junctions: number[], segmentOf: number[]}}
+   */
+  explainSegments(x, segments, options = {}) {
+    const compiled = this.compiled
+    const n = x.length
+    const offsets = []
+    let total = 0
+    for (const s of segments) {
+      offsets.push(total)
+      total += s.chars.length
+    }
+    const y = segments.flatMap((s) => s.chars)
+    const grid = () => Array.from({ length: n + 1 }, () => Array.from({ length: total + 1 }, () => /** @type {CellCandidate[]} */ ([])))
+    /**
+     * 交界欄有兩層：前一段的交界列（prev）與後一段的第 0 列（main：由交界列出發、再做只動查詢的轉移）。
+     * 沒有固定交界時兩層的值相同；固定交界時 main 只由固定的位置出發，比固定位置小的格子只存在於 prev。
+     * 回溯時由 main 走到「由交界列進入」的格子，就換到 prev 繼續。
+     */
+    const mainCand = grid()
+    const prevCand = grid()
+    /** @type {Float64Array[]} */
+    const mainCol = new Array(total + 1)
+    /** @type {Array<Float64Array | undefined>} */
+    const prevCol = new Array(total + 1)
+    /** @type {Array<((i: number) => boolean) | undefined>} 交界欄：哪些位置可以由前一段進入後一段 */
+    const entry = new Array(total + 1)
+    /** @type {{row: Float64Array, pending: Array<{node: number, row: Float64Array}>} | null} */
+    let state = null
+    const pin = (/** @type {Float64Array} */ row, /** @type {(x: number) => boolean} */ keep) => {
+      for (let i = 0; i <= n; i++) if (!keep(i)) row[i] = Infinity
+    }
+    segments.forEach((seg, k) => {
+      const m = seg.chars.length
+      const last = k === segments.length - 1
+      const start = state ? Float64Array.from(state.row) : null
+      const pinnedStart = options.pinStart?.segment === k
+      /** @type {(i: number) => boolean} */
+      let enter = () => true
+      if (pinnedStart) {
+        const at = /** @type {{x: number}} */ (options.pinStart).x
+        enter = (i) => i === at
+      }
+      if (options.pinEnd?.segment === k - 1) enter = (i) => /** @type {Set<number>} */ (options.pinEnd?.allowed).has(i)
+      if (start) pin(start, enter)
+      entry[offsets[k]] = enter
+      const plan = compiled.compileQuery(x, this.costs, { start, junctions: true, lockBoundary: Boolean(seg.lock) })
+      const matcher = new PathMatcher(compiled)
+      const startEdge = k === 0 ? (options.startEdge ?? EDGE_WORD) : EDGE_JUNCTION
+      /** @type {import('./dp.js').Crossing[]} */
+      const cross = []
+      if (state && state.pending.length && !pinnedStart) {
+        const c0 = createCrossing(state.pending.length)
+        state.pending.forEach((p, q) => {
+          c0.nodes[q] = p.node
+          c0.rows[q] = p.row
+          c0.mins[q] = Math.min(...p.row)
+        })
+        c0.count = state.pending.length
+        cross[0] = c0
+      }
+      /** @type {Float64Array[]} */
+      const rows = []
+      const rowAt = (/** @type {number} */ r) => rows[r]
+      for (let j = 0; j <= m; j++) {
+        if (j > 0) matcher.set(j, compiled.idOf(seg.chars[j - 1]))
+        let crossing = null
+        if (j > 0 && cross[j - 1]?.count) crossing = advanceCrossing(compiled, cross[j - 1], matcher.ids[j - 1], (cross[j] = createCrossing(cross[0].nodes.length)))
+        const column = prepareColumn(plan, compiled, matcher, j, rowAt, startEdge, crossing)
+        // 段內：依下一個字元是不是邊界；段尾：交界列，或最後一段的詞尾
+        const fin = j < m ? (compiled.isBoundary(seg.chars[j]) ? EDGE_WORD : EDGE_NONE) : last ? EDGE_WORD : EDGE_JUNCTION
+        const row = new Float64Array(n + 1)
+        const g = offsets[k] + j
+        // 段尾的交界列放在 prev 層（後一段的第 0 列才是這一欄的 main 層）
+        const toPrev = j === m && !last
+        const target = toPrev ? prevCand : mainCand
+        fillRow(plan, compiled, column, fin, row, (t) => {
+          target[t.i][g].push({
+            op: t.op,
+            cost: roundCost(t.cost),
+            stepCost: roundCost(t.stepCost),
+            from: [t.fromI, offsets[k] + t.fromJ],
+            rule: t.rule ? publicRule(t.rule) : null,
+          })
+        })
+        rows.push(row)
+        if (toPrev) prevCol[g] = row
+        else mainCol[g] = row
+      }
+      // 最後一段固定詞尾：只接受在允許的位置結束
+      if (last && options.pinEnd?.segment === k) pin(rows[m], (i) => /** @type {Set<number>} */ (options.pinEnd?.allowed).has(i))
+      /** @type {Array<{node: number, row: Float64Array}>} */
+      const pending = []
+      const base = m * matcher.cap
+      for (let q = 0; q < matcher.counts[m]; q++) {
+        const s = matcher.states[base + q]
+        if (compiled.trieJump[s] === Infinity) continue
+        pending.push({ node: s, row: rows[m - compiled.trieDepth[s]] })
+      }
+      const pinnedEnd = options.pinEnd?.segment === k
+      state = { row: rows[m], pending: pinnedEnd ? [] : pending }
+    })
+
+    const byCost = (/** @type {CellCandidate} */ a, /** @type {CellCandidate} */ b) => a.cost - b.cost || OP_PRIORITY[a.op] - OP_PRIORITY[b.op]
+    for (const layer of [mainCand, prevCand]) for (const row of layer) for (const cell of row) cell.sort(byCost)
+    const matrix = Array.from({ length: n + 1 }, (_, i) => Array.from({ length: total + 1 }, (_, j) => roundCost(mainCol[j][i])))
+    /** @type {AlignmentStep[]} */
+    const alignment = []
+    /** @type {Array<[number, number]>} */
+    const path = [[n, total]]
+    let i = n
+    let j = total
+    let layer = 'main'
+    // 回溯：沿著每格成本等於格值的第一個候選；在交界欄由 main 層「由交界列進入」的格子換到 prev 層
+    while (i > 0 || j > 0) {
+      const prev = prevCol[j]
+      const value = roundCost(layer === 'main' ? mainCol[j][i] : /** @type {Float64Array} */ (prev)[i])
+      const cands = layer === 'main' ? mainCand[i][j] : prevCand[i][j]
+      const best = cands.find((c) => Math.abs(c.cost - value) <= EPSILON)
+      if (!best) {
+        const enter = entry[j]
+        if (layer === 'main' && prev && enter?.(i) && Math.abs(roundCost(prev[i]) - value) <= EPSILON) {
+          layer = 'prev'
+          continue
+        }
+        break
+      }
+      const [fi, fj] = best.from
+      alignment.push({ op: best.op, source: x.slice(fi, i).join(''), target: y.slice(fj, j).join(''), cost: best.stepCost, from: [fi, fj], to: [i, j], rule: best.rule })
+      if (fj !== j) layer = 'main'
+      i = fi
+      j = fj
+      path.push([i, j])
+    }
+    // 顯示用：交界欄的候選是兩層合在一起
+    const candidates = mainCand.map((row, i) => row.map((cell, j) => [...prevCand[i][j], ...cell].sort(byCost)))
+    alignment.reverse()
+    path.reverse()
+    /** @type {Array<[number, number]>} */
+    const order = []
+    for (let jj = 0; jj <= total; jj++) for (let ii = 0; ii <= n; ii++) order.push([ii, jj])
+    const distance = matrix[n][total]
+    const segmentOf = []
+    segments.forEach((s, k) => s.chars.forEach(() => segmentOf.push(k)))
+    return {
+      query: x,
+      candidate: y,
+      distance,
+      normalized: {
+        max: roundCost(resolveNormalization('max').score(distance, n, total)),
+        sum: roundCost(resolveNormalization('sum').score(distance, n, total)),
+        query: roundCost(resolveNormalization('query').score(distance, n, total)),
+      },
+      matrix,
+      candidates,
+      path,
+      alignment,
+      order,
+      finalColumns: Array.from({ length: total + 1 }, (_, jj) => jj === total || compiled.isBoundary(y[jj])),
+      junctions: offsets.slice(1),
+      segmentOf,
+    }
+  }
+
+  /**
+   * 整個詞（幾個詞素接起來）的聯合對齊距離：與 explainSegments 同一套交界語意，但不記轉移、不回溯，
+   * 只求距離（衍生形方向逐一驗證候選時用）。
+   * @param {string[]} x 查詢（已正規化）
+   * @param {Array<{chars: string[], lock?: boolean}>} segments 各詞素；lock：詞綴（不能消耗查詢的空白）
+   * @param {number} [bound=Infinity] 超過就不必算完（回傳 Infinity）：成本只增不減，某一列全部超過就停
+   * @param {Map<string, import('./dp.js').QueryPlan>} [plans] 同一個查詢的編譯結果（依 lock 分兩份），
+   *   逐一驗證很多種分析時共用（第 0 列的起點每一段重設）
+   * @returns {number}
+   */
+  jointDistance(x, segments, bound = Infinity, plans = new Map()) {
+    const compiled = this.compiled
+    const n = x.length
+    /** @type {{row: Float64Array, pending: Array<{node: number, row: Float64Array}>} | null} */
+    let state = null
+    let result = Infinity
+    for (let k = 0; k < segments.length; k++) {
+      const seg = segments[k]
+      const m = seg.chars.length
+      const last = k === segments.length - 1
+      const key = seg.lock ? 'lock' : 'free'
+      let plan = plans.get(key)
+      if (!plan) plans.set(key, (plan = compiled.compileQuery(x, this.costs, { junctions: true, lockBoundary: Boolean(seg.lock) })))
+      plan.start = state ? state.row : null
+      const matcher = new PathMatcher(compiled)
+      /** @type {import('./dp.js').Crossing[]} */
+      const cross = []
+      if (state && state.pending.length) {
+        const c0 = createCrossing(state.pending.length)
+        state.pending.forEach((p, q) => {
+          c0.nodes[q] = p.node
+          c0.rows[q] = p.row
+          c0.mins[q] = Math.min(...p.row)
+        })
+        c0.count = state.pending.length
+        cross[0] = c0
+      }
+      /** @type {Float64Array[]} */
+      const rows = []
+      const rowAt = (/** @type {number} */ r) => rows[r]
+      for (let j = 0; j <= m; j++) {
+        if (j > 0) matcher.set(j, compiled.idOf(seg.chars[j - 1]))
+        let crossing = null
+        if (j > 0 && cross[j - 1]?.count) crossing = advanceCrossing(compiled, cross[j - 1], matcher.ids[j - 1], (cross[j] = createCrossing(cross[0].nodes.length)))
+        const column = prepareColumn(plan, compiled, matcher, j, rowAt, k === 0 ? EDGE_WORD : EDGE_JUNCTION, crossing)
+        const fin = j < m ? (compiled.isBoundary(seg.chars[j]) ? EDGE_WORD : EDGE_NONE) : last ? EDGE_WORD : EDGE_JUNCTION
+        const row = new Float64Array(n + 1)
+        const min = fillRow(plan, compiled, column, fin, row)
+        rows.push(row)
+        // 剪枝：這一列與還能跨列的規則都超過上限，之後只會更大（同詞圖搜尋的下界）
+        if (min > bound + EPSILON && jumpBound(compiled, matcher, j, (r) => Math.min(...rows[r]), crossing) > bound + EPSILON) return Infinity
+      }
+      /** @type {Array<{node: number, row: Float64Array}>} */
+      const pending = []
+      const base = m * matcher.cap
+      for (let q = 0; q < matcher.counts[m]; q++) {
+        const s = matcher.states[base + q]
+        if (compiled.trieJump[s] !== Infinity) pending.push({ node: s, row: rows[m - compiled.trieDepth[s]] })
+      }
+      state = { row: rows[m], pending }
+      if (last) result = rows[m][n]
+    }
+    return roundCost(result)
+  }
+
+  /**
+   * 單一段（一個詞素）的追蹤 DP：由交界狀態 from 出發，在 exit 指定的地方結束，回溯出這一段的對齊，
+   * 並回報對齊是由 from 的哪一格（或哪一個跨界狀態）進來的。構詞搜尋用它找出命中是哪一條詞綴鏈：
+   * 合併後的交界狀態每一格記著它來自哪個詞綴，一段一段往回追就得到整條鏈（docs/bcdp.md 第 9 節）。
+   *
+   * @param {string[]} x 查詢
+   * @param {string[]} y 這一段的字元
+   * @param {object} o
+   * @param {{row: Float64Array, pending: Array<{node: number, row: Float64Array}>} | null} o.from 起點；null 表示詞首
+   * @param {number} [o.startEdge] 起點的位置種類（預設有 from 時是交界，否則是詞首）
+   * @param {boolean} [o.lock=false] 詞綴：不能消耗查詢的空白
+   * @param {Exit} o.exit 在哪裡結束（見 Exit）
+   * @returns {{cost: number, entry: Entry, exit: Exit & {cost?: number}, steps: AlignmentStep[]}}
+   *
+   * @typedef {{kind: 'start'} | {kind: 'row', x: number} | {kind: 'pending', node: number, x: number}} Entry
+   *   由詞首、交界列的第 x 格，或跨界狀態 node 起點那一列的第 x 格進入這一段
+   * @typedef {{kind: 'word'} | {kind: 'row', x: number} | {kind: 'pending', node: number, x: number}
+   *   | {kind: 'couple', to: import('./fuzzy-index.js').JunctionEnd}} Exit
+   *   詞尾（終點 (n, |y|)）；交界列的第 x 格；本段尾端跨界狀態 node（深度 d）起點那一列（第 |y| − d 列）的第 x 格；
+   *   或與後一段 to 耦合、取最小者（回報實際的出口）
+   */
+  traceSegment(x, y, o) {
+    const compiled = this.compiled
+    const n = x.length
+    const m = y.length
+    const from = o.from
+    const plan = compiled.compileQuery(x, this.costs, { start: from?.row ?? null, junctions: true, lockBoundary: Boolean(o.lock) })
+    const matcher = new PathMatcher(compiled)
+    const startEdge = o.startEdge ?? (from ? EDGE_JUNCTION : EDGE_WORD)
+    /** @type {import('./dp.js').Crossing[]} */
+    const cross = []
+    if (from && from.pending.length) {
+      const c0 = createCrossing(from.pending.length)
+      from.pending.forEach((p, q) => {
+        c0.nodes[q] = p.node
+        c0.rows[q] = p.row
+        c0.mins[q] = Math.min(...p.row)
+      })
+      c0.count = from.pending.length
+      cross[0] = c0
+    }
+    /** @type {Float64Array[]} */
+    const rows = []
+    /** @type {CellCandidate[][][]} cand[j][i]（第 m 列另有 F 列與交界列兩份：candF、candJ） */
+    const cand = []
+    const rowAt = (/** @type {number} */ r) => rows[r]
+    /** @param {CellCandidate[][]} into */
+    const tracer = (into) => (/** @type {import('./dp.js').Transition} */ t) => {
+      into[t.i].push({ op: t.op, cost: roundCost(t.cost), stepCost: roundCost(t.stepCost), from: [t.fromI, t.fromJ], rule: t.rule ? publicRule(t.rule) : null })
+    }
+    let rowF = /** @type {Float64Array} */ (new Float64Array(0))
+    let rowJ = rowF
+    /** @type {CellCandidate[][]} */
+    let candF = []
+    /** @type {CellCandidate[][]} */
+    let candJ = []
+    for (let j = 0; j <= m; j++) {
+      if (j > 0) matcher.set(j, compiled.idOf(y[j - 1]))
+      let crossing = null
+      if (j > 0 && cross[j - 1]?.count) crossing = advanceCrossing(compiled, cross[j - 1], matcher.ids[j - 1], (cross[j] = createCrossing(cross[0].nodes.length)))
+      const column = prepareColumn(plan, compiled, matcher, j, rowAt, startEdge, crossing)
+      const blank = () => Array.from({ length: n + 1 }, () => /** @type {CellCandidate[]} */ ([]))
+      if (j < m) {
+        const row = new Float64Array(n + 1)
+        const c = blank()
+        fillRow(plan, compiled, column, compiled.isBoundary(y[j]) ? EDGE_WORD : EDGE_NONE, row, tracer(c))
+        rows.push(row)
+        cand.push(c)
+      } else {
+        // 最後一列：詞尾（F 列）與交界列兩份；段內的轉移（跨界出口）引用的是 F 列（下一個字元不存在）
+        rowF = new Float64Array(n + 1)
+        candF = blank()
+        fillRow(plan, compiled, column, EDGE_WORD, rowF, tracer(candF))
+        rowJ = new Float64Array(n + 1)
+        candJ = blank()
+        fillRow(plan, compiled, column, EDGE_JUNCTION, rowJ, tracer(candJ))
+        rows.push(rowF)
+        cand.push(candF)
+      }
+    }
+    for (const c of [...cand, candJ]) for (const cell of c) cell.sort((a, b) => a.cost - b.cost || OP_PRIORITY[a.op] - OP_PRIORITY[b.op])
+
+    // 出口：回溯的起點（列、格、用哪一份候選），以及跨界出口本身那一步
+    /** @type {{j: number, i: number, cands: CellCandidate[][], rowVal: Float64Array}} */
+    let at = { j: m, i: n, cands: candF, rowVal: rowF }
+    /** @type {AlignmentStep | null} */
+    let last = null
+    /** @type {Exit & {cost?: number}} */
+    let exit = o.exit
+    let cost = Infinity
+    const trailing = (/** @type {number} */ node) => {
+      const d = compiled.trieDepth[node]
+      return { j: m - d, rowVal: rows[m - d], cands: cand[m - d] }
+    }
+    if (o.exit.kind === 'word') {
+      cost = rowF[n]
+    } else if (o.exit.kind === 'row') {
+      at = { j: m, i: o.exit.x, cands: candJ, rowVal: rowJ }
+      cost = rowJ[o.exit.x]
+    } else if (o.exit.kind === 'pending') {
+      at = { ...trailing(o.exit.node), i: o.exit.x }
+      cost = at.rowVal[o.exit.x]
+    } else {
+      const to = o.exit.to
+      if (to.word) {
+        for (let i = 0; i <= n; i++) {
+          if (rowF[i] + to.word[i] < cost) {
+            cost = rowF[i] + to.word[i]
+            at = { j: m, i, cands: candF, rowVal: rowF }
+            exit = { kind: 'word' }
+          }
+        }
+      }
+      if (to.row) {
+        for (let i = 0; i <= n; i++) {
+          if (rowJ[i] + to.row[i] < cost) {
+            cost = rowJ[i] + to.row[i]
+            at = { j: m, i, cands: candJ, rowVal: rowJ }
+            exit = { kind: 'row', x: i }
+          }
+        }
+      }
+      // 跨界出口：規則 target ＝ 本段尾巴（trie 狀態 s）· 後一段開頭（tail）
+      const base = m * matcher.cap
+      for (let k = 0; k < matcher.counts[m]; k++) {
+        const s = matcher.states[base + k]
+        if (compiled.trieJump[s] === Infinity) continue
+        const d = compiled.trieDepth[s]
+        to.pending.forEach((p, b) => {
+          const node = compiled.trieWalk(s, p.tail)
+          const T = node === -1 ? -1 : compiled.trieTarget[node]
+          if (T === -1) return
+          for (let q = plan.ruleOff[T]; q < plan.ruleOff[T + 1]; q++) {
+            if (plan.ruleFlag[q] !== 0) continue
+            const i = plan.ruleI[q]
+            const src = plan.ruleSrc[q]
+            const v = rows[m - d][i - src] + plan.ruleW[q] + p.row[i]
+            if (v < cost) {
+              cost = v
+              at = { j: m - d, i: i - src, cands: cand[m - d], rowVal: rows[m - d] }
+              exit = { kind: 'pending', node: s, x: i, tail: b }
+              const rule = publicRule(plan.ruleRef[q])
+              last = { op: 'rule', source: x.slice(i - src, i).join(''), target: rule.target, cost: roundCost(plan.ruleW[q]), from: [i - src, m - d], to: [i, m + p.tail.length], rule }
+            }
+          }
+        })
+      }
+    }
+
+    /** @type {AlignmentStep[]} */
+    const steps = last ? [last] : []
+    /** @type {Entry} */
+    let entry = { kind: 'start' }
+    let { i, j } = at
+    let cands = at.cands
+    let rowVal = at.rowVal
+    for (;;) {
+      const value = roundCost(rowVal[i])
+      const best = cands[i].find((c) => Math.abs(c.cost - value) <= EPSILON)
+      if (!best) {
+        // 沒有轉移能到這一格：它是起點（第 0 列的交界列值，或詞首的 (0, 0)）
+        entry = j === 0 && from ? { kind: 'row', x: i } : { kind: 'start' }
+        break
+      }
+      const [fi, fj] = best.from
+      steps.push({ op: best.op, source: x.slice(fi, i).join(''), target: y.slice(Math.max(0, fj), j).join(''), cost: best.stepCost, from: [fi, fj], to: [i, j], rule: best.rule })
+      if (fj < 0) {
+        // 由前一段的跨界狀態進來：target 的前 −fj 個字元在前一段
+        const target = Array.from(/** @type {NonNullable<typeof best.rule>} */ (best.rule).target)
+        entry = { kind: 'pending', node: compiled.trieWalk(0, target.slice(0, -fj)), x: fi }
+        break
+      }
+      // 同一列（只動查詢的轉移）留在同一份（交界列或 F 列）；換列才改用那一列
+      if (fj !== j) {
+        cands = cand[fj]
+        rowVal = rows[fj]
+      }
+      i = fi
+      j = fj
+    }
+    steps.reverse()
+    return { cost: roundCost(cost), entry, exit, steps }
   }
 
   /**

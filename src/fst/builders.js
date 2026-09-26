@@ -147,6 +147,7 @@ export function surfaceLexicon({ dawg, accept = () => true, spec, requireStep = 
     if (Array.from(a.underlying).length !== 1 || Array.from(a.surface).length !== 1) {
       throw new RangeError(`surfaceLexicon 只支援單一字元的詞幹交替（${a.underlying}>${a.surface}）`)
     }
+    if (a.position === 'initial') throw new RangeError(`surfaceLexicon 只支援詞素末的構詞音變（${a.underlying}>${a.surface}）`)
   }
   const ca = spec.reduplication.find((r) => r.pattern === 'Ca')
   const alternations = spec.alternations
@@ -217,11 +218,12 @@ export function surfaceLexicon({ dawg, accept = () => true, spec, requireStep = 
           const target = dawg.target(e)
           const nextBase = base + dawg.wordsBefore(e)
           sym(c, 0, ['D', target, nextBase, depth + 1, inOnset && !isVowel ? 1 : 0, usedInfix, 0, steps])
-          // 詞幹交替：最後一個字元（underlying）寫成 surface，之後必須接指定的後綴
+          // 構詞音變：詞幹最後一個字元（underlying）寫成 surface，之後必須接後綴（詞素交界）。
+          // E 看不到詞素交界，所以在 S 中以「詞幹結尾的另一種寫法」表示；它是規則，不另外算一個步驟
           if (dawg.isFinal(target) && depth + 1 >= spec.minStem && accept(nextBase)) {
             for (const a of alternations) {
               if (a.underlying !== c) continue
-              sym(a.surface, a.cost, ['S', 0, 0, nextBase, steps + 1, (a.before ?? []).join(',') || '*'])
+              sym(a.surface, a.cost, ['S', 0, 0, nextBase, steps, '*'])
             }
           }
         }

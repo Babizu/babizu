@@ -19,7 +19,7 @@
  *   "suffixes": [{ "form": "an" }, { "form": "en" }],
  *   "infixes": [{ "form": "in" }],
  *   "reduplication": [{ "pattern": "Ca" }],
- *   "alternations": [{ "underlying": "t", "surface": "d", "before": ["an", "en"] }]
+ *   "alternations": [{ "underlying": "t", "surface": "d", "position": "final" }]
  * }
  * ```
  *
@@ -60,21 +60,21 @@ export const REDUPLICATION_PATTERNS = Object.freeze(['Ca', 'CV', 'CVV', 'CVCV', 
  */
 
 /**
- * @typedef {object} AlternationSpec 詞幹交替：詞幹末的 underlying 在某些後綴前寫成 surface
- * @property {string} underlying 例如 `t`
- * @property {string} surface 例如 `d`（`bitut` ＋ `-un` → `bitudun`）
- * @property {string[]} [before] 只在這些後綴前發生；省略表示任何後綴前
+ * @typedef {object} AlternationSpec 構詞音變：只在詞素交界發生的音變，例如詞幹末的 t 在後綴前寫成 d
+ * （`bitut` ＋ `-un` → `bitudun`）。它是一條只在交界適用的規則（docs/bcdp.md 1.3），與方言規則同一套 DP：
+ * 查詢（表面）的 surface 對應到底層（詞庫、詞綴）的 underlying。
+ * @property {string} underlying 例如 `t`（可以是空字串：交界上的增生）
+ * @property {string} surface 例如 `d`（可以是空字串：交界上的脫落）
+ * @property {'final' | 'initial' | 'any'} [position='final'] underlying 在交界的哪一側：
+ *   final ＝ 交界前那個詞素的結尾（詞幹末的 t），initial ＝ 交界後那個詞素的開頭，any ＝ 任一側
  * @property {number} [cost]
  */
 
 /**
  * @typedef {object} MorphologySpec 語言設定檔的 `morphology` 區段
  * @property {number} [cost=0.3] 每個構詞步驟的預設成本
- * @property {number} [minStem=3] 詞幹最短長度（code point）
- * @property {number} [maxSteps=3] 前綴、後綴各自最多幾個（另加至多一個中綴、重疊或詞幹交替；見 docs/bcdp.md 1.6）
- * @property {number} [lemmaDistance=0.3] 構詞命中時，詞幹部分允許的加權編輯距離（音變預算）。
- *   0 表示詞幹必須正好是詞庫中的詞；0.1–0.3 讓「另一個方言的衍生詞 → 這個方言的詞根」也找得到
- * @property {number} [affixDistance=0.2] 每個詞綴允許的加權編輯距離（詞綴本身的方言差異，例如 mine-／minu-）
+ * @property {number} [minStem=3] 詞根（詞庫詞）最短長度（code point）；查詢至少要多一個字元
+ * @property {number} [maxSteps=3] 前綴、後綴各自最多幾個（另加至多一個中綴或重疊；見 docs/bcdp.md 1.6）
  * @property {number} [lemmaSpread=0.6] 構詞命中只保留成本在「最佳 ＋ lemmaSpread」之內的詞，控制候選數
  * @property {string} [vowels='aeiouéə'] 元音字母（決定「首輔音」「首元音」與中綴位置）
  * @property {AffixSpec[]} [prefixes]
@@ -104,11 +104,19 @@ const DEFAULTS = Object.freeze({
   cost: 0.3,
   minStem: 3,
   maxSteps: 3,
-  lemmaDistance: 0.3,
-  affixDistance: 0.2,
   lemmaSpread: 0.6,
   vowels: 'aeiouéə',
 })
+
+/** 構詞音變在規則表中的分類名稱（說明中顯示為構詞音變，而不是方言差異） */
+export const ALTERNATION_CATEGORY = '構詞音變'
+
+/** 已移除的欄位與原因：舊的設定檔會得到明確的錯誤訊息，而不是默默被忽略 */
+const REMOVED_KEYS = {
+  lemmaDistance: '已移除：音變改以整個詞計算（規則可以跨越詞素交界），只受總成本上限與 lemmaSpread 限制（docs/bcdp.md 1.6）',
+  affixDistance: '已移除：音變改以整個詞計算（規則可以跨越詞素交界），只受總成本上限與 lemmaSpread 限制（docs/bcdp.md 1.6）',
+}
+const POSITIONS = new Set(['final', 'initial', 'any'])
 
 /** 同一個詞最多回傳幾個分析，避免規格過寬時列舉爆量 */
 const MAX_ANALYSES = 64
@@ -117,12 +125,12 @@ const MAX_ANALYSES = 64
 const ANALYZE_MEMO_LIMIT = 4096
 
 /** 規格頂層允許的欄位（拼錯的欄位會被默默忽略，所以列為錯誤） */
-const SPEC_KEYS = new Set(['cost', 'minStem', 'maxSteps', 'lemmaDistance', 'affixDistance', 'lemmaSpread', 'vowels', 'prefixes', 'suffixes', 'infixes', 'reduplication', 'alternations'])
+const SPEC_KEYS = new Set(['cost', 'minStem', 'maxSteps', 'lemmaSpread', 'vowels', 'prefixes', 'suffixes', 'infixes', 'reduplication', 'alternations'])
 /** 各種項目允許的欄位；ref（出處）與 note（說明）供語言設定檔記錄依據，搜尋不使用 */
 const ENTRY_KEYS = {
   affix: new Set(['form', 'gloss', 'cost', 'ref', 'note']),
   reduplication: new Set(['pattern', 'gloss', 'cost', 'ref', 'note']),
-  alternation: new Set(['underlying', 'surface', 'before', 'cost', 'ref', 'note']),
+  alternation: new Set(['underlying', 'surface', 'position', 'cost', 'ref', 'note']),
 }
 /** maxSteps 的上限：前綴、後綴各自最多這麼多層（圖表以 Int8Array 記槽位，也避免指數級的列舉） */
 const MAX_STEPS_LIMIT = 10
@@ -147,8 +155,11 @@ export function validateMorphology(spec) {
     for (const key of Object.keys(entry)) if (!allowed.has(key)) errors.push(`${path}.${key} 是未知的欄位`)
   }
 
-  for (const key of Object.keys(s)) if (!SPEC_KEYS.has(key)) errors.push(`morphology.${key} 是未知的欄位`)
-  for (const key of ['cost', 'lemmaDistance', 'affixDistance', 'lemmaSpread']) {
+  for (const key of Object.keys(s)) {
+    if (key in REMOVED_KEYS) errors.push(`morphology.${key} ${REMOVED_KEYS[/** @type {keyof typeof REMOVED_KEYS} */ (key)]}`)
+    else if (!SPEC_KEYS.has(key)) errors.push(`morphology.${key} 是未知的欄位`)
+  }
+  for (const key of ['cost', 'lemmaSpread']) {
     if (s[key] !== undefined && !isCost(s[key])) errors.push(`morphology.${key} 必須是非負的有限數`)
   }
   if (s.minStem !== undefined && !(Number.isInteger(s.minStem) && s.minStem >= 1)) errors.push('morphology.minStem 必須是 ≥ 1 的整數')
@@ -186,19 +197,40 @@ export function validateMorphology(spec) {
     else
       s.alternations.forEach((/** @type {any} */ a, /** @type {number} */ i) => {
         const path = `morphology.alternations[${i}]`
-        if (typeof a?.underlying !== 'string' || typeof a?.surface !== 'string' || !a.underlying || !a.surface) {
-          errors.push(`${path} 需要非空的 underlying 與 surface`)
+        if (typeof a?.underlying !== 'string' || typeof a?.surface !== 'string' || (!a.underlying && !a.surface)) {
+          errors.push(`${path} 需要 underlying 與 surface（字串，不能兩者都是空字串）`)
         } else if (hasSpace(a.underlying) || hasSpace(a.surface)) {
           errors.push(`${path} 的 underlying、surface 不能含空白`)
+        } else if (a.underlying === a.surface) {
+          errors.push(`${path} 的 underlying 與 surface 相同`)
         }
-        if (a?.before !== undefined && !(Array.isArray(a.before) && a.before.every((/** @type {unknown} */ b) => typeof b === 'string' && b !== '' && !hasSpace(b)))) {
-          errors.push(`${path}.before 必須是非空、不含空白的後綴字串陣列`)
-        }
+        if (a?.position !== undefined && !POSITIONS.has(a.position)) errors.push(`${path}.position 必須是 final、initial 或 any`)
+        if (a?.before !== undefined) errors.push(`${path}.before 已移除：構詞音變在任何詞素交界都適用（docs/bcdp.md 1.6）`)
         if (a?.cost !== undefined && !isCost(a.cost)) errors.push(`${path}.cost 必須是非負的有限數`)
-        unknownKeys(a, ENTRY_KEYS.alternation, path)
+        if (a && typeof a === 'object') unknownKeys(Object.fromEntries(Object.entries(a).filter(([key]) => key !== 'before')), ENTRY_KEYS.alternation, path)
       })
   }
   return errors
+}
+
+/**
+ * 構詞音變換成規則表的列：只在詞素交界適用的規則（docs/bcdp.md 1.3），與方言規則放在同一個 RuleSet、
+ * 同一套 DP。查詢（表面）的 surface 對應到底層的 underlying，所以 source ＝ surface、target ＝ underlying，單向。
+ * @param {MorphologySpec | undefined} spec
+ * @returns {import('./rules.js').RuleTableRow[]}
+ */
+export function alternationRules(spec) {
+  if (!spec?.alternations) return []
+  const cost = spec.cost ?? DEFAULTS.cost
+  return spec.alternations.map((a) => ({
+    source: a.surface,
+    target: a.underlying,
+    weight: a.cost ?? cost,
+    position: a.position ?? 'final',
+    junction: true,
+    bidirectional: false,
+    category: ALTERNATION_CATEGORY,
+  }))
 }
 
 /**
@@ -208,8 +240,10 @@ export function validateMorphology(spec) {
  * @property {() => void} clearCache 清掉 analyze 的備忘（量測冷快取時用）
  * @property {(stem: string, steps: MorphStep[]) => string} generate 還原詞綴
  * @property {(stem: string) => string[]} coreForms 詞幹在衍生詞中可能的核心形式（找衍生詞時用）
+ * @property {(term: string, stem: string, limit?: number) => Array<{prefixes: Array<{form: string, gloss: Gloss, cost: number}>, segment: string, op: MorphStep | null, suffixes: Array<{form: string, gloss: Gloss, cost: number}>}>} derivations
+ *   衍生形方向的候選分析（「前綴鏈 · 核心形式 · 後綴鏈」的結構，交界上容許一個字元的出入）
  * @property {(term: string, stem: string, cores?: string[]) => boolean} mayDerive
- *   term 能否由 stem 衍生的必要條件：不成立時 analyze(term) 一定沒有這個詞幹（成立時不一定有）
+ *   衍生形方向的候選條件：term 是否可能是「詞綴 · stem 的核心形式 · 詞綴」（交界上容許一個字元的出入）
  * @property {(w: string) => string} onset 詞首的輔音（群）
  * @property {(pattern: ReduplicationPattern, base: string) => string | null} reduplicant 詞幹 base 套用重疊模式時前面要加的字串
  * @property {(pattern: ReduplicationPattern, rest: string[], red: string) => number[]} reduplicantStems
@@ -229,8 +263,6 @@ export function createAnalyzer(spec, normalize = (s) => s) {
   const cost = spec.cost ?? DEFAULTS.cost
   const minStem = spec.minStem ?? DEFAULTS.minStem
   const maxSteps = spec.maxSteps ?? DEFAULTS.maxSteps
-  const lemmaDistance = spec.lemmaDistance ?? DEFAULTS.lemmaDistance
-  const affixDistance = spec.affixDistance ?? DEFAULTS.affixDistance
   const lemmaSpread = spec.lemmaSpread ?? DEFAULTS.lemmaSpread
   const vowels = new Set(Array.from(normalize(spec.vowels ?? DEFAULTS.vowels)))
 
@@ -254,7 +286,7 @@ export function createAnalyzer(spec, normalize = (s) => s) {
   const alternations = (spec.alternations ?? []).map((a) => ({
     underlying: normalize(a.underlying),
     surface: normalize(a.surface),
-    before: a.before ? new Set(a.before.map(normalize)) : null,
+    position: a.position ?? 'final',
     cost: a.cost ?? cost,
   }))
 
@@ -423,7 +455,7 @@ export function createAnalyzer(spec, normalize = (s) => s) {
      * - 中綴與重疊位在「前綴鏈之內」的詞幹開頭：做了之後不能再剝前綴
      * - 重疊的模板只套用在詞幹上（不含後綴）：做了之後也不能再剝後綴
      * - 詞幹交替位在詞幹結尾、緊接最內層的後綴：做了之後不能再剝後綴；
-     *   與它一起剝掉的那個後綴可以是第 maxSteps ＋ 1 個
+     *   它是只在交界適用的規則，不另外佔用詞綴的步數
      * @param {string} w 目前剩下的詞形
      * @param {MorphStep[]} steps
      * @param {number} total
@@ -454,10 +486,10 @@ export function createAnalyzer(spec, normalize = (s) => s) {
           const rest = w.slice(0, w.length - s.form.length)
           const next = [...steps, step('suffix', s.form, s.gloss, s.cost)]
           if (suf < maxSteps) visit(rest, next, total + s.cost, pre, suf + 1, op, preClosed, sufClosed)
-          // 詞幹交替只在剛剝掉的後綴前面發生（這個後綴可以是第 maxSteps ＋ 1 個）
-          if (op || suf > maxSteps) continue
+          // 詞幹交替（構詞音變）只在剛剝掉的後綴前面發生；它是規則，不另外佔用詞綴的步數
+          if (op || suf >= maxSteps) continue
           for (const a of alternations) {
-            if ((a.before && !a.before.has(s.form)) || !rest.endsWith(a.surface)) continue
+            if (a.position === 'initial' || !rest.endsWith(a.surface)) continue
             const restored = rest.slice(0, rest.length - a.surface.length) + a.underlying
             if (len(restored) < minStem) continue
             visit(restored, [...next, step('alternation', `${a.underlying}>${a.surface}`, null, a.cost)], total + s.cost + a.cost, pre, suf + 1, true, preClosed, true)
@@ -531,19 +563,19 @@ export function createAnalyzer(spec, normalize = (s) => s) {
       if (red) out.add(red + stem)
     }
     for (const a of alternations) {
-      if (stem.endsWith(a.underlying)) out.add(stem.slice(0, stem.length - a.underlying.length) + a.surface)
+      if (a.position !== 'initial' && stem.endsWith(a.underlying)) out.add(stem.slice(0, stem.length - a.underlying.length) + a.surface)
+      if (a.position !== 'final' && stem.startsWith(a.underlying)) out.add(a.surface + stem.slice(a.underlying.length))
     }
-    return [...out]
+    return [...out].filter(Boolean)
   }
 
   /**
-   * term 能否由 stem 衍生的必要條件。不成立時 analyze(term) 一定沒有詞幹 stem，可以不必分析；成立時不一定有。
-   *
-   * 由 analyze 的步驟可知，stem 的衍生詞一定是「前綴鏈 · 核心形式 · 後綴鏈」：
-   * - analyze 只剝與規格完全相同的詞綴，所以前綴鏈、後綴鏈都是詞綴形式原樣的串接；
-   *   前綴至多 maxSteps 個，後綴至多 maxSteps 個（有詞幹交替時多一個）
-   * - 中綴與重疊在所有前綴都剝掉之後才做，重疊又是最內層；交替緊接最內層的後綴。
-   *   所以非串接步驟只改變詞幹的一端，核心形式（coreForms）在衍生詞中是連續的一段
+   * 衍生形方向（查詞根、找衍生詞）的候選條件：term 是否可能是「前綴鏈 · 核心形式 · 後綴鏈」，
+   * 其中前綴鏈、後綴鏈是詞綴原樣的串接（至多各 maxSteps 個），核心形式（coreForms）是詞幹本身，
+   * 或加了中綴、重疊、構詞音變後的樣子。詞綴與核心形式的交界上容許一個字元的出入：交界上的增生
+   * （例如喉塞音 tau'alawan）、元音合併（ta-dusa-aw → tadusaw）都只影響交界旁的一個字元。
+   * 這是衍生形方向的定義的一部分（docs/bcdp.md 第 11 節）：詞典中的衍生詞是標準寫法，
+   * 詞綴不會有方言音變；成立的候選再以 BCDP 驗證（詞庫只有 stem）。
    * 例外：詞幹沒有元音時，中綴的位置（首輔音之後）會落到後綴裡，核心形式不連續，這時一律回傳 true。
    * @param {string} term
    * @param {string} stem
@@ -568,17 +600,103 @@ export function createAnalyzer(spec, normalize = (s) => s) {
         if (term.startsWith(affix.form, q)) suf[q] = Math.min(suf[q], suf[q + affix.form.length] + 1)
       }
     }
-    const maxSuffixes = maxSteps + (alternations.length ? 1 : 0)
+    // 交界上可以有一個字元的出入：交界上的增生（例如喉塞音）、元音合併、詞素邊緣的構詞音變
+    const near = (/** @type {Float64Array} */ arr, /** @type {number} */ at) => Math.min(arr[at - 1] ?? Infinity, arr[at] ?? Infinity, arr[at + 1] ?? Infinity)
     for (const core of cores) {
       for (let p = term.indexOf(core); p !== -1; p = term.indexOf(core, p + 1)) {
-        if (pre[p] <= maxSteps && suf[p + core.length] <= maxSuffixes) return true
+        if (near(pre, p) <= maxSteps && near(suf, p + core.length) <= maxSteps) return true
       }
     }
     return false
   }
 
+  /**
+   * 衍生形方向的候選分析：term 拆成「前綴鏈 · 核心形式 · 後綴鏈」的所有方式——詞綴原樣（至多各 maxSteps 個），
+   * 詞綴與核心形式的交界上容許一個字元的出入（交界上的增生、元音合併）。這裡只列出結構；
+   * 每一種都要再以整個詞的聯合對齊驗證（WeightedEditDistance.jointDistance），交界上的出入、
+   * 構詞音變的成本都在那裡計算（docs/bcdp.md 第 11 節）。
+   * @param {string} term
+   * @param {string} stem
+   * @param {number} [limit=32] 最多列出幾種
+   * @returns {Array<{prefixes: Array<{form: string, gloss: Gloss, cost: number}>, segment: string, op: MorphStep | null,
+   *   suffixes: Array<{form: string, gloss: Gloss, cost: number}>}>}
+   *   prefixes、suffixes 由外而內；segment 是詞幹在底層字串中的樣子（中綴、重疊的核心形式含非串接的部分；
+   *   構詞音變的核心形式用詞幹本身，讓 DP 算它的成本）
+   */
+  function derivations(term, stem, limit = 32) {
+    /** @type {Array<{form: string, segment: string, op: MorphStep | null}>} */
+    const cores = [{ form: stem, segment: stem, op: null }]
+    for (const x of infixes) {
+      const f = generate(stem, [step('infix', x.form, null, 0)])
+      cores.push({ form: f, segment: f, op: step('infix', x.form, x.gloss, x.cost) })
+    }
+    for (const r of reduplication) {
+      const red = reduplicant(r.pattern, stem)
+      if (red) cores.push({ form: red + stem, segment: red + stem, op: { type: 'reduplication', form: red, pattern: r.pattern, gloss: r.gloss, cost: r.cost } })
+    }
+    for (const a of alternations) {
+      if (a.position !== 'initial' && a.underlying && stem.endsWith(a.underlying)) cores.push({ form: stem.slice(0, stem.length - a.underlying.length) + a.surface, segment: stem, op: null })
+      if (a.position !== 'final' && a.underlying && stem.startsWith(a.underlying)) cores.push({ form: a.surface + stem.slice(a.underlying.length), segment: stem, op: null })
+    }
+    const L = term.length
+    /** 前綴鏈：preAt[p] ＝ term[0..p) 原樣拼成的所有前綴鏈（由外而內） @type {Map<number, Array<typeof prefixes>>} */
+    const preAt = new Map([[0, [[]]]])
+    /** @param {number} p @param {typeof prefixes} chain */
+    const walkPrefixes = (p, chain) => {
+      if (chain.length >= maxSteps || p >= L) return
+      for (const { affix } of prefixesByFirst.get(charAt(term, p)) ?? none) {
+        if (!term.startsWith(affix.form, p)) continue
+        const q = p + affix.form.length
+        const next = [...chain, affix]
+        if (!preAt.has(q)) preAt.set(q, [])
+        preAt.get(q)?.push(next)
+        walkPrefixes(q, next)
+      }
+    }
+    walkPrefixes(0, [])
+    /** 後綴鏈：sufAt[q] ＝ term[q..L) 原樣拼成的所有後綴鏈（由外而內） @type {Map<number, Array<typeof suffixes>>} */
+    const sufAt = new Map([[L, [[]]]])
+    /** @param {number} q @param {typeof suffixes} chain */
+    const walkSuffixes = (q, chain) => {
+      if (chain.length >= maxSteps || q <= 0) return
+      for (const { affix } of suffixesByLast.get(lastChar(term.slice(0, q))) ?? none) {
+        if (!term.endsWith(affix.form, q)) continue
+        const p = q - affix.form.length
+        const next = [...chain, affix]
+        if (!sufAt.has(p)) sufAt.set(p, [])
+        sufAt.get(p)?.push(next)
+        walkSuffixes(p, next)
+      }
+    }
+    walkSuffixes(L, [])
+
+    /** @type {ReturnType<typeof derivations>} */
+    const out = []
+    const seen = new Set()
+    for (const core of cores) {
+      for (let p = term.indexOf(core.form); p !== -1 && out.length < limit; p = term.indexOf(core.form, p + 1)) {
+        const q = p + core.form.length
+        for (const p2 of [p, p - 1, p + 1]) {
+          for (const q2 of [q, q + 1, q - 1]) {
+            for (const pre of preAt.get(p2) ?? []) {
+              for (const suf of sufAt.get(q2) ?? []) {
+                if (pre.length + suf.length === 0 && !core.op) continue // 至少一個構詞步驟
+                const key = `${pre.map((a) => a.form).join('+')}|${core.segment}|${core.op?.form ?? ''}|${suf.map((a) => a.form).join('+')}`
+                if (seen.has(key) || out.length >= limit) continue
+                seen.add(key)
+                out.push({ prefixes: pre, segment: core.segment, op: core.op, suffixes: suf })
+              }
+            }
+          }
+        }
+      }
+    }
+    return out
+  }
+
   return {
     analyze,
+    derivations,
     clearCache: () => memo.clear(),
     generate,
     coreForms,
@@ -591,15 +709,13 @@ export function createAnalyzer(spec, normalize = (s) => s) {
       cost,
       minStem,
       maxSteps,
-      lemmaDistance,
-      affixDistance,
       lemmaSpread,
       vowels: [...vowels].join(''),
       prefixes: Object.freeze(prefixes),
       suffixes: Object.freeze(suffixes),
       infixes: Object.freeze(infixes),
       reduplication: Object.freeze(reduplication),
-      alternations: Object.freeze(alternations.map((a) => Object.freeze({ ...a, before: a.before ? Object.freeze([...a.before]) : null }))),
+      alternations: Object.freeze(alternations.map((a) => Object.freeze({ ...a }))),
     }),
   }
 }

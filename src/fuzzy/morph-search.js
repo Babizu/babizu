@@ -1,621 +1,516 @@
 /**
- * @file 構詞搜尋：音變 ∘ 構詞 ∘ 詞庫的聯合模糊搜尋——BCDP（Boundary-Coupled DP，邊界耦合 DP）。
+ * @file 構詞搜尋：BCDP（Boundary-Coupled DP，邊界耦合 DP）。
  *
- * 問題：查詢 q 是某個詞庫詞 t 的衍生形，而且可能帶著方言音變（詞幹或詞綴裡都可能有）。要求
+ * 問題（docs/bcdp.md 第 1 節）：查詢 q 是詞庫詞 t 的衍生形，可能帶著方言音變。一個「分析」是
  *
- *   W(q, t) = min over 0 ≤ i < k ≤ n of  P[i] + E(q[i..k), t) + S[k]
+ *   前綴鏈 π ·（中綴或重疊 ω）· 詞幹 t · 後綴鏈 σ
  *
- * - P[i]：把 q[0..i) 解析成前綴鏈的最小成本（每個前綴允許 affixDistance 以內的音變）
- * - S[k]：把 q[k..n) 解析成後綴鏈的最小成本
- * - E：同一套加權編輯距離（方言規則）
+ * 成本是各步驟的成本，加上查詢與整個底層字串 π·t·σ 的加權編輯距離：同一套方言規則對整個詞計算，
+ * 規則可以跨越詞素交界（ta-dusa-aw → tadusaw 的 aa → a），詞首、詞尾規則在交界也適用，
+ * 構詞音變是只在交界適用的規則，也在同一個 DP 裡。
  *
- * 做法（受 pika parser「以位置為索引的 memo 表、依相依方向填表」的啟發）：
- * 1. 先填好兩張「位置 → 成本」的圖表 P、S。每個起點各在前綴／後綴 trie 上跑一次小型 DP，
- *    從整列讀出「q[k..k+l) 對每個詞綴的距離」。
- * 2. 以 P 為 DP 的起始列、S 為詞尾的附加成本，對詞庫詞圖做**一次**走訪（FuzzyIndex 的邊界條件）。
- *    遞推式、方言規則、剪枝都與普通模糊搜尋相同；普通搜尋是 P = [0, ∞…]、S = [∞…, 0] 的特例。
- * 3. 中綴、重疊、詞幹交替不是「加在外面」的，先在查詢上產生少數還原變體（在前綴鏈的終點拿掉中綴…），
- *    每個變體各跑一次步驟 2。
- *
- * 有詞首、詞尾規則時，步驟 2 的一次走訪只給出「不大於」上式的值（所有有限起點都算詞首，docs/bcdp.md 定理 1 (b)），
- * 所以走訪只用來找候選（邊界歸零、上限 λ），每個候選的成本再逐段精確計價（priceTerm）。
- *
- * 模型的正式定義、正確性（定理 1–3）與它和 FST 聯合最佳解 W* 的關係見 docs/bcdp.md；
- * 性質測試見 test/fuzzy/boundary.test.js、test/fuzzy/morph-search.test.js。
+ * 做法：DP 在一個詞素交界的狀態（交界列＋還沒走完的規則，fuzzy-index.js 的 JunctionState）就是它的
+ * 全部過去，所以整個詞可以一段一段走，每一段都是同一個原語——「從交界狀態出發，在 trie／詞圖上走訪」。
+ * 同一個交界上不同來源的狀態逐項取 min 就能合併（(min, +) 線性，結果精確）：
+ * 1. 前綴鏈：由詞首出發，一層一層走前綴 trie；第 s 層合併了所有「恰好 s 個前綴」的鏈
+ * 2. 後綴鏈：用鏡像距離函式，在反轉的查詢上由詞尾往內，做法相同
+ * 3. 詞幹：各層前綴合併成一個起點，與普通搜尋共用一次詞圖走訪；走到詞尾時與合併後的後綴狀態耦合，
+ *    得到整個分析的成本
+ * 中綴、重疊是查詢上的模板（重疊複製的是查詢中的形式）：先在查詢上還原，交界固定在查詢的位置上。
+ * 走訪得到的就是精確成本；是哪一條詞綴鏈，只對命中的詞另外追出來（合併時每一格都記著它來自哪個詞綴）。
  */
 
-import { EPSILON, roundCost } from './dp.js'
+import { EDGE_JUNCTION, EDGE_WORD, EPSILON, roundCost } from './dp.js'
 import { FuzzyIndex } from './fuzzy-index.js'
+import { emptyEnd, emptyJunction, isReachable, mergeEndInto, mergeInto, toForwardEnd } from './junction.js'
+
+/** @typedef {import('./fuzzy-index.js').JunctionState} JunctionState */
+/** @typedef {import('./fuzzy-index.js').JunctionEnd} JunctionEnd */
+/** @typedef {import('./fuzzy-index.js').SearchResult} SearchResult */
+/** @typedef {import('./morphology.js').Gloss} Gloss */
+/** @typedef {import('./distance.js').Entry} Entry */
 
 /**
  * @typedef {object} AffixEntry 詞綴清單中的一項（已正規化）
  * @property {string} form
- * @property {import('./morphology.js').Gloss} gloss
+ * @property {Gloss} gloss
  * @property {number} cost
  */
 
 /**
- * @typedef {object} ChartEdge 圖表中的一條邊：q[from..to) 對應到某個詞綴
- * @property {number} from
- * @property {number} to
- * @property {AffixEntry} affix
- * @property {number} distance 表面形式與詞綴的加權編輯距離（≤ affixDistance）
+ * @typedef {JunctionState & {tags?: {row: unknown[], pending: Map<number, unknown[]>}}} Level
+ *   一層詞綴合併後的交界狀態；tags 記下每一格是哪一個詞綴（AffixEntry）取得最小值
  */
 
 /**
  * @typedef {object} MorphStepHit 命中說明中的一個構詞步驟
- * @property {'prefix' | 'suffix' | 'infix' | 'reduplication' | 'alternation'} type
- * @property {string} form 標準形式（詞綴清單中的寫法）
- * @property {string} [surface] 查詢中的實際寫法（與 form 不同表示詞綴本身有音變）
- * @property {string} [pattern] 重疊模式
- * @property {import('./morphology.js').Gloss} gloss
- * @property {number} cost 這一步的成本（詞綴成本＋詞綴音變距離）
+ * @property {'prefix' | 'suffix' | 'infix' | 'reduplication'} type
+ * @property {string} form 標準形式（規格中的寫法；重疊是查詢中的重疊部分）
+ * @property {string} [pattern] 重疊的型式
+ * @property {Gloss} gloss
+ * @property {number} cost 步驟本身的成本（音變另外算在整個詞的對齊裡）
  */
 
 /**
  * @typedef {object} MorphHit
  * @property {string} term 命中的詞庫詞（詞幹）
  * @property {unknown[]} payloads
- * @property {number} distance 總成本：構詞步驟＋詞綴音變＋詞幹音變
- * @property {string} stemSurface 查詢中對應詞幹的那一段
- * @property {number} stemDistance 詞幹部分的加權編輯距離
+ * @property {number} distance 分析的成本：步驟成本＋整個詞的音變
  * @property {MorphStepHit[]} steps 由外而內
+ * @property {{variant: number, prefixes: AffixEntry[], suffixes: AffixEntry[]}} analysis 用了哪一個通道、
+ *   哪些前綴與後綴（由外而內），說明（explainHit）用
  */
-
-/** 詞綴圖表的快取上限（同一個網頁工作階段中重複查詢時省下重算） */
-const CACHE_LIMIT = 2000
 
 /**
- * 還原變體（含原查詢）的上限。多通道走訪沒有通道數的限制，這只是防止病態輸入（很長的查詢、
- * 很多交替規則）讓一次查詢展開成上百個通道；超過時 prepare 的結果標記 truncated。
- * 變體的產生順序固定（原查詢、各前綴鏈終點的中綴與重疊、詞幹交替），截斷時保留前面的。
+ * @typedef {object} Variant 一個搜尋通道：原查詢，或拿掉中綴、重疊部分的查詢
+ * @property {'plain' | 'prefix' | 'infix' | 'reduplication'} kind plain：沒有前綴、至少一個後綴；
+ *   prefix：至少一個前綴；infix、reduplication：還原變體
+ * @property {string[]} chars 查詢（變體是還原後的查詢）
+ * @property {MorphStepHit | null} op 非串接步驟
+ * @property {number} start 變體的詞幹起點（固定）；−1 表示不固定
+ * @property {boolean} prefixed 變體的詞幹前面有前綴鏈（否則詞幹在詞首）
+ * @property {number} startEdge 詞幹起點的位置種類
+ * @property {number} cut 變體拿掉的位置（原查詢）；len 拿掉的字元數
+ * @property {number} len
+ * @property {(x: number) => boolean} ends 變體上詞幹可以結束的位置
  */
+
+/** 還原變體（中綴、重疊）的上限：防止很長的查詢展開成上百個通道；超過時 prepare 的結果標記 truncated */
 const MAX_VARIANTS = 64
+
+/** 詞綴鏈的快取上限（同一個網頁工作階段中重複查詢時省下重算） */
+const CACHE_LIMIT = 500
 
 /**
  * 建立構詞搜尋器。
  *
- * 詞綴索引在建立時就建好，詞綴圖表也會快取；之後若以 `metric.setRules` 換了方言規則，
- * 快取的圖表不會跟著失效，要呼叫 clearCache（或重新建立構詞搜尋器）。
+ * 詞綴索引在建立時就建好，詞綴鏈也會快取；之後若以 `metric.setRules` 換了方言規則，
+ * 要呼叫 clearCache（或重新建立構詞搜尋器）。
  * @param {object} deps
  * @param {import('./morphology.js').Analyzer} deps.analyzer 構詞規格（已正規化）
- * @param {import('./distance.js').WeightedEditDistance} deps.metric 與詞庫相同的距離函式
+ * @param {import('./distance.js').WeightedEditDistance} deps.metric 與詞庫相同的距離函式（含構詞音變）
  * @param {FuzzyIndex} deps.index 詞庫
  */
 export function createMorphSearch({ analyzer, metric, index }) {
   const spec = analyzer.spec
-  const affixIndex = (/** @type {AffixEntry[]} */ list) => {
-    const idx = new FuzzyIndex(metric)
-    for (const a of list) idx.add(a.form, a)
-    return idx
-  }
-  const prefixIndex = affixIndex(spec.prefixes)
-  /** 詞邊界字元（預設為空白）：詞綴、中綴、重疊部分都不能包含或跨越它（docs/bcdp.md 1.6） */
+  const mirror = metric.mirror()
+  const reverse = (/** @type {string} */ s) => Array.from(s).reverse().join('')
+  const prefixIndex = new FuzzyIndex(metric)
+  for (const a of spec.prefixes) prefixIndex.add(a.form, a)
+  const suffixIndex = new FuzzyIndex(mirror)
+  for (const a of spec.suffixes) suffixIndex.add(reverse(a.form), a)
+  /** 詞邊界字元（預設為空白）：詞綴、中綴、重疊部分都不能包含它（docs/bcdp.md 1.6） */
   const isBoundary = (/** @type {string | undefined} */ ch) => ch !== undefined && metric.boundaries.has(ch)
   /**
-   * 詞幹部分在 λ 以內最多能改變幾個字元的長度：一般的增刪每字元至少 min(插入, 刪除) 成本；
-   * 個別字元的覆寫與方言規則（例如 au→o）可能更便宜，所以以「λ ÷ 最便宜的每字元代價」估計上限。
+   * 交界上「只動查詢」的規則的 source：target 為空、可以用在詞素開頭（例如喉塞音 ' → ∅）。
+   * 重疊部分與詞幹之間也是交界，這些字元屬於交界、不屬於詞幹，重疊模板略過它們（docs/bcdp.md 1.4）。
    */
-  const maxLengthChange = (() => {
-    const { costs, compiled } = metric
-    let perChar = Math.min(costs.insertCost, costs.deleteCost)
-    // 個別字元的覆寫（例如空白的增刪只要 0.1）也算進去
-    for (const o of costs.overrides.values()) perChar = Math.min(perChar, o.insert ?? Infinity, o.delete ?? Infinity)
-    for (const rule of compiled.rules) {
-      const diff = Math.abs(rule.sourceLength - rule.targetLength)
-      if (diff > 0) perChar = Math.min(perChar, rule.weight / diff)
-    }
-    return perChar > 0 ? Math.ceil(spec.lemmaDistance / perChar + 1e-9) : Infinity
-  })()
-  const suffixIndex = affixIndex(spec.suffixes)
-  /** @type {Map<string, ChartEdge[]>} */
-  const scanCache = new Map()
+  const junctionInserts = [
+    ...new Set(
+      metric.ruleSet
+        .expand(metric.normalize)
+        .filter((r) => r.target === '' && r.source !== '' && r.position !== 'final')
+        .map((r) => r.source),
+    ),
+  ].map((s) => Array.from(s))
+
+  /** @type {Map<string, Level[]>} */
+  const cache = new Map()
 
   /**
-   * 從位置 k 開始，q[k..k+l) 在 affixDistance 以內對應到哪些詞綴。
-   * 在詞綴 trie 上跑一次 DP，詞尾回呼給出整列：row[l] = E(q[k..k+l), 詞綴)。
-   * @param {FuzzyIndex} idx
-   * @param {string[]} chars
-   * @param {number} k
-   * @param {'p' | 's'} tag 快取鍵的前綴
-   * @returns {ChartEdge[]}
+   * 詞綴鏈，一層一層合併：第 s 層是「恰好 s 個詞綴」的所有鏈在最內側交界的狀態，逐項取 min 合併成一個，
+   * 每一格記下是哪一個詞綴取得最小值（同分時保留先找到的：trie 的順序）。每一層只走訪一次詞綴 trie：
+   * 從上一層合併後的狀態出發，詞尾回報的交界狀態加上詞綴本身的成本，併進這一層。
+   * 前綴由詞首往內；後綴用鏡像距離函式，在反轉的查詢上由詞尾往內，做法相同。
+   * @param {FuzzyIndex} idx 前綴 trie，或鏡像距離函式的反轉後綴 trie
+   * @param {string[]} x 查詢（後綴時是反轉的查詢）
+   * @param {number} bound 總成本上限（之後的成本只會增加，超過的格子可以丟掉）
+   * @param {string} tag 快取鍵的前綴
+   * @returns {Level[]} 第 1 … maxSteps 層（到沒有任何格子在上限內為止）
    */
-  function scan(idx, chars, k, tag) {
-    // 查詢從 k 到詞尾的整段（已正規化的 code point 陣列，原樣使用、不再正規化）：
-    // 詞尾規則只在真正的詞尾或空白前適用（詞綴 trie 很淺，多出來的欄位不影響剪枝）。
-    const piece = chars.slice(k)
-    // 詞綴不跨越空白（docs/bcdp.md 1.6）：只收 q[k..k+l) 不含邊界字元的 l
-    let limit = piece.length
-    for (let l = 0; l < piece.length; l++) {
-      if (isBoundary(piece[l])) {
-        limit = l
-        break
-      }
-    }
-    const key = `${tag}${piece.join('')}`
-    const cached = scanCache.get(key)
+  function levels(idx, x, bound, tag) {
+    const key = `${tag}|${bound}|${x.join('')}`
+    const cached = cache.get(key)
     if (cached) {
-      // LRU：用過的移到最後
-      scanCache.delete(key)
-      scanCache.set(key, cached)
-      return cached.map((e) => ({ ...e, from: e.from + k, to: e.to + k }))
+      cache.delete(key)
+      cache.set(key, cached)
+      return cached
     }
-    /** @type {ChartEdge[]} */
-    const edges = []
-    if (limit > 0) {
-      const onTerminal = (/** @type {string} */ _term, /** @type {Float64Array} */ row, /** @type {unknown[]} */ payloads) => {
-        for (let l = 1; l <= limit; l++) {
-          if (row[l] > spec.affixDistance + EPSILON) continue
-          for (const affix of /** @type {AffixEntry[]} */ (payloads)) {
-            edges.push({ from: 0, to: l, affix, distance: roundCost(row[l]) })
-          }
-        }
-      }
-      idx.searchChannels([{ query: piece, options: { maxDistance: spec.affixDistance, onTerminal } }])
-    }
-    scanCache.set(key, edges)
-    if (scanCache.size > CACHE_LIMIT) scanCache.delete(/** @type {string} */ (scanCache.keys().next().value))
-    return edges.map((e) => ({ ...e, from: e.from + k, to: e.to + k }))
-  }
-
-  /**
-   * 前綴鏈與後綴鏈的圖表（Viterbi）。
-   * P[i] = min 前綴鏈成本，q[0..i) 被切成至多 maxSteps 個詞綴；S[k] 對稱。
-   * 依相依方向填表：P 由左而右、S 由右而左，每一格只依賴已經填好的格子。
-   * @param {string[]} chars
-   * @param {((r: Relaxation) => void) | null} [trace] 說明用：逐一回報每一次鬆弛（不影響結果）
-   */
-  function charts(chars, trace = null) {
-    const n = chars.length
-    const slots = spec.maxSteps
-    const minStemSurface = Math.max(1, spec.minStem - 1)
-    /** P[s][i]：恰好 s 個前綴 */
-    const P = Array.from({ length: slots + 1 }, () => new Float64Array(n + 1).fill(Infinity))
-    /** @type {Array<Array<ChartEdge | null>>} 回溯：P[s][i] 的最後一條邊 */
-    const backP = Array.from({ length: slots + 1 }, () => new Array(n + 1).fill(null))
-    P[0][0] = 0
-    /** @type {ChartEdge[][]} */
-    const prefixEdges = []
-    for (let s = 0; s < slots; s++) {
-      for (let k = 0; k <= n - minStemSurface; k++) {
-        if (P[s][k] === Infinity) continue
-        prefixEdges[k] ??= scan(prefixIndex, chars, k, 'p')
-        for (const e of prefixEdges[k]) {
-          if (e.to > n - minStemSurface) continue
-          const c = P[s][k] + e.affix.cost + e.distance
-          const improved = c < P[s + 1][e.to] - EPSILON
-          if (improved) {
-            P[s + 1][e.to] = roundCost(c)
-            backP[s + 1][e.to] = e
-          }
-          trace?.({ table: 'P', slot: s + 1, from: k, to: e.to, form: e.affix.form, distance: e.distance, cost: roundCost(c), improved })
-        }
-      }
-    }
-
-    /** S[s][k]：恰好 s 個後綴 */
-    const S = Array.from({ length: slots + 1 }, () => new Float64Array(n + 1).fill(Infinity))
-    const backS = Array.from({ length: slots + 1 }, () => new Array(n + 1).fill(null))
-    S[0][n] = 0
-    /** @type {ChartEdge[][]} 由起點 k 出發的後綴邊 */
-    const suffixEdges = []
-    for (let k = minStemSurface; k < n; k++) suffixEdges[k] = scan(suffixIndex, chars, k, 's')
-    for (let s = 0; s < slots; s++) {
-      for (let k = n - 1; k >= minStemSurface; k--) {
-        for (const e of suffixEdges[k]) {
-          if (S[s][e.to] === Infinity) continue
-          const c = S[s][e.to] + e.affix.cost + e.distance
-          const improved = c < S[s + 1][k] - EPSILON
-          if (improved) {
-            S[s + 1][k] = roundCost(c)
-            backS[s + 1][k] = e
-          }
-          trace?.({ table: 'S', slot: s + 1, from: k, to: e.to, form: e.affix.form, distance: e.distance, cost: roundCost(c), improved })
-        }
-      }
-    }
-
-    // 各位置取最好的槽位數
-    const best = (/** @type {Float64Array[]} */ table) => {
-      const out = new Float64Array(n + 1).fill(Infinity)
-      const slotAt = new Int8Array(n + 1)
-      for (let s = 0; s <= slots; s++) {
-        for (let i = 0; i <= n; i++) {
-          if (table[s][i] < out[i]) {
-            out[i] = table[s][i]
-            slotAt[i] = s
-          }
-        }
-      }
-      return { cost: out, slotAt }
-    }
-    const bestP = best(P)
-    const bestS = best(S)
-    // 詞素交界不能在空白旁（docs/bcdp.md 1.6）：接前綴的詞幹不能以空白開頭，接後綴的詞幹不能以空白結尾。
-    // 詞綴本身已不含空白，所以只要遮掉「下一個字元是空白」的前綴鏈終點、「前一個字元是空白」的後綴鏈起點。
-    // 片語中每個詞的構詞，交給搜尋引擎的逐詞搜尋。
-    for (let i = 1; i < n; i++) if (isBoundary(chars[i])) bestP.cost[i] = Infinity
-    for (let k = 1; k < n; k++) if (isBoundary(chars[k - 1])) bestS.cost[k] = Infinity
-    return { P: bestP, S: bestS, Pslots: P, Sslots: S, backP, backS, prefixEdges, suffixEdges }
-  }
-
-  /**
-   * 回溯前綴鏈：P 在位置 i 的最佳切法，由左而右（＝由外而內）。
-   * @param {ReturnType<typeof charts>} c
-   * @param {string[]} chars
-   * @param {number} i
-   * @returns {MorphStepHit[]}
-   */
-  function prefixSteps(c, chars, i) {
-    /** @type {MorphStepHit[]} */
+    const n = x.length
+    /** @type {Level[]} */
     const out = []
-    let s = c.P.slotAt[i]
-    let pos = i
-    while (s > 0) {
-      const e = /** @type {ChartEdge} */ (c.backP[s][pos])
-      out.unshift(affixStep('prefix', e, chars))
-      pos = e.from
-      s--
+    /** @type {Level | undefined} */
+    let prev
+    for (let s = 0; s < spec.maxSteps; s++) {
+      /** @type {Level} */
+      const level = emptyJunction(n)
+      idx.searchChannels([
+        {
+          query: x,
+          options: {
+            maxDistance: bound,
+            from: prev,
+            lockBoundary: true, // 詞綴不含空白
+            onJunction: (_form, state, payloads) => {
+              for (const affix of /** @type {AffixEntry[]} */ (payloads)) mergeInto(level, state, affix.cost, affix)
+            },
+          },
+        },
+      ])
+      clip(level, bound)
+      if (!isReachable(level)) break
+      out.push(level)
+      prev = level
     }
+    cache.set(key, out)
+    if (cache.size > CACHE_LIMIT) cache.delete(/** @type {string} */ (cache.keys().next().value))
     return out
   }
 
   /**
-   * 回溯後綴鏈：S 在位置 k 的最佳切法，由右而左（＝由外而內）。
-   * @param {ReturnType<typeof charts>} c
+   * 還原變體：在每個可能的詞幹起點 i（詞首，或某條前綴鏈的終點）拿掉中綴或重疊部分。
+   * 變體的交界固定在查詢的位置上：詞幹由 i 開始（規則不跨越），並在允許的位置結束。
    * @param {string[]} chars
-   * @param {number} k
-   * @returns {MorphStepHit[]}
+   * @param {Level} P 各層前綴合併後的狀態
+   * @returns {Generator<Variant & {startCost: number}>}
    */
-  function suffixSteps(c, chars, k) {
-    /** @type {MorphStepHit[]} */
-    const inner = []
-    let s = c.S.slotAt[k]
-    let pos = k
-    while (s > 0) {
-      const e = /** @type {ChartEdge} */ (c.backS[s][pos])
-      inner.push(affixStep('suffix', e, chars))
-      pos = e.to
-      s--
-    }
-    return inner.reverse()
-  }
-
-  /**
-   * 查詢的還原變體：原查詢，加上在前綴鏈終點拿掉中綴／重疊、在後綴鏈起點還原詞幹交替的版本。
-   * 每個變體帶著自己的邊界向量；非串接的步驟只允許發生在詞幹的邊緣（中綴、重疊在詞幹開頭，交替在詞幹結尾）。
-   * @param {string[]} chars
-   * @param {ReturnType<typeof charts>} c
-   */
-  function variants(chars, c) {
+  function* restored(chars, P) {
     const n = chars.length
-    const P = c.P.cost
-    const S = c.S.cost
-    /** @type {Array<{chars: string[], start: Float64Array, end: Float64Array, map: (i: number) => number, op: MorphStepHit | null, at: number, before?: string[] | null}>} */
-    const out = [{ chars, start: P, end: S, map: (i) => i, op: null, at: -1 }]
-
-    for (let k = 0; k < n; k++) {
-      if (P[k] === Infinity) continue
-      const rest = chars.slice(k).join('')
-      const head = analyzer.onset(rest)
-      const headLength = Array.from(head).length
+    // 詞幹的起點：詞首（沒有前綴），或某條前綴鏈的終點（交界）。詞首與交界的語意不同
+    // （構詞音變只在交界適用），所以 i ＝ 0 時兩者都要試
+    /** @type {Array<{i: number, startCost: number, prefixed: boolean}>} */
+    const starts = [{ i: 0, startCost: 0, prefixed: false }]
+    for (let i = 0; i < n; i++) if (P.row[i] < Infinity) starts.push({ i, startCost: P.row[i], prefixed: true })
+    for (const { i, startCost, prefixed } of starts) {
+      const head = Array.from(analyzer.onset(chars.slice(i).join('')))
 
       // 中綴：詞幹首輔音之後、首元音之前（首輔音不能含空白：構詞不跨越詞邊界）
-      for (const x of Array.from(head).some(isBoundary) ? [] : spec.infixes) {
+      const at = i + head.length
+      for (const x of head.some(isBoundary) ? [] : spec.infixes) {
         const xs = Array.from(x.form)
-        const at = k + headLength
         if (chars.slice(at, at + xs.length).join('') !== x.form) continue
         const reduced = [...chars.slice(0, at), ...chars.slice(at + xs.length)]
-        if (reduced.length - k < spec.minStem) continue
-        if (analyzer.onset(reduced.slice(k).join('')) !== head) continue
-        out.push(
-          shifted(chars, reduced, P, S, k, at, xs.length, x.cost, null, {
-            type: 'infix',
-            form: x.form,
-            gloss: x.gloss,
-            cost: x.cost,
-          }),
-        )
-      }
-
-      // 重疊：詞幹前面的重疊部分。試每一種長度（沒有上限）。模板只套用在詞幹上（不含後綴），
-      // 而且詞幹取自查詢，所以複製的是查詢（方言）的形式；詞幹的長度只能是模板正好產生 red 的那些
-      // （reduplicantStems；full 時就是 red 本身的長度）
-      for (const r of spec.reduplication) {
-        for (let len = 1; k + len < n; len++) {
-          const red = chars.slice(k, k + len).join('')
-          const base = chars.slice(k + len)
-          if (base.length < spec.minStem) break
-          if (isBoundary(chars[k + len - 1])) break // 重疊部分不跨越空白
-          const lengths = analyzer.reduplicantStems(r.pattern, base, red)
-          if (!lengths.length) continue
-          const reduced = [...chars.slice(0, k), ...base]
-          out.push(
-            shifted(chars, reduced, P, S, k, k, len, r.cost, lengths, {
-              type: 'reduplication',
-              form: red,
-              pattern: r.pattern,
-              gloss: r.gloss,
-              cost: r.cost,
-            }),
-          )
-        }
-      }
-    }
-
-    // 詞幹交替：詞幹最後的 surface 在（指定的）後綴前還原成 underlying
-    for (const a of spec.alternations) {
-      const surface = Array.from(a.surface)
-      for (let l = spec.minStem; l < n; l++) {
-        if (chars.slice(l - surface.length, l).join('') !== a.surface) continue
-        // 緊接的第一個後綴必須在 before 清單中；其後至多再 maxSteps 個後綴（S[e.to]）。
-        // 不要求 S[l] 有限：交替後面的後綴鏈可以有 maxSteps ＋ 1 個（docs/bcdp.md 1.2 限制 3）
-        let endCost = Infinity
-        for (const e of c.suffixEdges[l] ?? []) {
-          if (a.before && !a.before.includes(e.affix.form)) continue
-          const tail = e.to === n ? 0 : S[e.to]
-          endCost = Math.min(endCost, e.affix.cost + e.distance + tail)
-        }
-        if (endCost === Infinity) continue
-        const underlying = Array.from(a.underlying)
-        const cut = l - surface.length
-        const reduced = [...chars.slice(0, cut), ...underlying, ...chars.slice(l)]
-        const m = reduced.length
-        const start = new Float64Array(m + 1).fill(Infinity)
-        for (let i = 0; i <= cut; i++) start[i] = P[i]
-        const end = new Float64Array(m + 1).fill(Infinity)
-        end[cut + underlying.length] = roundCost(endCost + a.cost)
-        out.push({
+        if (reduced.length - i < spec.minStem) continue
+        if (analyzer.onset(reduced.slice(i).join('')) !== head.join('')) continue
+        yield {
+          kind: 'infix',
           chars: reduced,
-          start,
-          end,
-          map: (i) => (i <= cut ? i : i - underlying.length + surface.length),
-          op: { type: 'alternation', form: `${a.underlying}>${a.surface}`, gloss: null, cost: a.cost },
-          at: l,
-          // 說明時挑第一個後綴也要遵守同一個限制（alternationSuffix）
-          before: a.before,
-        })
+          op: { type: 'infix', form: x.form, gloss: x.gloss, cost: x.cost },
+          start: i,
+          startCost,
+          prefixed,
+          startEdge: prefixed ? EDGE_JUNCTION : EDGE_WORD,
+          cut: at,
+          len: xs.length,
+          ends: (/** @type {number} */ e) => e > at, // 詞幹必須越過中綴所在的位置
+        }
       }
-    }
-    return out
-  }
 
-  /**
-   * 在位置 at 拿掉 len 個字元（中綴或重疊）後的變體：詞幹只能從 k 開始，邊界向量跟著位移。
-   * stemLengths 不為 null 時（重疊），詞幹的長度只能是其中之一（遞增；以 at 起算）。
-   * @returns {{chars: string[], start: Float64Array, end: Float64Array, map: (i: number) => number, op: MorphStepHit, at: number}}
-   */
-  function shifted(
-    /** @type {string[]} */ chars,
-    /** @type {string[]} */ reduced,
-    /** @type {Float64Array} */ P,
-    /** @type {Float64Array} */ S,
-    /** @type {number} */ k,
-    /** @type {number} */ at,
-    /** @type {number} */ len,
-    /** @type {number} */ cost,
-    /** @type {number[] | null} */ stemLengths,
-    /** @type {MorphStepHit} */ op,
-  ) {
-    const m = reduced.length
-    const start = new Float64Array(m + 1).fill(Infinity)
-    start[k] = roundCost(P[k] + cost)
-    const end = new Float64Array(m + 1).fill(Infinity)
-    if (stemLengths) {
-      // 重疊：詞幹 reduced[at..at+L)，對應原查詢的終點 at + L + len
-      for (const l of stemLengths) end[at + l] = S[at + l + len]
-    } else {
-      for (let i = 0; i <= chars.length; i++) {
-        if (i > at && i < at + len) continue
-        const j = i <= at ? i : i - len
-        if (j > at) end[j] = S[i] // 詞幹必須越過中綴所在的位置
+      // 重疊：詞幹前面的重疊部分，試每一種長度。模板只套用在詞幹上，而且詞幹取自查詢，
+      // 所以複製的是查詢（方言）的形式；詞幹的長度只能是模板正好產生重疊部分的那些。
+      // 重疊部分與詞幹之間是交界：交界上的增生（junctionInserts）不算在詞幹裡。
+      // 重疊的詞幹開頭一定是交界，i ＝ 0 時由前綴鏈出發只會更貴，不必另外試
+      for (const r of prefixed && i === 0 ? [] : spec.reduplication) {
+        for (let len = 1; i + len < n; len++) {
+          if (n - i - len < spec.minStem) break
+          if (isBoundary(chars[i + len - 1])) break // 重疊部分不跨越空白
+          const red = chars.slice(i, i + len).join('')
+          const starts = [i + len]
+          for (const g of junctionInserts) if (chars.slice(i + len, i + len + g.length).join('') === g.join('')) starts.push(i + len + g.length)
+          for (const s of starts) {
+            const base = chars.slice(s)
+            if (base.length < spec.minStem) continue
+            const lengths = analyzer.reduplicantStems(r.pattern, base, red)
+            if (!lengths.length) continue
+            const ends = new Set(lengths.map((l) => s - len + l)) // 還原後的查詢上的位置
+            yield {
+              kind: 'reduplication',
+              chars: [...chars.slice(0, i), ...chars.slice(i + len)],
+              op: { type: 'reduplication', form: red, pattern: r.pattern, gloss: r.gloss, cost: r.cost },
+              start: i,
+              startCost,
+              prefixed,
+              startEdge: EDGE_JUNCTION,
+              cut: i,
+              len,
+              ends: (/** @type {number} */ e) => ends.has(e),
+            }
+          }
+        }
       }
     }
-    return { chars: reduced, start, end, map: (j) => (j <= at ? j : j + len), op, at: k }
   }
 
   /**
    * @typedef {object} Prepared 構詞搜尋的準備結果
    * @property {string} query
    * @property {string[]} chars
-   * @property {ReturnType<typeof charts>} charts
-   * @property {Array<ReturnType<typeof variants>[number] & {text: string, starts: number[], ends: number[]}>} variants
-   * @property {Array<{query: string[], options: import('./fuzzy-index.js').SearchOptions}>} channels 每個變體一個搜尋通道
+   * @property {Level[]} prefixLevels 第 1 … k 層前綴（正向）
+   * @property {Level[]} suffixLevels 第 1 … k 層後綴（反向：鏡像距離函式、反轉的查詢）
+   * @property {Level} P 各層前綴再合併（tags 記的是層數 1 … k）
+   * @property {ReturnType<typeof emptyEnd>} S 各層後綴換成正向座標後合併（tags 記的是層數）
+   * @property {Variant[]} variants 與 channels 一一對應
+   * @property {Array<{query: string[], options: import('./fuzzy-index.js').SearchOptions}>} channels
    * @property {boolean} truncated 還原變體超過 MAX_VARIANTS 而被截斷
    */
 
   /**
-   * 構詞搜尋的第一步：算好詞綴圖表與還原變體，產生搜尋通道（交給 FuzzyIndex.searchChannels）。
-   *
-   * 通道的邊界向量只保留「可以在這裡開始／結束」（有限成本一律當 0），上限是 λ = lemmaDistance。
-   * 由定理 1，通道找到的正是「存在某個 (i, k) 使 E(q[i..k), t) ≤ λ」的詞 t。詞幹部分的音變上限
-   * 本來就是 λ，所以這是必要條件，一個也不會漏；λ 很小，剪枝幾乎和精確查詢一樣快。
-   * 真正的成本（加上詞綴鏈）在 `finish` 中計算。
-   *
+   * 構詞搜尋的第一步：算好前綴、後綴的各層與還原變體，產生詞幹的搜尋通道（交給 FuzzyIndex.searchChannels，
+   * 搜尋引擎把它們與普通模糊搜尋合併成一次走訪）。
    * @param {string} query 已正規化的查詢（搜尋鍵）
+   * @param {number} [maxDistance=1] 總成本上限
    * @returns {Prepared | null} 查詢太短時為 null
    */
-  function prepare(query) {
+  function prepare(query, maxDistance = 1) {
     const chars = Array.from(query)
-    if (chars.length < spec.minStem + 1) return null
-    return prepareFrom(query, chars, charts(chars))
-  }
+    const n = chars.length
+    if (n < spec.minStem + 1) return null
+    const prefixLevels = levels(prefixIndex, chars, maxDistance, 'p')
+    const suffixLevels = levels(suffixIndex, [...chars].reverse(), maxDistance, 's')
+    /** @type {Level} */
+    const P = emptyJunction(n)
+    prefixLevels.forEach((L, s) => mergeInto(P, L, 0, s + 1))
+    const S = emptyEnd(n)
+    suffixLevels.forEach((L, s) => mergeEndInto(S, toForwardEnd(L, mirror.compiled), s + 1))
+    const word = new Float64Array(n + 1).fill(Infinity)
+    word[n] = 0
 
-  /**
-   * prepare 的本體：圖表已經算好（explain 以帶紀錄的圖表呼叫）。
-   * @param {string} query
-   * @param {string[]} chars
-   * @param {ReturnType<typeof charts>} c
-   * @returns {Prepared}
-   */
-  function prepareFrom(query, chars, c) {
-    const zero = (/** @type {Float64Array} */ vec) => Float64Array.from(vec, (x) => (x < Infinity ? 0 : Infinity))
-    /** @type {Prepared['variants']} */
-    const list = []
+    /** @type {Variant[]} */
+    const variants = []
+    /** @type {Prepared['channels']} */
+    const channels = []
+    const plain = { start: -1, prefixed: false, cut: n, len: 0, ends: () => true }
+    // 沒有前綴：至少要有一個後綴
+    if (suffixLevels.length) {
+      variants.push({ kind: 'plain', chars, op: null, startEdge: EDGE_WORD, ...plain })
+      channels.push({ query: chars, options: { maxDistance, to: { row: S.row, pending: S.pending, word: null } } })
+    }
+    // 至少一個前綴：之後可以接後綴，也可以就是詞尾
+    if (prefixLevels.length) {
+      variants.push({ kind: 'prefix', chars, op: null, startEdge: EDGE_JUNCTION, ...plain })
+      channels.push({ query: chars, options: { maxDistance, from: P, to: { row: S.row, pending: S.pending, word } } })
+    }
     let truncated = false
-    for (const v of variants(chars, c)) {
-      const starts = []
-      const ends = []
-      for (let i = 0; i <= v.chars.length; i++) {
-        if (v.start[i] < Infinity) starts.push(i)
-        if (v.end[i] < Infinity) ends.push(i)
-      }
-      if (starts.length === 0 || ends.length === 0) continue
-      if (list.length >= MAX_VARIANTS) {
+    let count = 0
+    for (const v of restored(chars, P)) {
+      if (count++ >= MAX_VARIANTS) {
         truncated = true
         break
       }
-      list.push({ ...v, text: v.chars.join(''), starts, ends })
-    }
-    return {
-      query,
-      chars,
-      charts: c,
-      variants: list,
-      truncated,
-      channels: list.map((v) => ({
-        // 已正規化的 code point 陣列：FuzzyIndex 原樣使用，不再正規化
+      const m = v.chars.length
+      const original = (/** @type {number} */ x) => (x > v.cut ? x + v.len : x) // 變體上的位置 → 原查詢
+      const from = new Float64Array(m + 1).fill(Infinity)
+      from[v.start] = v.startCost + /** @type {MorphStepHit} */ (v.op).cost
+      const row = new Float64Array(m + 1).fill(Infinity)
+      for (let x = 0; x <= m; x++) if (v.ends(x)) row[x] = S.row[original(x)]
+      const vWord = new Float64Array(m + 1).fill(Infinity)
+      if (v.ends(m)) vWord[m] = 0
+      variants.push(v)
+      channels.push({
         query: v.chars,
-        options: { maxDistance: spec.lemmaDistance, start: zero(v.start), end: zero(v.end) },
-      })),
+        options: { maxDistance, from: { row: from, pending: [] }, startEdge: v.startEdge, to: { row, pending: [], word: vWord } },
+      })
     }
+    return { query, chars, prefixLevels, suffixLevels, P, S, variants, channels, truncated }
   }
 
   /**
-   * 構詞搜尋的第二步：對每個候選，在有限的 (i, k) 組合上算 P[i] + E(q[i..k), t) + S[k]，
-   * 取 E ≤ λ 者的最小值，並回溯出構詞步驟。
-   *
+   * 一格（交界列的第 x 格，或跨界狀態 node 的第 x 格）的 tag。
+   * @param {{tags?: {row: unknown[], pending: Map<any, unknown[]>}}} state
+   * @param {Entry} entry
+   * @param {unknown} [key] 跨界狀態的鍵（預設 entry.node）
+   */
+  const tagAt = (state, entry, key) => {
+    if (entry.kind === 'start') return null
+    if (entry.kind === 'row') return state.tags?.row[entry.x] ?? null
+    return state.tags?.pending.get(key ?? entry.node)?.[entry.x] ?? null
+  }
+
+  /**
+   * 由某一層的一格往回追出整條詞綴鏈：這一格記著是哪個詞綴；在那個詞綴上由前一層出發做一次追蹤 DP，
+   * 找到它是由前一層的哪一格進來的，一直追到詞首（詞尾）。
+   * @param {import('./distance.js').WeightedEditDistance} m 距離函式（後綴用鏡像的）
+   * @param {Level[]} list 各層
+   * @param {number} s 從第 s 層開始（1 起算）
+   * @param {Entry} entry
+   * @param {string[]} x 查詢（後綴用反轉的查詢）
+   * @param {(form: string) => string[]} charsOf 詞綴的字元（後綴要反轉）
+   * @returns {AffixEntry[]} 由外而內
+   */
+  function chainFrom(m, list, s, entry, x, charsOf) {
+    /** @type {AffixEntry[]} */
+    const out = []
+    let at = entry
+    for (let k = s; k >= 1 && at.kind !== 'start'; k--) {
+      const affix = /** @type {AffixEntry | null} */ (tagAt(list[k - 1], at))
+      if (!affix) break
+      out.push(affix)
+      const t = m.traceSegment(x, charsOf(affix.form), { from: k >= 2 ? list[k - 2] : null, lock: true, exit: at })
+      at = t.entry
+    }
+    return out.reverse()
+  }
+
+  /**
+   * 命中是由哪些詞綴來的：在詞幹上做一次追蹤 DP（與走訪同一個起點與耦合），得到它由合併後的前綴狀態的哪一格
+   * 進來、在後綴狀態的哪一格出去，再各自往回追出詞綴鏈。
    * @param {Prepared} prepared
-   * @param {import('./fuzzy-index.js').SearchResult[][]} resultsPerChannel 與 prepared.channels 對應
+   * @param {number} c 通道
+   * @param {string} term
+   */
+  function affixesOf(prepared, c, term) {
+    const v = prepared.variants[c]
+    const options = prepared.channels[c].options
+    const t = metric.traceSegment(v.chars, Array.from(term), {
+      from: options.from ?? null,
+      startEdge: options.startEdge,
+      exit: { kind: 'couple', to: /** @type {JunctionEnd} */ (options.to) },
+    })
+    // 前綴：變體的起點固定在 v.start（有前綴鏈時由合併後的前綴狀態的那一格往回追）
+    /** @type {Entry} */
+    const entry = v.start >= 0 ? (v.prefixed ? { kind: 'row', x: v.start } : { kind: 'start' }) : t.entry
+    const prefixes = entry.kind === 'start' ? [] : chainFrom(metric, prepared.prefixLevels, /** @type {number} */ (tagAt(prepared.P, entry) ?? 0), entry, prepared.chars, (f) => Array.from(f))
+    // 後綴：出口換成反向座標（位置 x → n − x；跨界狀態的 tail 反轉後是鏡像 trie 的節點）
+    const n = prepared.chars.length
+    const exit = t.exit
+    /** @type {AffixEntry[]} */
+    let suffixes = []
+    if (exit.kind === 'row' || exit.kind === 'pending') {
+      const x = exit.x > v.cut ? exit.x + v.len : exit.x
+      let level = 0
+      /** @type {Entry} */
+      let back = { kind: 'row', x: n - x }
+      if (exit.kind === 'row') level = /** @type {number} */ (prepared.S.tags.row[x] ?? 0)
+      else {
+        const tail = prepared.S.pending[/** @type {any} */ (exit).tail].tail
+        level = /** @type {number} */ (prepared.S.tags.pending.get(tail.join(''))?.[x] ?? 0)
+        back = { kind: 'pending', node: mirror.compiled.trieWalk(0, [...tail].reverse()), x: n - x }
+      }
+      suffixes = chainFrom(mirror, prepared.suffixLevels, level, back, [...prepared.chars].reverse(), (f) => Array.from(f).reverse())
+    }
+    return { prefixes, suffixes }
+  }
+
+  /**
+   * 構詞搜尋的第二步：整理各通道的結果，每個詞取最小成本，並找出是哪些詞綴。
+   * @param {Prepared} prepared
+   * @param {SearchResult[][]} resultsPerChannel 與 prepared.channels 對應
    * @param {number} maxDistance 總成本上限
-   * @returns {MorphHit[]} 依成本排序，只保留「最佳 ＋ lemmaSpread」之內
+   * @returns {MorphHit[]} 依成本排序（同分依詞），只保留「最佳 ＋ lemmaSpread」之內
    */
   function finish(prepared, resultsPerChannel, maxDistance) {
     const { query } = prepared
-    /** @type {Map<string, MorphHit>} */
+    /** @type {Map<string, {distance: number, channel: number, result: SearchResult}>} */
     const best = new Map()
-    /**
-     * 詞 → 正規化後的字元（同一個詞可能出現在好幾個變體的結果中，只正規化一次）。
-     * @type {Map<string, string[]>}
-     */
-    const termChars = new Map()
-    prepared.variants.forEach((v, vi) => {
-      /**
-       * 查詢片段 v.chars[i..k) 的編譯結果（成本表與規則表），依 i·(m+1)+k 索引。
-       * 同一個片段要和很多候選詞比較，編譯一次、共用給所有候選詞。
-       * 這取代了最佳化前（commit e1557f4）每一組（片段, 詞）都呼叫 metric.distance 的做法：那會對片段與詞
-       * 各做一次完整的正規化（含 Unicode 分解與正規表示式）並重新編譯查詢。
-       * @type {Map<number, import('./dp.js').QueryPlan>}
-       */
-      const plans = new Map()
-      for (const r of resultsPerChannel[vi] ?? []) {
-        const term = r.term
-        if (term === query || Array.from(term).length < spec.minStem) continue
-        let y = termChars.get(term)
-        if (y === undefined) termChars.set(term, (y = metric.prepare(term)))
-        const priced = priceTerm(v, plans, y)
-        if (priced.i < 0 || priced.total > maxDistance + EPSILON) continue
-        const hit = buildHit(prepared, v, r, priced)
-        if (!hit) continue
-        const prev = best.get(term)
-        if (!prev || hit.distance < prev.distance - EPSILON) best.set(term, hit)
+    prepared.channels.forEach((_, c) => {
+      for (const r of resultsPerChannel[c] ?? []) {
+        if (r.term === query || Array.from(r.term).length < spec.minStem || r.distance > maxDistance + EPSILON) continue
+        const prev = best.get(r.term)
+        if (!prev || r.distance < prev.distance - EPSILON) best.set(r.term, { distance: r.distance, channel: c, result: r })
       }
     })
-    const hits = [...best.values()].sort((a, b) => a.distance - b.distance || (a.term < b.term ? -1 : 1))
-    if (hits.length === 0) return hits
-    const cutoff = hits[0].distance + spec.lemmaSpread + EPSILON
-    return hits.filter((h) => h.distance <= cutoff)
+    const sorted = [...best.values()].sort((a, b) => a.distance - b.distance || (a.result.term < b.result.term ? -1 : 1))
+    if (sorted.length === 0) return []
+    const cutoff = sorted[0].distance + spec.lemmaSpread + EPSILON
+    return sorted
+      .filter((h) => h.distance <= cutoff)
+      .map((h) => {
+        const v = prepared.variants[h.channel]
+        const { prefixes, suffixes } = affixesOf(prepared, h.channel, h.result.term)
+        /** @type {MorphStepHit[]} */
+        const steps = [...prefixes.map((a) => affixStep('prefix', a)), ...(v.op ? [v.op] : []), ...suffixes.map((a) => affixStep('suffix', a))]
+        return {
+          term: h.result.term,
+          payloads: h.result.payloads,
+          distance: roundCost(h.distance),
+          steps,
+          analysis: { variant: h.channel, prefixes, suffixes },
+        }
+      })
   }
 
   /**
-   * @typedef {object} PricingCell 計價格網的一格（說明用）
-   * @property {number} i 詞幹在變體上的起點
-   * @property {number} k 詞幹在變體上的終點
-   * @property {'whole' | 'length' | 'lambda' | null} skip 略過的原因：整段都是詞幹（普通模糊命中）、
-   *   長度差太多、詞幹音變超過 λ；null 表示有計價
-   * @property {number} [distance] E(v[i..k), t)
-   * @property {number} [start] start[i]
-   * @property {number} [end] end[k]
-   * @property {number} [total] start[i] ＋ distance ＋ end[k]
-   */
-
-  /**
-   * 一個候選詞在一個還原變體上的計價（finish 與 explain 共用）：在所有有限的起點 i、終點 k 上算
-   * start[i] ＋ E(v[i..k), t) ＋ end[k]，取 E ≤ λ 者的最小值；同分時取詞幹較短的切法（詞綴說明較完整）。
-   * @param {Prepared['variants'][number]} v
-   * @param {Map<number, import('./dp.js').QueryPlan>} plans 片段的編譯結果（同一個變體的所有候選共用）
-   * @param {string[]} y 候選詞（已正規化的字元）
-   * @param {PricingCell[] | null} [grid] 說明用：逐格記下計算過程
-   * @returns {{total: number, i: number, k: number, stem: number}} 找不到時 i ＝ −1
-   */
-  function priceTerm(v, plans, y, grid = null) {
-    const m = v.chars.length
-    const lambda = spec.lemmaDistance
-    let total = Infinity
-    let bestI = -1
-    let bestK = -1
-    let stem = Infinity
-    for (const i of v.starts) {
-      for (const k of v.ends) {
-        if (k <= i) continue
-        // 原查詢上「從頭到尾都是詞幹」的路徑是普通模糊命中，不算構詞命中
-        if (!v.op && i === 0 && k === m) {
-          grid?.push({ i, k, skip: 'whole' })
-          continue
-        }
-        // 長度差太多的切法不可能在 λ 以內（每個字元的增刪至少要付 minLengthStepCost）
-        if (Math.abs(k - i - y.length) > maxLengthChange) {
-          grid?.push({ i, k, skip: 'length' })
-          continue
-        }
-        // 詞幹片段直接以 code point 陣列切出（不再正規化：再正規化會截掉頭尾空白、
-        // UTF-16 切片會切壞非 BMP 字元，docs/bcdp.md 第 11 節）；片段當作一個完整的詞計算距離
-        const key = i * (m + 1) + k
-        let plan = plans.get(key)
-        if (plan === undefined) plans.set(key, (plan = metric.prepareQuery(v.chars.slice(i, k))))
-        const d = metric.distancePrepared(plan, y)
-        if (d > lambda + EPSILON) {
-          grid?.push({ i, k, skip: 'lambda', distance: d })
-          continue
-        }
-        const t = v.start[i] + d + v.end[k]
-        grid?.push({ i, k, skip: null, distance: d, start: v.start[i], end: v.end[k], total: roundCost(t) })
-        if (t < total - EPSILON || (Math.abs(t - total) <= EPSILON && k - i < bestK - bestI)) {
-          total = t
-          bestI = i
-          bestK = k
-          stem = d
-        }
-      }
-    }
-    return { total, i: bestI, k: bestK, stem }
-  }
-
-  /**
-   * 由計價結果組出命中：回溯前綴鏈、非串接步驟與後綴鏈（finish 與 explain 共用）。
+   * 命中的完整說明：整個詞的聯合對齊（metric.explainSegments），各詞素依序接起來，
+   * 變體的交界固定在查詢的位置上。對齊的距離加上步驟成本就是命中的成本（測試逐一比對）。
    * @param {Prepared} prepared
-   * @param {Prepared['variants'][number]} v
-   * @param {import('./fuzzy-index.js').SearchResult} r
-   * @param {ReturnType<typeof priceTerm>} priced
-   * @returns {MorphHit | null} 沒有任何構詞步驟時為 null
+   * @param {MorphHit} hit
    */
-  function buildHit(prepared, v, r, priced) {
-    const { chars, charts: c } = prepared
-    const originalStart = v.op && v.op.type !== 'alternation' ? v.at : priced.i
-    const steps = [
-      ...prefixSteps(c, chars, originalStart),
-      ...(v.op ? [v.op] : []),
-      ...(v.op?.type === 'alternation' ? alternationSuffix(c, chars, v.at, v.before ?? null) : suffixSteps(c, chars, v.map(priced.k))),
+  function explainHit(prepared, hit) {
+    const v = prepared.variants[hit.analysis.variant]
+    const { prefixes, suffixes } = hit.analysis
+    /** @type {Array<{chars: string[], lock: boolean, type: 'prefix' | 'stem' | 'suffix', form: string}>} */
+    const segments = [
+      ...prefixes.map((a) => ({ chars: Array.from(a.form), lock: true, type: /** @type {const} */ ('prefix'), form: a.form })),
+      { chars: Array.from(hit.term), lock: false, type: /** @type {const} */ ('stem'), form: hit.term },
+      // 後綴由外而內，在詞中的順序要反過來
+      ...[...suffixes].reverse().map((a) => ({ chars: Array.from(a.form), lock: true, type: /** @type {const} */ ('suffix'), form: a.form })),
     ]
-    if (steps.length === 0) return null
-    return {
-      term: r.term,
-      payloads: r.payloads,
-      distance: roundCost(priced.total),
-      stemSurface: v.chars.slice(priced.i, priced.k).join(''),
-      stemDistance: roundCost(priced.stem),
-      steps,
+    const stem = prefixes.length
+    /** @type {Parameters<typeof metric.explainSegments>[2]} */
+    const options = {}
+    if (v.kind === 'infix' || v.kind === 'reduplication') {
+      if (stem === 0) options.startEdge = v.startEdge
+      options.pinStart = { segment: stem, x: v.start }
+      options.pinEnd = { segment: stem, allowed: new Set(Array.from({ length: v.chars.length + 1 }, (_, x) => x).filter(v.ends)) }
     }
+    return { query: v.chars, segments, stem, explanation: metric.explainSegments(v.chars, segments, options) }
+  }
+
+  /**
+   * 命中的音變說明：整個詞的對齊中不是「相同」的每一步，標出它落在哪裡——前綴、詞幹、後綴，
+   * 或詞素交界（只動查詢的操作在交界上，或規則跨越了交界）。成本加起來是整個詞的音變。
+   * @param {Prepared} prepared
+   * @param {MorphHit} hit
+   * @returns {Array<{op: string, source: string, target: string, cost: number, category: string | null, where: 'prefix' | 'stem' | 'suffix' | 'junction'}>}
+   */
+  function notesOf(prepared, hit) {
+    const { query, segments, explanation } = explainHit(prepared, hit)
+    return notesFrom(query, segments, explanation)
+  }
+
+  /**
+   * 任意一組詞素的音變說明（衍生形方向用）：整個詞的聯合對齊，標出每一步落在哪裡。
+   * @param {string[]} x 查詢（衍生形方向是衍生詞本身）
+   * @param {Array<{chars: string[], lock: boolean, type: 'prefix' | 'stem' | 'suffix'}>} segments
+   */
+  function notesFor(x, segments) {
+    return notesFrom(x, segments, metric.explainSegments(x, segments))
+  }
+
+  /**
+   * @param {string[]} _x
+   * @param {Array<{type: 'prefix' | 'stem' | 'suffix'}>} segments
+   * @param {ReturnType<typeof metric.explainSegments>} explanation
+   */
+  function notesFrom(_x, segments, explanation) {
+    const junctions = new Set(explanation.junctions)
+    const typeAt = (/** @type {number} */ j) => segments[explanation.segmentOf[j]]?.type ?? 'stem'
+    return explanation.alignment
+      .filter((s) => s.op !== 'match')
+      .map((s) => {
+        const [, b0] = s.from
+        const [, b] = s.to
+        /** @type {'prefix' | 'stem' | 'suffix' | 'junction'} */
+        let where
+        if (b0 === b) where = junctions.has(b) ? 'junction' : typeAt(Math.max(0, b - 1))
+        else where = explanation.segmentOf[b0] === explanation.segmentOf[b - 1] ? typeAt(b0) : 'junction'
+        return { op: s.op, source: s.source, target: s.target, cost: s.cost, category: s.rule?.category ?? null, where }
+      })
+  }
+
+  /**
+   * 衍生形方向：詞 word 能否分析成「詞綴 · stem · 詞綴」——同一個 BCDP，詞庫只有 stem 一個詞。
+   * @param {string} word 已正規化的詞（衍生形的候選）
+   * @param {string} stem 已正規化的詞根
+   * @param {number} maxDistance 總成本上限
+   * @returns {{hit: MorphHit, prepared: Prepared} | null}
+   */
+  function derive(word, stem, maxDistance) {
+    const prepared = prepare(word, maxDistance)
+    if (!prepared || word === stem) return null
+    const single = new FuzzyIndex(metric).addAll([[stem, null]])
+    const hit = finish(prepared, single.searchChannels(prepared.channels), maxDistance).find((h) => h.term === stem)
+    return hit ? { hit, prepared } : null
   }
 
   /**
@@ -625,7 +520,7 @@ export function createMorphSearch({ analyzer, metric, index }) {
    * @returns {MorphHit[]}
    */
   function search(query, { maxDistance, stats }) {
-    const prepared = prepare(query)
+    const prepared = prepare(query, maxDistance)
     if (!prepared) return []
     const local = { visitedNodes: 0, prunedNodes: 0, computedRows: 0 }
     const results = index.searchChannels(prepared.channels, local)
@@ -634,174 +529,100 @@ export function createMorphSearch({ analyzer, metric, index }) {
   }
 
   /**
-   * 詞幹交替之後的後綴鏈：第一個後綴要在 before 清單中，所以不能直接用 S 的回溯。
-   * 挑選的條件與 variants() 計算 endCost 時完全相同，所以說明中各步驟的成本加起來等於命中的成本。
-   * @param {ReturnType<typeof charts>} c
-   * @param {string[]} chars
-   * @param {number} l 後綴鏈的起點
-   * @param {string[] | null} before 第一個後綴允許的形式（null 表示不限）
-   */
-  function alternationSuffix(c, chars, l, before) {
-    /** @type {ChartEdge | null} */
-    let first = null
-    let firstCost = Infinity
-    for (const e of c.suffixEdges[l] ?? []) {
-      if (before && !before.includes(e.affix.form)) continue
-      const tail = e.to === chars.length ? 0 : c.S.cost[e.to]
-      const cost = e.affix.cost + e.distance + tail
-      if (cost < firstCost) {
-        firstCost = cost
-        first = e
-      }
-    }
-    if (!first) return []
-    return [...(first.to === chars.length ? [] : suffixSteps(c, chars, first.to)), affixStep('suffix', first, chars)]
-  }
-
-  /**
-   * @typedef {object} Relaxation 詞綴圖表的一次鬆弛（說明用）
-   * @property {'P' | 'S'} table
-   * @property {number} slot 經過這條邊之後用了幾個詞綴（1 … maxSteps）
-   * @property {number} from 邊的起點（P 由左而右；S 的邊由 from 指向 to，鏈由右而左累加）
-   * @property {number} to
-   * @property {string} form 詞綴（規格中的寫法）
-   * @property {number} distance 查詢片段與詞綴的距離
-   * @property {number} cost 經由這條邊的鏈成本
-   * @property {boolean} improved 是否更新了圖表
-   */
-
-  /**
    * 說明一次構詞搜尋：各階段的中間結果，給演算法實驗室逐步展示（docs/lab-design.md）。
-   *
-   * 與 search 走同一套程式（prepare、searchChannels、priceTerm、buildHit），所以 hit 一定等於搜尋對
-   * 這個詞的結果（測試逐一比對）。回傳值只含可以結構化複製的資料，∞ 寫成 null，可以從 Web Worker 傳回。
-   *
+   * 與 search 走同一套程式，所以 hit 一定等於搜尋對這個詞的結果（測試逐一比對）。
+   * 回傳值只含可以結構化複製的資料，∞ 寫成 null，可以從 Web Worker 傳回。
    * @param {string} query 已正規化的查詢（搜尋鍵）
-   * @param {string | null} [term] 要逐格計價的詞根（省略時只列出命中）
+   * @param {string | null} [term] 要說明的詞根（省略時只列出命中）
    * @param {{maxDistance?: number}} [options] 總成本上限（與 search 相同）
    */
   function explain(query, term = null, { maxDistance = 1 } = {}) {
     const chars = Array.from(query)
-    const params = {
-      lemmaDistance: spec.lemmaDistance,
-      affixDistance: spec.affixDistance,
-      maxSteps: spec.maxSteps,
-      minStem: spec.minStem,
-      lemmaSpread: spec.lemmaSpread,
-      maxDistance,
-    }
-    if (chars.length < spec.minStem + 1) return { query, chars, params, tooShort: true, term, reason: term === null ? null : 'short' }
-
-    /** @type {Relaxation[]} */
-    const relaxations = []
-    const c = charts(chars, (r) => relaxations.push(r))
-    const prepared = prepareFrom(query, chars, c)
-    /** 每個通道的詞圖走訪紀錄 @type {Array<Array<Record<string, unknown>>>} */
+    const params = { maxSteps: spec.maxSteps, minStem: spec.minStem, lemmaSpread: spec.lemmaSpread, maxDistance }
+    const prepared = prepare(query, maxDistance)
+    if (!prepared) return { query, chars, params, tooShort: true, term, reason: term === null ? null : 'short' }
+    /** @type {Array<Array<Record<string, unknown>>>} */
     const walks = prepared.channels.map(() => [])
     const results = index.searchChannels(
-      prepared.channels.map((ch, vi) => ({ query: ch.query, options: { ...ch.options, onNode: (/** @type {any} */ e) => walks[vi].push(e) } })),
+      prepared.channels.map((ch, c) => ({ query: ch.query, options: { ...ch.options, onNode: (/** @type {any} */ e) => walks[c].push(e) } })),
     )
     const hits = finish(prepared, results, maxDistance)
     const cutoff = hits.length ? roundCost(hits[0].distance + spec.lemmaSpread) : null
+    const finite = (/** @type {number} */ x) => (x === Infinity ? null : roundCost(x))
+    const rowOf = (/** @type {ArrayLike<number>} */ row) => Array.from(row, finite)
 
-    /** @type {Array<{variant: number, candidate: boolean, cells: PricingCell[], best: {i: number, k: number, total: number, stem: number} | null}> | null} */
-    let pricing = null
     /** @type {MorphHit | null} */
     let hit = null
+    /** @type {Record<string, unknown> | null} */
+    let alignment = null
     /** 找不到 term 的原因 @type {string | null} */
     let reason = null
     if (term !== null) {
-      const y = metric.prepare(term)
-      pricing = prepared.variants.map((v, vi) => {
-        const candidate = (results[vi] ?? []).some((r) => r.term === term)
-        if (!candidate) return { variant: vi, candidate, cells: [], best: null }
-        /** @type {PricingCell[]} */
-        const cells = []
-        const priced = priceTerm(v, new Map(), y, cells)
-        const best = priced.i < 0 ? null : { i: priced.i, k: priced.k, total: roundCost(priced.total), stem: roundCost(priced.stem) }
-        return { variant: vi, candidate, cells, best }
-      })
       hit = hits.find((h) => h.term === term) ?? null
-      if (!hit) {
-        const priced = pricing.filter((p) => p.best).map((p) => /** @type {NonNullable<typeof p.best>} */ (p.best).total)
-        if (term === query) reason = 'same'
-        else if (Array.from(term).length < spec.minStem) reason = 'short'
-        else if (!pricing.some((p) => p.candidate)) reason = 'notCandidate'
-        else if (priced.length === 0) reason = 'lambda'
-        else if (Math.min(...priced) > maxDistance + EPSILON) reason = 'bound'
-        else reason = 'spread'
-      }
-    }
-
-    const finite = (/** @type {number} */ x) => (x === Infinity ? null : x)
-    const edges = (/** @type {Array<ChartEdge[] | undefined>} */ list) =>
-      Array.from({ length: chars.length + 1 }, (_, k) =>
-        (list[k] ?? []).map((e) => ({
-          from: e.from,
-          to: e.to,
-          form: e.affix.form,
-          surface: chars.slice(e.from, e.to).join(''),
+      if (hit) {
+        const x = explainHit(prepared, hit)
+        const e = x.explanation
+        alignment = {
+          query: x.query,
+          segments: x.segments.map((s) => ({ type: s.type, form: s.form, length: s.chars.length })),
+          junctions: e.junctions,
           distance: e.distance,
-          cost: e.affix.cost,
-        })),
-      )
+          matrix: e.matrix.map((r) => r.map((c) => (c === Infinity ? null : c))),
+          path: e.path,
+          steps: e.alignment,
+        }
+      } else if (term === query) reason = 'same'
+      else if (Array.from(term).length < spec.minStem) reason = 'short'
+      else reason = results.flat().some((r) => r.term === term) ? 'spread' : 'bound'
+    }
     return {
       query,
       chars,
       params,
       tooShort: false,
-      charts: {
-        P: Array.from(c.P.cost, finite),
-        S: Array.from(c.S.cost, finite),
-        Pslot: Array.from(c.P.slotAt),
-        Sslot: Array.from(c.S.slotAt),
-        Pslots: c.Pslots.map((row) => Array.from(row, finite)),
-        Sslots: c.Sslots.map((row) => Array.from(row, finite)),
-        prefixEdges: edges(c.prefixEdges),
-        suffixEdges: edges(c.suffixEdges),
-        relaxations,
+      prefixLevels: prepared.prefixLevels.map((L) => rowOf(L.row)),
+      suffixLevels: prepared.suffixLevels.map((L) => rowOf(Float64Array.from(L.row).reverse())),
+      merged: {
+        P: rowOf(prepared.P.row),
+        S: rowOf(prepared.S.row),
+        crossingP: prepared.P.pending.map((p) => ({ head: metric.compiled.trieString(p.node), row: rowOf(p.row) })),
+        crossingS: prepared.S.pending.map((p) => ({ tail: p.tail.join(''), row: rowOf(p.row) })),
       },
-      variants: prepared.variants.map((v) => ({
-        text: v.text,
-        chars: [...v.chars],
-        op: v.op,
-        at: v.at,
-        before: v.before ?? null,
-        start: Array.from(v.start, finite),
-        end: Array.from(v.end, finite),
-        starts: [...v.starts],
-        ends: [...v.ends],
-        /** 變體上的位置 j → 原查詢上的位置 */
-        origin: Array.from({ length: v.chars.length + 1 }, (_, j) => v.map(j)),
-      })),
+      variants: prepared.variants.map((v) => ({ kind: v.kind, text: v.chars.join(''), chars: [...v.chars], op: v.op, start: v.start })),
       truncated: prepared.truncated,
-      candidates: results.map((list) => list.map((r) => ({ term: r.term, distance: r.distance, endAt: r.endAt ?? null }))),
+      candidates: results.map((list) => list.map((r) => ({ term: r.term, distance: r.distance, exit: r.exit ?? null }))),
       walks: walks.map((events) => events.map((e) => ({ ...e, lowerBound: finite(/** @type {number} */ (e.lowerBound)) }))),
       hits,
       cutoff,
       term,
-      pricing,
       hit,
+      alignment,
       reason,
     }
   }
 
-  return { search, prepare, finish, charts, explain, clearCache: () => scanCache.clear() }
+  return { search, prepare, finish, explain, explainHit, notesOf, notesFor, derive, clearCache: () => cache.clear() }
+}
+
+/**
+ * 超過上限的格子設成 ∞（之後的成本只會增加，它們不可能成為命中的一部分），全是 ∞ 的跨界狀態丟掉。
+ * @param {Level} level
+ * @param {number} bound
+ */
+function clip(level, bound) {
+  const cut = (/** @type {Float64Array} */ row) => {
+    for (let x = 0; x < row.length; x++) if (row[x] > bound + EPSILON) row[x] = Infinity
+  }
+  cut(level.row)
+  for (const p of level.pending) cut(p.row)
+  level.pending = level.pending.filter((p) => p.row.some((v) => v < Infinity))
 }
 
 /**
  * @param {'prefix' | 'suffix'} type
- * @param {ChartEdge} e
- * @param {string[]} chars
+ * @param {AffixEntry} a
  * @returns {MorphStepHit}
  */
-function affixStep(type, e, chars) {
-  const surface = chars.slice(e.from, e.to).join('')
-  return {
-    type,
-    form: e.affix.form,
-    ...(surface !== e.affix.form ? { surface } : {}),
-    gloss: e.affix.gloss,
-    cost: roundCost(e.affix.cost + e.distance),
-  }
+function affixStep(type, a) {
+  return { type, form: a.form, gloss: a.gloss, cost: a.cost }
 }

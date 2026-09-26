@@ -91,6 +91,7 @@ import { resolveNormalization } from './normalization.js'
  * @property {ArrayLike<number>} [start] 第 0 列的起點成本（長度 = 查詢長度 + 1）：沒有跨界狀態的 from
  * @property {ArrayLike<number>} [end] 詞尾在查詢各位置結束的附加成本（長度同上）：沒有跨界狀態的 to
  * @property {JunctionState} [from] 起點：前一段留下的交界狀態（位置 0 是詞素交界）
+ * @property {number} [startEdge] 位置 0 的種類（dp.js 的 EDGE_*）；預設有 from 時是交界，否則是詞首
  * @property {JunctionEnd} [to] 詞尾：與後一段的交界狀態耦合；結果的 distance 是整個詞的成本
  * @property {(term: string, state: JunctionState, payloads: unknown[]) => void} [onJunction]
  *   每走到一個詞尾就回呼一次，附上這一段結束時的交界狀態（複本）
@@ -119,7 +120,9 @@ import { resolveNormalization } from './normalization.js'
  * @property {number} score 正規化分數（normalization='none' 時等於 distance）
  * @property {unknown[]} payloads 加入詞庫時附帶的資料
  * @property {string} [via] 若經由查詢展開找到，記錄展開說明
- * @property {number} [endAt] 有邊界條件時，詞在查詢中結束的位置（達到最小值的 i）
+ * @property {number} [endAt] 有 to 時，詞在查詢中結束的位置（達到最小值的 x）
+ * @property {{kind: 'word' | 'row' | 'pending', x: number, tail: number}} [exit] 有 to 時，最小值來自哪裡：
+ *   詞尾（word）、交界列（row）、跨界規則（pending，tail 是 to.pending 的序號，x 是後一段開始的位置）
  */
 
 /**
@@ -421,7 +424,7 @@ export class FuzzyIndex {
         n,
         from,
         to,
-        startEdge: from ? EDGE_JUNCTION : EDGE_WORD,
+        startEdge: options.startEdge ?? (from ? EDGE_JUNCTION : EDGE_WORD),
         cross,
         /** 詞尾的交界列（算完立刻使用，所以每個通道一個緩衝就夠） */
         rowJ: junctions ? new Float64Array(n + 1) : null,
@@ -531,10 +534,13 @@ export class FuzzyIndex {
             stats.computedRows++
           }
           if (ch.onJunction) ch.onJunction(path.slice(0, j).join(''), this._junctionState(ch, matcher, j, /** @type {Float64Array} */ (rowJ)), payloads[base] ?? [])
+          /** @type {SearchResult['exit'] | undefined} */
+          let exit
           if (ch.to) {
             const coupled = this._couple(ch, matcher, j, rowF, /** @type {Float64Array} */ (rowJ))
             distance = roundCost(coupled.cost)
-            endAt = coupled.endAt
+            endAt = coupled.exit.x
+            exit = coupled.exit
           } else {
             distance = roundCost(rowF[n])
           }
@@ -545,7 +551,10 @@ export class FuzzyIndex {
               accepted = true
               /** @type {SearchResult} */
               const result = { term: path.slice(0, j).join(''), distance, score, payloads: payloads[base] ?? [] }
-              if (ch.to) result.endAt = endAt
+              if (ch.to) {
+                result.endAt = endAt
+                result.exit = exit
+              }
               ch.results.push(result)
             }
           }
@@ -634,7 +643,7 @@ export class FuzzyIndex {
    * @param {number} j
    * @param {Float64Array} rowF
    * @param {Float64Array} rowJ
-   * @returns {{cost: number, endAt: number}}
+   * @returns {{cost: number, exit: {kind: 'word' | 'row' | 'pending', x: number, tail: number}}}
    * @private
    */
   _couple(ch, matcher, j, rowF, rowJ) {
@@ -642,13 +651,14 @@ export class FuzzyIndex {
     const to = /** @type {JunctionEnd} */ (ch.to)
     const compiled = matcher.compiled
     let cost = Infinity
-    let endAt = -1
+    /** @type {{kind: 'word' | 'row' | 'pending', x: number, tail: number}} */
+    const exit = { kind: 'word', x: -1, tail: -1 }
     if (to.word) {
       for (let x = 0; x <= n; x++) {
         const v = rowF[x] + to.word[x]
         if (v < cost) {
           cost = v
-          endAt = x
+          exit.x = x
         }
       }
     }
@@ -657,7 +667,8 @@ export class FuzzyIndex {
         const v = rowJ[x] + to.row[x]
         if (v < cost) {
           cost = v
-          endAt = x
+          exit.kind = 'row'
+          exit.x = x
         }
       }
     }
@@ -684,13 +695,15 @@ export class FuzzyIndex {
             const v = fromRow[i - plan.ruleSrc[p]] + plan.ruleW[p] + after[i]
             if (v < cost) {
               cost = v
-              endAt = i
+              exit.kind = 'pending'
+              exit.x = i
+              exit.tail = b
             }
           }
         }
       }
     }
-    return { cost, endAt }
+    return { cost, exit }
   }
 
   /**

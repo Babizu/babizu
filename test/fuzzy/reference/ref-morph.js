@@ -1,222 +1,169 @@
 /**
- * @file BCDP 分段模型的窮舉參考實作（測試用的仲裁者）。
+ * @file BCDP 模型的窮舉參考實作（測試用的仲裁者）。
  *
  * 完全依照 docs/bcdp.md 第 1 節的定義，直接列舉所有「分析」：
- *   前綴鏈 · （非串接步驟） · 詞幹 · 後綴鏈
- * 每一段的距離都以獨立的 refDistance（./ref-distance.js）計算，並套用該段的位置語意（bcdp.md 1.3）：
- * - 詞綴段：左緣算詞首；右緣只在真正的詞尾或空白前算詞尾；詞綴本身（標準形式）是完整的詞
- * - 詞幹段：兩端都算詞首、詞尾（當作一個完整的詞）
- * 不用詞綴圖表、不用詞圖、不剪枝、不用還原變體的上限；重疊模板也在這裡以正規表示式另外寫一份
- * （不用 analyzer.reduplicant），所以與正式實作沒有共同的演算法。
+ *   前綴鏈 π ·（中綴或重疊 ω）· 詞根 t · 後綴鏈 σ
+ * 每個分析的成本是步驟成本的和，加上查詢與整個底層字串 π·t·σ 的聯合對齊（ref-joint.js：
+ * 規則可以跨越交界、詞首詞尾規則與構詞音變在交界適用、空白只能在詞幹內消耗）。
+ * 中綴、重疊是查詢上的模板：在查詢上拿掉，交界固定在查詢的位置上（ref-joint 的 pinIn／pinOut）。
+ * 不用交界狀態、不用詞綴 trie、不用詞圖、不剪枝、不合併；重疊模板也以正規表示式另外寫一份。
  *
  * 與正式實作共用的部分（誠實列出）：
  * - 規格的正規化與預設值（createAnalyzer(...).spec）
- * - 規則的展開與成本表（refContext 取自 metric.ruleSet.expand、metric.costs）
- * 比對的粒度是「每個詞根的成本」，不比較說明中的切法（切法由 bcdp.md 1.2 的同分規則決定，另有固定案例）。
- *
- * 語意依 bcdp.md 1.6 的決定（包括「詞綴不跨越空白」）。
+ * - 規則的展開與成本表（refJointContext 取自 metric.ruleSet.expand、metric.costs）
+ * 比對的粒度是「每個詞根的成本」，不比較說明中選了哪一條詞綴鏈（同分時的選擇另有固定案例）。
  *
  * 只適合小輸入：成本是指數級的。
  */
 
-import { refDistance } from './ref-distance.js'
+import { refJoint } from './ref-joint.js'
 
 const EPS = 1e-9
-const round = (/** @type {number} */ x) => Math.round(x * 1e9) / 1e9
 
 /**
- * @param {ReturnType<typeof import('./ref-distance.js').refContext>} ctx
+ * @param {ReturnType<typeof import('./ref-joint.js').refJointContext>} ctx
  * @param {object} input
  * @param {string} input.query 已正規化的查詢
- * @param {string[]} input.lexicon 可作為詞根的詞
+ * @param {string[]} input.lexicon 詞庫
  * @param {any} input.spec createAnalyzer(...).spec（已正規化、已補預設值）
- * @param {number} input.maxDistance 總成本上限 B
- * @param {Map<string, string>} [input.why] 除錯用：傳入時，記下每個詞根最佳分析的文字描述
- * @returns {Map<string, number>} 詞根 → W_D（沒有 lemmaSpread 截斷）
+ * @param {number} input.maxDistance 總成本上限
+ * @param {Map<string, string>} [input.why] 除錯用：記下每個詞根的最佳分析
+ * @returns {Map<string, number>} 詞根 → 最小成本（lemmaSpread 截斷後）
  */
 export function refMorph(ctx, { query, lexicon, spec, maxDistance, why }) {
   const q = Array.from(query)
   const n = q.length
   /** @type {Map<string, number>} */
   const best = new Map()
-  // 限制 6：查詢至少要比 minStem 多一個字元（bcdp.md 1.2）
+  // 查詢至少要比 minStem 多一個字元
   if (n < spec.minStem + 1) return best
-  const reduplicant = refTemplate(spec.vowels)
-  const isB = (/** @type {string | undefined} */ ch) => ch !== undefined && ctx.boundaries.has(ch)
+  const isB = (/** @type {string} */ ch) => ctx.boundaries.has(ch)
   const vowels = new Set(Array.from(spec.vowels))
-  const slots = spec.maxSteps
-  const minStemSurface = Math.max(1, spec.minStem - 1)
-  const delta = spec.affixDistance
-  const lambda = spec.lemmaDistance
+  const reduplicant = refTemplate(spec.vowels)
+  // 交界上只動查詢的規則：target 為空、不限詞尾（重疊部分與詞幹之間也是交界）
+  const inserts = [...new Set(ctx.rules.filter((r) => r.target.length === 0 && r.source.length > 0 && r.position !== 'final').map((r) => r.source.join('')))]
 
-  /** 首輔音（群）：第一個元音之前的字元 @param {string[]} w */
-  const onset = (w) => {
-    let k = 0
-    while (k < w.length && !vowels.has(w[k])) k++
-    return w.slice(0, k)
+  /** @param {Array<{form: string, cost: number}>} list */
+  const chainsOf = (list) => {
+    /** @type {Array<Array<{form: string, cost: number}>>} */
+    const out = [[]]
+    let level = [[]]
+    for (let s = 0; s < spec.maxSteps; s++) {
+      level = level.flatMap((c) => list.map((a) => [...c, a]))
+      out.push(...level)
+    }
+    return out
   }
-  const same = (/** @type {string[]} */ a, /** @type {string[]} */ b) => a.length === b.length && a.every((c, k) => c === b[k])
+  const prefixChains = chainsOf(spec.prefixes)
+  const suffixChains = chainsOf(spec.suffixes) // 由內而外（詞中的順序）
+  const sum = (/** @type {Array<{cost: number}>} */ list) => list.reduce((a, b) => a + b.cost, 0)
+  const text = (/** @type {Array<{form: string}>} */ list) => list.map((a) => a.form).join('')
 
   /**
-   * 詞綴段 v[a..b) 對應詞綴 affix 的成本（c ＋ E），超過 δ 或含空白時為 ∞。
-   * @param {string[]} v
-   * @param {number} a
-   * @param {number} b
-   * @param {{form: string, cost: number}} affix
+   * @param {string} t
+   * @param {number} cost
+   * @param {string} how
    */
-  function affixCost(v, a, b, affix) {
-    for (let p = a; p < b; p++) if (isB(v[p])) return Infinity // 詞綴不跨越空白（bcdp.md 1.6）
-    const d = refDistance(ctx, v, Array.from(affix.form), {
-      lo: a,
-      hi: b,
-      xInitial: (p) => p === a || isB(v[p - 1]),
-      xFinal: (p) => p === v.length || isB(v[p]),
-    })
-    return d <= delta + EPS ? affix.cost + d : Infinity
+  const put = (t, cost, how) => {
+    if (cost > maxDistance + EPS) return
+    if (cost < (best.get(t) ?? Infinity) - EPS) {
+      best.set(t, cost)
+      why?.set(t, `${how} = ${Math.round(cost * 1e9) / 1e9}`)
+    }
   }
 
-  /**
-   * 前綴鏈：v[0..i) 切成至多 slots 個前綴的最小成本，i 最多到 |v| − minStemSurface。
-   * @param {string[]} v
-   * @returns {Float64Array} P[i]
-   */
-  function prefixChart(v) {
-    const P = new Float64Array(v.length + 1).fill(Infinity)
-    const limit = v.length - minStemSurface
-    const rec = (/** @type {number} */ pos, /** @type {number} */ used, /** @type {number} */ cost) => {
-      if (cost < P[pos]) P[pos] = cost
-      if (used === slots) return
-      for (let b = pos + 1; b <= limit; b++) {
-        for (const p of spec.prefixes) {
-          const c = affixCost(v, pos, b, p)
-          if (c < Infinity) rec(b, used + 1, cost + c)
+  const terms = lexicon.filter((t) => t !== query && Array.from(t).length >= spec.minStem)
+  for (const t of terms) {
+    const tc = Array.from(t)
+    for (const pre of prefixChains) {
+      const p = Array.from(text(pre))
+      for (const suf of suffixChains) {
+        const s = Array.from(text(suf))
+        const J1 = p.length
+        const J2 = J1 + tc.length
+        // 每個詞素之間都是交界：前綴與前綴、前綴與詞幹、詞幹與後綴、後綴與後綴
+        /** @type {number[]} */
+        const junctions = []
+        let at = 0
+        for (const a of pre) junctions.push((at += Array.from(a.form).length))
+        at = J2
+        for (const a of suf) {
+          junctions.push(at)
+          at += Array.from(a.form).length
         }
-      }
-    }
-    rec(0, 0, 0)
-    return P
-  }
+        const u = [...p, ...tc, ...s]
+        const steps = sum(pre) + sum(suf)
+        // 音變的成本不小於 0：光是步驟就超過上限的分析不必算（只是省時間，結果不變）
+        if (steps > maxDistance + EPS) continue
 
-  /**
-   * 後綴鏈：v[k..|v|) 切成至多 slots 個後綴的最小成本；first 限定第一個後綴（詞幹交替的 before）。
-   * @param {string[]} v
-   * @param {number} k
-   * @param {number} maxCount
-   * @param {((form: string) => boolean) | null} first
-   */
-  function suffixChain(v, k, maxCount, first = null) {
-    if (k === v.length) return first ? Infinity : 0
-    if (k < minStemSurface || maxCount === 0) return Infinity
-    let best = Infinity
-    for (let b = k + 1; b <= v.length; b++) {
-      for (const s of spec.suffixes) {
-        if (first && !first(s.form)) continue
-        const c = affixCost(v, k, b, s)
-        if (c === Infinity) continue
-        best = Math.min(best, c + suffixChain(v, b, maxCount - 1, null))
-      }
-    }
-    return best
-  }
+        // 串接：至少一個詞綴
+        if (pre.length + suf.length > 0) {
+          const d = refJoint(ctx, q, u, { junctions, stem: [J1, J2] })
+          put(t, steps + d, `${text(pre)}-${t}-${text(suf)}：${steps} + ${d}`)
+        }
 
-  /** 詞幹段 v[i..k) 對 t 的距離（整段當作一個詞） @param {string[]} v @param {number} i @param {number} k @param {string[]} t */
-  const stemDistance = (v, i, k, t) => refDistance(ctx, v, t, { lo: i, hi: k })
-
-  const consider = (/** @type {string} */ term, /** @type {number} */ total, /** @type {() => string} */ describe) => {
-    if (total > maxDistance + EPS) return
-    const r = round(total)
-    if (!(best.get(term) <= r)) {
-      best.set(term, r)
-      why?.set(term, describe())
-    }
-  }
-  const terms = lexicon.filter((t) => t !== query && Array.from(t).length >= spec.minStem).map((t) => [t, Array.from(t)])
-
-  const P = prefixChart(q)
-  /** S[k]：原查詢上由 k 開始的後綴鏈（至多 slots 個） */
-  const S = Array.from({ length: n + 1 }, (_, k) => suffixChain(q, k, slots))
-  // 詞素交界不能在空白旁（bcdp.md 1.6）：接前綴的詞幹不以空白開頭、接後綴的詞幹不以空白結尾
-  for (let i = 1; i < n; i++) if (isB(q[i])) P[i] = Infinity
-  for (let k = 1; k < n; k++) if (isB(q[k - 1])) S[k] = Infinity
-
-  // ── 沒有非串接步驟：詞幹是 q[i..k) ──
-  for (let i = 0; i <= n; i++) {
-    if (P[i] === Infinity) continue
-    for (let k = i + 1; k <= n; k++) {
-      if (S[k] === Infinity || (i === 0 && k === n)) continue
-      for (const [term, t] of terms) {
-        const d = stemDistance(q, i, k, t)
-        if (d <= lambda + EPS) consider(term, P[i] + d + S[k], () => `P[${i}]=${P[i]} 詞幹 ${q.slice(i, k).join('')}→${term} ${d} S[${k}]=${S[k]}`)
-      }
-    }
-  }
-
-  // ── 中綴與重疊：在前綴鏈的終點 i，拿掉一段之後，詞幹必須越過拿掉的位置 ──
-  for (let i = 0; i < n; i++) {
-    if (P[i] === Infinity) continue
-    const rest = q.slice(i)
-    /** @type {Array<{at: number, len: number, cost: number, pattern?: string}>} 拿掉 q[at..at+len) */
-    const removals = []
-    const head = onset(rest)
-    if (!head.some(isB) && head.length < rest.length) {
-      for (const x of spec.infixes) {
-        const xs = Array.from(x.form)
-        const at = i + head.length
-        if (!same(q.slice(at, at + xs.length), xs)) continue
-        const reduced = [...q.slice(0, at), ...q.slice(at + xs.length)]
-        if (reduced.length - i < spec.minStem) continue
-        if (!same(onset(reduced.slice(i)), head)) continue
-        removals.push({ at, len: xs.length, cost: x.cost })
-      }
-    }
-    for (const r of spec.reduplication) {
-      for (let len = 1; i + len < n; len++) {
-        const red = q.slice(i, i + len)
-        const base = q.slice(i + len)
-        if (base.length < spec.minStem) break
-        if (red.some(isB)) break // 重疊部分不跨越空白
-        // 模板只套用在詞幹上：是否成立要看詞幹的終點，在下面逐一檢查
-        removals.push({ at: i, len, cost: r.cost, pattern: r.pattern })
-      }
-    }
-    for (const { at, len, cost, pattern } of removals) {
-      const v = [...q.slice(0, at), ...q.slice(at + len)]
-      const red = q.slice(at, at + len).join('')
-      for (let k = at + 1; k <= v.length; k++) {
-        // 重疊：詞幹 v[at..k) 依模板產生的重疊部分必須正好是 red（full 的模板就是詞幹本身）
-        if (pattern !== undefined && reduplicant(pattern, v.slice(at, k).join('')) !== red) continue
-        // 詞幹終點 k（在 v 上）對應原查詢的位置 k + len
-        const tail = S[k + len]
-        if (tail === Infinity) continue
-        for (const [term, t] of terms) {
-          const d = stemDistance(v, i, k, t)
-          if (d <= lambda + EPS) consider(term, P[i] + cost + d + tail, () => `P[${i}]=${P[i]} 拿掉 q[${at}..${at + len}) ${cost} 詞幹 ${v.slice(i, k).join('')}→${term} ${d} 尾 ${tail}`)
+        // 還原變體：詞幹起點 i 固定在查詢上；沒有前綴時只能在詞首
+        for (let i = 0; i < n; i++) {
+          if (pre.length === 0 && i > 0) break
+          // 中綴：詞幹首輔音之後、首元音之前；首輔音不含空白；拿掉後首輔音不變、剩下的至少 minStem 個字元
+          let h = i
+          while (h < n && !vowels.has(q[h])) h++
+          const head = q.slice(i, h)
+          if (!head.some(isB)) {
+            for (const x of spec.infixes) {
+              if (steps + x.cost > maxDistance + EPS) continue
+              const xs = Array.from(x.form)
+              if (q.slice(h, h + xs.length).join('') !== x.form) continue
+              const reduced = [...q.slice(0, h), ...q.slice(h + xs.length)]
+              if (reduced.length - i < spec.minStem) continue
+              let h2 = i
+              while (h2 < reduced.length && !vowels.has(reduced[h2])) h2++
+              if (h2 !== h) continue
+              const allowed = new Set(Array.from({ length: reduced.length + 1 }, (_, e) => e).filter((e) => e > h))
+              const d = refJoint(ctx, reduced, u, {
+                junctions,
+                stem: [J1, J2],
+                pinIn: { b: J1, a: i },
+                pinOut: { b: J2, allowed: suf.length ? allowed : new Set(allowed.has(reduced.length) ? [reduced.length] : []) },
+              })
+              put(t, steps + x.cost + d, `${text(pre)}-<${x.form}>${t}-${text(suf)}：${steps + x.cost} + ${d}`)
+            }
+          }
+          // 重疊：q[i..i+len) 是重疊部分（不含空白），詞幹的表面形式由 s（略過交界上的增生）開始
+          for (const r of spec.reduplication) {
+            if (steps + r.cost > maxDistance + EPS) continue
+            for (let len = 1; i + len < n; len++) {
+              if (n - i - len < spec.minStem) break
+              const red = q.slice(i, i + len)
+              if (red.some(isB)) break
+              const starts = [i + len]
+              for (const g of inserts) if (q.slice(i + len, i + len + Array.from(g).length).join('') === g) starts.push(i + len + Array.from(g).length)
+              for (const st of starts) {
+                const base = q.slice(st)
+                if (base.length < spec.minStem) continue
+                /** @type {number[]} */
+                const ends = []
+                for (let L = 1; L <= base.length; L++) if (reduplicant(r.pattern, base.slice(0, L).join('')) === red.join('')) ends.push(st - len + L)
+                if (!ends.length) continue
+                const reduced = [...q.slice(0, i), ...q.slice(i + len)]
+                const allowed = new Set(ends)
+                const d = refJoint(ctx, reduced, u, {
+                  junctions: [...new Set([J1, ...junctions])], // 詞幹開頭是「重疊部分｜詞幹」的交界
+                  stem: [J1, J2],
+                  pinIn: { b: J1, a: i },
+                  pinOut: { b: J2, allowed: suf.length ? allowed : new Set(allowed.has(reduced.length) ? [reduced.length] : []) },
+                })
+                put(t, steps + r.cost + d, `${text(pre)}-${red.join('')}~${t}-${text(suf)}：${steps + r.cost} + ${d}`)
+              }
+            }
+          }
         }
       }
     }
   }
-
-  // ── 詞幹交替：詞幹表面形式的結尾 surface 還原成 underlying；後面第一個後綴要在 before 中 ──
-  for (const a of spec.alternations) {
-    const surface = Array.from(a.surface)
-    const underlying = Array.from(a.underlying)
-    for (let l = spec.minStem; l < n; l++) {
-      if (!same(q.slice(l - surface.length, l), surface)) continue
-      const first = a.before ? (/** @type {string} */ form) => a.before.includes(form) : () => true
-      const tail = suffixChain(q, l, slots + 1, first)
-      if (tail === Infinity) continue
-      const cut = l - surface.length
-      const v = [...q.slice(0, cut), ...underlying, ...q.slice(l)]
-      const k = cut + underlying.length
-      for (let i = 0; i <= cut; i++) {
-        if (P[i] === Infinity) continue
-        for (const [term, t] of terms) {
-          const d = stemDistance(v, i, k, t)
-          if (d <= lambda + EPS) consider(term, P[i] + d + a.cost + tail, () => `P[${i}]=${P[i]} 交替 ${a.underlying}>${a.surface} 詞幹 ${v.slice(i, k).join('')}→${term} ${d} 尾 ${tail}`)
-        }
-      }
-    }
-  }
+  if (best.size === 0) return best
+  const cutoff = Math.min(...best.values()) + spec.lemmaSpread + EPS
+  for (const [t, c] of best) if (c > cutoff) best.delete(t)
   return best
 }
 

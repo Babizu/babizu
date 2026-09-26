@@ -125,30 +125,30 @@ describe('第二版：派生詞列表與音變 ∘ 構詞的聯合搜尋', () =>
     expect(child?.score).toBeGreaterThan(/** @type {any} */ (root).score)
   })
 
-  it('去詞綴後詞幹帶方言音變：minudox → daux（o→au），說明附上詞幹的對齊', () => {
+  it('詞幹帶方言音變：minudox → daux（o → au），說明標出音變落在詞幹', () => {
     const hit = withMorphology.search('minudox', { fields: ['native'] }).entries.find((h) => h.doc.id === 'dict:daux')
     expect(hit?.matchType).toBe('lemma')
-    expect(hit?.analysis).toMatchObject({ stem: 'daux', stemSurface: 'dox', stemDistance: 0.1 })
+    expect(hit?.analysis).toMatchObject({ stem: 'daux', cost: 0.4 })
     expect(hit?.analysis?.steps.map((s) => s.form)).toEqual(['minu'])
-    expect(hit?.analysis?.stemAlignment?.map((s) => `${s.source}→${s.target}`)).toEqual(['o→au'])
+    expect(hit?.analysis?.notes?.map((n) => `${n.source}→${n.target}@${n.where}`)).toEqual(['o→au@stem'])
   })
 
-  it('詞綴本身帶方言音變：minedaux 的 mine- 對應 minu-', () => {
+  it('詞綴本身帶方言音變：minedaux 的 mine- 對應 minu-，說明標出音變落在前綴', () => {
     const hit = withMorphology.search('minedaux', { fields: ['native'] }).entries.find((h) => h.doc.id === 'dict:daux')
     expect(hit?.matchType).toBe('lemma')
-    expect(hit?.analysis?.steps[0]).toMatchObject({ type: 'prefix', form: 'minu', surface: 'mine' })
+    expect(hit?.analysis?.steps[0]).toMatchObject({ type: 'prefix', form: 'minu' })
+    expect(hit?.analysis?.notes?.map((n) => `${n.source}→${n.target}@${n.where}`)).toEqual(['e→u@prefix'])
   })
 
   it('衍生形方向也涵蓋查詢的方言變體：查 daux 找到 mudox（經由 dox）', () => {
     const hit = withMorphology.search('daux', { fields: ['native'] }).entries.find((h) => h.doc.id === 'dict:mudox')
     expect(hit?.matchType).toBe('derived')
-    expect(hit?.analysis).toMatchObject({ stem: 'dox', stemSurface: 'daux' })
+    expect(hit?.analysis).toMatchObject({ stem: 'dox', variantOf: 'daux', variantDistance: 0.1 })
+    expect(hit?.analysis?.notes?.map((n) => `${n.source}→${n.target}@${n.where}`)).toEqual(['au→o@stem'])
   })
 
-  it('lemmaDistance: 0 時詞幹必須完全相同（關閉音變）', () => {
-    const strict = engineWith({ ...PAZEH_PROFILE, morphology: { ...MORPHOLOGY, lemmaDistance: 0 } })
-    const res = strict.search('minudox', { fields: ['native'] })
-    expect(res.entries.some((h) => h.doc.id === 'dict:daux')).toBe(false)
+  it('已移除的 lemmaDistance 會得到清楚的錯誤（音變改以整個詞計算）', () => {
+    expect(() => engineWith({ ...PAZEH_PROFILE, morphology: { ...MORPHOLOGY, lemmaDistance: 0 } })).toThrow(/lemmaDistance 已移除/)
   })
 })
 

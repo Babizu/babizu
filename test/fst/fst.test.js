@@ -50,7 +50,7 @@ describe('WFST 構詞搜尋：與窮舉相同', () => {
       suffixes: [{ form: randomString(random, alphabet, 1, 2) }, { form: 'an' }],
       infixes: [{ form: 'in' }],
       reduplication: [{ pattern: 'Ca' }],
-      alternations: [{ underlying: 'd', surface: 'n', before: ['an'] }],
+      alternations: [{ underlying: 'd', surface: 'n' }],
     }
     const analyzer = createAnalyzer(spec)
     return { metric, spec: analyzer.spec }
@@ -79,7 +79,7 @@ describe('WFST 構詞搜尋：與窮舉相同', () => {
     const chars = Array.from(t)
     let onsetLength = 0
     while (onsetLength < chars.length && !vowels.has(chars[onsetLength])) onsetLength++
-    /** @type {Array<[string, number, string | null]>} 核心形式（詞幹＋非串接步驟）、成本、交替後限制的後綴 */
+    /** @type {Array<[string, number, boolean, boolean]>} 核心形式（詞幹＋非串接步驟）、成本、後面必須接後綴（構詞音變）、是否算一個步驟 */
     const cores = []
     const redups = [['', 0]]
     // Ca 重疊：與 WFST 相同，只重疊第一個輔音（元音開頭則只重疊 a）
@@ -90,17 +90,19 @@ describe('WFST 構詞搜尋：與窮舉相同', () => {
         for (const x of spec.infixes) infixed.push([chars.slice(0, onsetLength).join('') + x.form + chars.slice(onsetLength).join(''), x.cost])
       }
       for (const [stem, xCost] of infixed) {
-        cores.push([red + stem, redCost + xCost, null])
+        const op = red !== '' || stem !== t
+        cores.push([red + stem, redCost + xCost, false, op])
+        // 構詞音變：詞幹末的字元寫成另一個，後面必須接後綴；它是規則，不另外算一個步驟
         for (const a of spec.alternations) {
-          if (stem.endsWith(a.underlying)) cores.push([red + stem.slice(0, -1) + a.surface, redCost + xCost + a.cost, a.before.join(',')])
+          if (stem.endsWith(a.underlying)) cores.push([red + stem.slice(0, -1) + a.surface, redCost + xCost + a.cost, true, op])
         }
       }
     }
     for (const [p, pc] of seqs(spec.prefixes)) {
-      for (const [core, cc, restrict] of cores) {
+      for (const [core, cc, needsSuffix, op] of cores) {
         for (const [s, sc, forms] of seqs(spec.suffixes)) {
-          if (restrict && (forms.length === 0 || !restrict.split(',').includes(forms[0]))) continue
-          const steps = (p ? 1 : 0) + (s ? 1 : 0) + (core !== t ? 1 : 0)
+          if (needsSuffix && forms.length === 0) continue
+          const steps = (p ? 1 : 0) + (s ? 1 : 0) + (op ? 1 : 0)
           if (steps === 0) continue
           out.push([p + core + s, pc + cc + sc])
         }

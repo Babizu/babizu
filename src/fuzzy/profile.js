@@ -26,7 +26,7 @@
 
 import { CostModel } from './costs.js'
 import { WeightedEditDistance } from './distance.js'
-import { validateMorphology } from './morphology.js'
+import { alternationRules, validateMorphology } from './morphology.js'
 import { createNormalizer, DEFAULT_CHAR_MAP } from './normalize.js'
 import { RuleSet } from './rules.js'
 
@@ -131,7 +131,7 @@ export function createMetricFromProfile(profile, overrides = {}) {
   assertProfile(profile)
   return new WeightedEditDistance({
     costs: new CostModel(profile.costs ?? {}),
-    rules: RuleSet.fromTable(profile.rules ?? []),
+    rules: createRulesFromProfile(profile),
     normalize: createNormalizer(normalizerOptionsFromProfile(profile)),
     boundaries: profile.boundaries ?? DEFAULTS.boundaries,
     ...overrides,
@@ -143,5 +143,6 @@ export function createMetricFromProfile(profile, overrides = {}) {
  * @param {LanguageProfile} profile
  */
 export function createRulesFromProfile(profile) {
-  return RuleSet.fromTable(profile.rules ?? [])
+  // 構詞音變也是規則（只在詞素交界適用），與方言規則放在同一個 RuleSet：構詞搜尋與普通搜尋共用一次詞圖走訪
+  return RuleSet.fromTable(profile.rules ?? []).addTable(alternationRules(profile.morphology))
 }

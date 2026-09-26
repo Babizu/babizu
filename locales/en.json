@@ -196,32 +196,30 @@
         "rejected": "“{prefix}” is a word, but its distance {distance} exceeds the limit {bound}; closer words may lie below, so the walk continues."
       },
       "bcdp": {
-        "relaxP": "Prefix chart P[{at}] = {cost}: “{surface}” matches the prefix {form}- (distance {distance}); this chain uses {slot} prefix(es).",
-        "relaxS": "Suffix chart S[{at}] = {cost}: “{surface}” matches the suffix -{form} (distance {distance}); this chain uses {slot} suffix(es).",
-        "mask": "{count} position(s) are next to a space: a morpheme boundary cannot sit next to a space, so those chains are unusable.",
-        "variant": {
-          "original": "The query “{text}” itself is one channel: the stem may start at {starts} position(s) and end at {ends}.",
-          "infix": "Removing the infix <{form}> gives the restored variant “{text}”, with its own boundary vectors.",
-          "reduplication": "Removing the reduplicant “{form}” gives the restored variant “{text}”; the template fixes the stem’s length.",
-          "alternation": "Undoing the stem alternation {form} gives the restored variant “{text}”."
+        "levelPrefix": "Prefix level {level}: the states of all chains of exactly {level} prefix(es) at their innermost boundary, merged by element-wise minimum; {count} cell(s) are finite. Each level walks the prefix trie once.",
+        "levelSuffix": "Suffix level {level}: from the word end inwards, with the mirrored rules; chains of exactly {level} suffix(es) merged into one row; {count} cell(s) are finite.",
+        "merge": "All prefix levels merge into the start of the stem ({prefix} finite cell(s)); all suffix levels merge into the coupling at the stem’s end ({suffix} finite cell(s)); {crossing} rule(s) are still open and may cross a boundary.",
+        "channel": {
+          "plain": "Channel “{text}”: no prefix, so the stem starts at the word start and needs at least one suffix.",
+          "prefix": "Channel “{text}”: the stem starts from the merged prefix state; it may be followed by suffixes or end the word.",
+          "infix": "Removing the infix <{form}> gives the restored variant “{text}”; the stem’s start is fixed in the query.",
+          "reduplication": "Removing the reduplicant “{form}” gives the restored variant “{text}”; the template fixes where the stem starts and how long it is."
         },
-        "walk": "Channel “{text}”: boundaries set to zero, limit λ = {lambda}. The walk visits {visited} node(s), prunes {pruned}, and finds {candidates} candidate(s).",
-        "skip": {
-          "whole": "“{stem}” is the whole query: that is a plain fuzzy match, not morphology.",
-          "length": "“{stem}” and “{term}” differ too much in length to be within λ, so this pair is skipped.",
-          "lambda": "The distance from “{stem}” to “{term}”, {distance}, exceeds λ = {lambda}."
-        },
-        "price": "Stem “{stem}”: {start} + {distance} + {end} = {total}.",
+        "walk": "Channel “{text}”: shares one walk of the lexicon with plain search; {visited} node(s) visited, {pruned} pruned; at word ends the stem couples with the suffixes, and {found} word(s) are within the limit.",
         "hits": "{count} root(s) found; only those with cost up to {cutoff} are kept.",
-        "hit": "Best analysis of “{term}”: cost {distance} ({steps} morphological step(s)).",
-        "tooShort": "The query is too short: morphological search needs at least one character more than the minimum stem length ({minStem}).",
+        "hit": "Best analysis of “{term}”: cost {distance} ({steps} morphological step(s)). The whole-word alignment follows step by step.",
+        "tooShort": "The query is too short: morphological search needs at least one character more than the minimum root length ({minStem}).",
         "miss": {
           "same": "“{term}” is the query itself, which is a plain fuzzy match.",
-          "short": "“{term}” is shorter than the minimum stem length.",
-          "notCandidate": "No split brings the stem within λ = {lambda} of “{term}”, so it is not a candidate.",
-          "lambda": "“{term}” is a candidate, but every split leaves the stem farther than λ = {lambda}.",
+          "short": "“{term}” is shorter than the minimum root length.",
           "bound": "Even the best analysis of “{term}” exceeds the cost limit {maxDistance}.",
           "spread": "The cost of “{term}” is above the cutoff {cutoff} (best hit + lemmaSpread), so it is not listed."
+        },
+        "align": {
+          "substitute": "“{source}” becomes “{target}”, cost {cost}.",
+          "delete": "Delete “{source}” from the query, cost {cost}.",
+          "insert": "Insert “{target}”, cost {cost}.",
+          "rule": "Rule “{source}” → “{target}”, cost {cost}."
         }
       }
     },
