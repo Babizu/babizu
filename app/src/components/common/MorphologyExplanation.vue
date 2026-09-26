@@ -2,8 +2,9 @@
 /**
  * 構詞命中的說明：詞根相符（查 mudaux → daux）或衍生形（查 baket → binaket）。
  * 按鈕顯示詞綴結構的摘要（「mu- + daux」），點開列出：
- * - 每個構詞步驟與語法說明；詞綴本身有音變時註明查詢中的寫法（mine- ≈ minu-）
- * - 詞幹的音變（dox → daux：o→au 元音）
+ * - 每個構詞步驟與語法說明、步驟本身的成本
+ * - 整個詞一起比對的音變（docs/bcdp.md 1.2）：每一個標出落在前綴、詞幹、後綴，或詞素交界
+ *   （例如 tadusaw 的 aa → a 跨越詞幹與後綴的交界）
  */
 import { computed } from 'vue'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -20,7 +21,7 @@ import {
 } from '@/lib/labels.js'
 
 const props = defineProps({
-  /** search 引擎的 LemmaAnalysis：{ stem, steps, cost, stemSurface?, stemDistance?, stemAlignment? } */
+  /** search 引擎的 LemmaAnalysis：{ stem, steps, cost, variantOf?, notes? } */
   analysis: { type: Object, required: true },
   /** lemma（查詢去詞綴 → 這個詞）或 derived（這個詞去詞綴 → 查詢） */
   matchType: { type: String, required: true },
@@ -35,18 +36,10 @@ const intro = computed(() =>
     ? t('morph.lemmaIntro', { query: props.query, stem: props.analysis.stem })
     : t('morph.derivedIntro', { term: props.term, stem: props.analysis.stem }),
 )
-/** 詞幹的音變：詞根相符時是「查詢中的詞幹 → 詞庫詞幹」，衍生形時是「查詢 → 方言變體詞幹」 */
-const stemChange = computed(() => {
-  const a = props.analysis
-  if (!a.stemSurface || a.stemSurface === a.stem) return null
-  return {
-    from: a.stemSurface,
-    to: a.stem,
-    cost: a.stemDistance ?? 0,
-    notes: /** @type {Array<{op: string, source: string, target: string, category: string | null}>} */ (a.stemAlignment ?? []),
-  }
-})
-const hasSoundChange = computed(() => !!stemChange.value || props.analysis.steps.some((s) => s.surface))
+/** 整個詞的音變（只為前幾筆結果計算，其餘為 null） */
+const notes = computed(() => /** @type {Array<{op: string, source: string, target: string, cost: number, category: string | null, where: string}>} */ (props.analysis.notes ?? []))
+const soundCost = computed(() => notes.value.reduce((sum, n) => sum + n.cost, 0))
+const hasSoundChange = computed(() => notes.value.length > 0 || props.analysis.cost > props.analysis.steps.reduce((sum, s) => sum + s.cost, 0) + 1e-9)
 </script>
 
 <template>
@@ -66,6 +59,7 @@ const hasSoundChange = computed(() => !!stemChange.value || props.analysis.steps
     <PopoverContent class="w-72 text-sm" align="start" @click.stop>
       <p class="font-medium">{{ t('morph.title') }}</p>
       <p class="text-muted-foreground mt-1 text-xs">{{ intro }}</p>
+      <p v-if="analysis.variantOf" class="text-muted-foreground mt-1 text-xs">{{ t('morph.variantOf', { query: analysis.variantOf, stem: analysis.stem }) }}</p>
       <ul class="mt-3 space-y-1.5">
         <li v-for="(step, k) in analysis.steps" :key="k" class="flex items-baseline justify-between gap-3">
           <span class="flex min-w-0 flex-wrap items-baseline gap-x-2">
@@ -73,25 +67,18 @@ const hasSoundChange = computed(() => !!stemChange.value || props.analysis.steps
             <span class="text-muted-foreground text-xs">
               {{ morphStepLabel(step.type) }}<template v-if="morphGloss(step.gloss)"> · {{ morphGloss(step.gloss) }}</template>
             </span>
-            <span v-if="step.surface" class="text-muted-foreground w-full text-xs">
-              {{ t('morph.surface', { surface: formatMorphStep({ ...step, form: step.surface }) }) }}
-            </span>
           </span>
           <span class="text-muted-foreground font-mono text-xs tabular-nums">+{{ formatDistance(step.cost) }}</span>
         </li>
-        <li v-if="stemChange" class="flex items-baseline justify-between gap-3">
-          <span class="flex min-w-0 flex-wrap items-baseline gap-x-2">
-            <code class="bg-muted native-text rounded px-1 text-xs">{{ stemChange.from }} → {{ stemChange.to }}</code>
-            <span class="text-muted-foreground text-xs">{{ t('morph.stemChange') }}</span>
-            <span v-if="stemChange.notes.length" class="text-muted-foreground w-full text-xs">
-              {{
-                stemChange.notes
-                  .map((s) => `${formatStep(s)} ${s.category ? categoryLabel(s.category) : opLabel(s.op)}`)
-                  .join(t('common.listSeparator'))
-              }}
+        <li v-if="notes.length" class="flex items-baseline justify-between gap-3">
+          <span class="flex min-w-0 flex-col gap-0.5">
+            <span class="text-muted-foreground text-xs">{{ t('morph.soundChanges') }}</span>
+            <span v-for="(n, k) in notes" :key="k" class="flex flex-wrap items-baseline gap-x-2 text-xs">
+              <code class="bg-muted native-text rounded px-1">{{ formatStep(n) }}</code>
+              <span class="text-muted-foreground">{{ n.category ? categoryLabel(n.category) : opLabel(n.op) }} · {{ t(`morph.where.${n.where}`) }}</span>
             </span>
           </span>
-          <span class="text-muted-foreground font-mono text-xs tabular-nums">+{{ formatDistance(stemChange.cost) }}</span>
+          <span class="text-muted-foreground font-mono text-xs tabular-nums">+{{ formatDistance(soundCost) }}</span>
         </li>
       </ul>
       <p class="text-muted-foreground mt-3 text-xs">{{ t('morph.note') }}</p>

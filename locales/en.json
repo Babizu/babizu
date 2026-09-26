@@ -239,40 +239,21 @@
       "why": "Why?",
       "idleDp": "Press Play or → to fill the table cell by cell; each cell takes the cheapest of its candidate transitions.",
       "idleDawg": "Press Play or → to walk the DAWG node by node; subtrees whose lower bound exceeds the limit are skipped.",
-      "idleMorph": "Press Play or → to follow the morphological search: affix charts first, then restored infixes and reduplication, the DAWG walk for candidates, and finally pricing."
+      "idleMorph": "Press Play or → to step through the morphological search: prefixes and suffixes level by level, one shared walk of the lexicon, then the whole-word alignment."
     },
     "morph": {
       "query": "Query (derived word)",
       "term": "Root",
-      "termPlaceholder": "Optional: a root to price cell by cell",
+      "termPlaceholder": "Optional: a root to explain",
       "failures": "Examples that fail:",
       "error": "Could not get the explanation (is the search index still loading?).",
       "empty": "Enter a derived word to see how morphological search finds its root.",
-      "hits": "Roots found ({count}); pick one to see its pricing",
+      "hits": "Roots found ({count}); pick one to see its analysis",
       "cutoff": "Only roots with cost up to {cutoff} are listed (best hit + lemmaSpread); whether other roots appear depends on the best hit of the same query.",
-      "charts": "① Affix charts",
       "position": "Position",
-      "chartP": "P prefix chain",
-      "chartS": "S suffix chain",
-      "variants": "② Restored variants and DAWG walk",
-      "original": "Original query",
-      "start": "Start",
-      "end": "End",
-      "startsLabel": "The stem may start at {count} position(s)",
-      "endsLabel": "The stem may end at {count} position(s)",
-      "candidates": "{count} candidate(s)",
       "truncated": "Too many restored variants; the rest were truncated.",
-      "pricing": "③ Pricing: {term}",
-      "notCandidate": "“{term}” is not a candidate in any channel: no split brings the stem within λ of it.",
-      "skip": {
-        "whole": "whole",
-        "length": "length",
-        "lambda": ">λ"
-      },
-      "pricingLegend": "Rows are stem starts i and columns stem ends k; each cell is P[i] + stem distance + S[k]. “whole” is a plain fuzzy match, “length” means the lengths differ too much, “>λ” means the stem’s sound change exceeds the limit; the primary colour marks the best split.",
       "analysis": "④ Analysis",
-      "stemAlignment": "Sound changes from the stem “{stem}” to the root “{term}”",
-      "pickTerm": "Pick a root above to see its pricing and analysis.",
+      "pickTerm": "Pick a root above to see its alignment and analysis.",
       "settingsNote": "The morphology tab uses the site’s actual dialect rules and morphology spec; the rule settings only affect the first two tabs.",
       "spec": {
         "prefixes": "Prefixes",
@@ -280,7 +261,26 @@
         "infixes": "Infixes",
         "reduplication": "Reduplication patterns",
         "alternations": "Morphophonemic alternations"
-      }
+      },
+      "levels": "① Affix levels and boundary states",
+      "levelPrefix": "Prefix level {level}",
+      "levelSuffix": "Suffix level {level}",
+      "mergedP": "Prefixes merged (stem start)",
+      "mergedS": "Suffixes merged (stem end)",
+      "levelsLegend": "Each cell is the least cost of an alignment that reaches query position x at this morpheme boundary (affix costs included); all chains of one level are merged by element-wise minimum. Suffixes are computed from the word end inwards and shown here in forward positions.",
+      "crossing": "Rules still open and able to cross a boundary: {prefix} on the prefix side, {suffix} on the suffix side (for example vowel coalescence across a｜a).",
+      "channels": "② Channels and the lexicon walk",
+      "channel": {
+        "plain": "no prefix (at least one suffix)",
+        "prefix": "after the prefixes",
+        "infix": "infix <{form}> removed",
+        "reduplication": "reduplicant {form} removed",
+        "afterPrefix": " (after a prefix)"
+      },
+      "walkResult": "{visited} node(s) visited, {found} word(s) within the limit",
+      "alignment": "③ Whole-word alignment: {term}",
+      "alignmentLegend": "The query is aligned with the underlying string “affixes · root · affixes”; ｜ marks a morpheme boundary, and rules may cross it.",
+      "soundCost": "sound changes"
     }
   },
   "locale": {
@@ -322,11 +322,17 @@
       "suffix": "Suffix",
       "infix": "Infix",
       "reduplication": "Reduplication",
-      "alternation": "Stem alternation"
+      "alternation": "Morphophonological change"
     },
-    "surface": "written {surface} in your query (dialect or spelling difference)",
-    "stemChange": "Sound change in the stem",
-    "labLink": "Step through it in the Algorithm Lab →"
+    "labLink": "Step through it in the Algorithm Lab →",
+    "soundChanges": "Sound changes (matched over the whole word)",
+    "where": {
+      "prefix": "prefix",
+      "stem": "stem",
+      "suffix": "suffix",
+      "junction": "morpheme boundary"
+    },
+    "variantOf": "The query “{query}” is a dialect spelling of “{stem}”."
   },
   "nav": {
     "about": "About",

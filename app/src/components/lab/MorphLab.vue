@@ -4,10 +4,9 @@
  *
  * 資料來自搜尋 Worker 的 explainMorphology（與搜尋同一套程式、同一個總成本上限），
  * 播放由 src/fuzzy/steps.js 的 bcdpSteps 決定。四個面板依計算順序排列：
- * ① 詞綴圖表 → ② 還原變體與詞圖走訪 → ③ 計價格網 → ④ 最終分析。
+ * ① 詞綴各層與交界狀態 → ② 通道與詞圖走訪 → ③ 整個詞的對齊 → ④ 分析。
  */
 import { bcdpStateAt, bcdpSteps } from '@babizu/fuzzy/steps.js'
-import { createSearchMetric } from '@babizu/search/text.js'
 import { useDebounceFn, useEventListener } from '@vueuse/core'
 import { computed, ref, shallowRef, watch } from 'vue'
 import AlignmentStrip from '@/components/lab/AlignmentStrip.vue'
@@ -16,7 +15,7 @@ import StepNote from '@/components/lab/StepNote.vue'
 import { Input } from '@/components/ui/input'
 import { usePlayback } from '@/composables/usePlayback.js'
 import { t } from '@/i18n.js'
-import { formatDistance, morphGloss, site } from '@/lib/labels.js'
+import { formatDistance, formatMorphStep, morphGloss, site } from '@/lib/labels.js'
 import { cn } from '@/lib/utils'
 import { getSearchClient } from '@/services/search-client.js'
 
@@ -26,8 +25,6 @@ const props = defineProps({
 })
 const emit = defineEmits(['update:query'])
 
-/** 說明詞幹音變用的距離函式：與搜尋引擎相同（站台的規則，不受實驗室的規則設定影響） */
-const metric = createSearchMetric(site.profile)
 const EXAMPLES = site.lab.morph?.examples ?? []
 const FAILURES = site.lab.morph?.failures ?? []
 const DOCS = 'https://github.com/Babizu/babizu/blob/main/docs/'
@@ -80,72 +77,53 @@ const fmt = (v) => formatDistance(v ?? Infinity)
 /** 查詢的第 i 個位置之前的字元（表頭；0 是 ε） @param {number} i */
 const charBefore = (i) => (i === 0 ? 'ε' : e.value.chars[i - 1] === ' ' ? '␣' : e.value.chars[i - 1])
 
-// ── ② 還原變體 ──
-/**
- * 以原查詢標出變體拿掉的部分（中綴、重疊部分畫刪除線）；詞幹交替改寫了字元，直接顯示變體。
- * 變體的第 j 個字元對應原查詢的第 origin[j + 1] − 1 個字元（origin 是位置的對應）。
- * @param {any} v
- * @returns {Array<{text: string, removed: boolean}>}
- */
-function variantPieces(v) {
-  if (!v.op || v.op.type === 'alternation') return [{ text: v.text, removed: false }]
-  const kept = new Set(v.chars.map((/** @type {string} */ _, /** @type {number} */ j) => v.origin[j + 1] - 1))
-  /** @type {Array<{text: string, removed: boolean}>} */
-  const pieces = []
-  e.value.chars.forEach((/** @type {string} */ ch, /** @type {number} */ i) => {
-    const removed = !kept.has(i)
-    const last = pieces.at(-1)
-    if (last && last.removed === removed) last.text += ch
-    else pieces.push({ text: ch, removed })
-  })
-  return pieces
-}
-/** 變體的說明（原查詢、中綴、重疊、交替） @param {any} v */
-function variantLabel(v) {
-  if (!v.op) return t('lab.morph.original')
-  return `${t(`morph.type.${v.op.type}`)} ${v.op.type === 'infix' ? `<${v.op.form}>` : v.op.form}`
-}
-
-// ── ③ 計價格網 ──
-const pricing = computed(() => (e.value?.pricing ?? []).filter((/** @type {any} */ p) => p.candidate))
-/** @param {any} p */
-const pricingRows = (p) => [...new Set(p.cells.map((/** @type {any} */ c) => c.i))].sort((a, b) => a - b)
-/** @param {any} p */
-const pricingCols = (p) => [...new Set(p.cells.map((/** @type {any} */ c) => c.k))].sort((a, b) => a - b)
-/** @param {any} p @param {number} i @param {number} k */
-const cellAt = (p, i, k) => p.cells.find((/** @type {any} */ c) => c.i === i && c.k === k) ?? null
-/** @param {any} p @param {number} i @param {number} k */
-const isPriced = (p, i, k) => state.value?.priced[p.variant]?.some((/** @type {any} */ c) => c.i === i && c.k === k) ?? false
-/** 最佳格（整個變體計價完之後才標出） @param {any} p @param {number} i @param {number} k */
-const isBest = (p, i, k) => Boolean(p.best && p.best.i === i && p.best.k === k && (state.value?.priced[p.variant]?.length ?? 0) >= p.cells.length)
-
-// ── ④ 最終分析 ──
-/** 依詞形中的位置排列的步驟：前綴、重疊與中綴、詞幹、交替、後綴 */
-const pieces = computed(() => {
-  const hit = e.value?.hit
-  if (!hit) return []
-  const outer = hit.steps
-  const before = outer.filter((/** @type {any} */ s) => s.type === 'prefix' || s.type === 'reduplication' || s.type === 'infix')
-  const alternation = outer.filter((/** @type {any} */ s) => s.type === 'alternation')
-  const after = outer.filter((/** @type {any} */ s) => s.type === 'suffix').reverse()
+// ── ① 詞綴各層：前綴各層、前綴合併、後綴各層、後綴合併（依計算順序顯示） ──
+const levelRows = computed(() => {
+  const x = e.value
+  if (!x || x.tooShort) return []
   return [
-    ...before.map((/** @type {any} */ s) => ({ kind: s.type, text: s.type === 'prefix' ? `${s.surface ?? s.form}-` : s.type === 'infix' ? `<${s.form}>` : `${s.form}~`, cost: s.cost, gloss: s.gloss })),
-    { kind: 'stem', text: hit.stemSurface, cost: hit.stemDistance, gloss: null },
-    ...alternation.map((/** @type {any} */ s) => ({ kind: s.type, text: s.form, cost: s.cost, gloss: null })),
-    ...after.map((/** @type {any} */ s) => ({ kind: s.type, text: `-${s.surface ?? s.form}`, cost: s.cost, gloss: s.gloss })),
+    ...x.prefixLevels.map((/** @type {any[]} */ row, /** @type {number} */ s) => ({
+      key: `p${s}`,
+      label: t('lab.morph.levelPrefix', { level: s + 1 }),
+      row,
+      shown: (state.value?.prefixLevels ?? 0) > s,
+      focused: focus.value?.side === 'prefix' && focus.value?.level === s + 1,
+    })),
+    { key: 'P', label: t('lab.morph.mergedP'), row: x.merged.P, shown: state.value?.merged, focused: state.value?.merged && step.value?.kind === 'merge', merged: true },
+    ...x.suffixLevels.map((/** @type {any[]} */ row, /** @type {number} */ s) => ({
+      key: `s${s}`,
+      label: t('lab.morph.levelSuffix', { level: s + 1 }),
+      row,
+      shown: (state.value?.suffixLevels ?? 0) > s,
+      focused: focus.value?.side === 'suffix' && focus.value?.level === s + 1,
+    })),
+    { key: 'S', label: t('lab.morph.mergedS'), row: x.merged.S, shown: state.value?.merged, focused: state.value?.merged && step.value?.kind === 'merge', merged: true },
   ]
 })
-/** 詞幹片段對詞根的對齊（與搜尋相同的距離函式） */
-const stemAlignment = computed(() => {
-  const hit = e.value?.hit
-  if (!hit || hit.stemDistance === 0) return null
-  return metric.explainChars(Array.from(hit.stemSurface), metric.prepare(hit.term)).alignment
+
+// ── ② 通道 ──
+/** 通道的說明 @param {any} v */
+const channelLabel = (v) =>
+  t(`lab.morph.channel.${v.kind}`, { form: v.op?.form ?? '' }) + (v.op && v.prefixed ? t('lab.morph.channel.afterPrefix') : '')
+
+// ── ③ 整個詞的對齊 ──
+/** 各詞素依序排列，交界以｜分開 */
+const segments = computed(() => (e.value?.alignment?.segments ?? []).map((/** @type {any} */ s) => ({ ...s, text: formatMorphStep({ type: s.type, form: s.form }) })))
+const alignedSteps = computed(() => (e.value?.alignment?.steps ?? []).slice(0, state.value?.aligned ?? 0))
+
+// ── ④ 分析 ──
+const stepCost = computed(() => (e.value?.hit?.steps ?? []).reduce((/** @type {number} */ sum, /** @type {any} */ s) => sum + s.cost, 0))
+/** 步驟依詞中的順序排列（hit.steps 由外而內）：前綴、重疊在詞幹前，中綴在詞幹上，後綴在詞幹後 */
+const pieces = computed(() => {
+  const all = e.value?.hit?.steps ?? []
+  const of = (/** @type {string[]} */ types) => all.filter((/** @type {any} */ s) => types.includes(s.type))
+  return { before: of(['prefix', 'reduplication']), inner: of(['infix']), after: of(['suffix']).reverse() }
 })
 
 /** 面板是否已經輪到（目前階段之後的面板淡化） */
-const PHASES = ['charts', 'variants', 'walk', 'pricing', 'result']
+const PHASES = ['levels', 'channels', 'result', 'alignment']
 /** @param {string} phase */
-const reached = (phase) => state.value && (state.value.result || PHASES.indexOf(state.value.phase) >= PHASES.indexOf(phase))
+const reached = (phase) => state.value && PHASES.indexOf(state.value.phase) >= PHASES.indexOf(phase)
 const PANEL = 'bg-card rounded-lg border p-4'
 </script>
 
@@ -223,14 +201,14 @@ const PANEL = 'bg-card rounded-lg border p-4'
       <StepNote :step="step" :playing="playback.playing.value" :idle="t('lab.playback.idleMorph')" />
 
       <template v-if="!e.tooShort && state">
-        <!-- ① 詞綴圖表 -->
-        <section :class="cn(PANEL, !reached('charts') && 'opacity-50')" aria-labelledby="morph-charts">
-          <h3 id="morph-charts" class="mb-3 flex items-baseline justify-between gap-3 text-sm font-semibold">
-            {{ t('lab.morph.charts') }}
-            <a :href="`${DOCS}bcdp.md#5-詞綴圖表是最短路徑`" target="_blank" rel="noopener" class="text-primary text-xs font-normal">bcdp.md §5</a>
+        <!-- ① 詞綴各層與交界狀態 -->
+        <section :class="PANEL" aria-labelledby="morph-levels">
+          <h3 id="morph-levels" class="mb-3 flex items-baseline justify-between gap-3 text-sm font-semibold">
+            {{ t('lab.morph.levels') }}
+            <a :href="`${DOCS}bcdp.md#5-詞綴一層一層合併`" target="_blank" rel="noopener" class="text-primary text-xs font-normal">bcdp.md §4–5</a>
           </h3>
           <div class="scrollbar-thin overflow-x-auto">
-            <table class="border-collapse font-mono text-xs tabular-nums" :aria-label="t('lab.morph.charts')">
+            <table class="border-collapse font-mono text-xs tabular-nums" :aria-label="t('lab.morph.levels')">
               <thead>
                 <tr>
                   <th class="bg-muted h-9 min-w-11 border px-2 text-left font-sans font-normal" scope="col">{{ t('lab.morph.position') }}</th>
@@ -241,115 +219,67 @@ const PANEL = 'bg-card rounded-lg border p-4'
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="table in ['P', 'S']" :key="table">
-                  <th scope="row" class="bg-muted h-9 border px-2 text-left font-sans font-normal">{{ t(`lab.morph.chart${table}`) }}</th>
+                <tr v-for="r in levelRows" :key="r.key" :class="cn(!r.shown && 'opacity-40', r.merged && 'border-t-2')">
+                  <th scope="row" :class="cn('bg-muted h-9 border px-2 text-left font-sans font-normal whitespace-nowrap', r.merged && 'font-medium')">{{ r.label }}</th>
                   <td
-                    v-for="(_, i) in e.chars.length + 1"
+                    v-for="(v, i) in r.row"
                     :key="i"
-                    :class="
-                      cn(
-                        'lab-cell h-9 min-w-11 border text-center',
-                        state[table][i] === null && 'text-muted-foreground/50',
-                        focus?.table === table && focus?.at === i && 'ring-primary ring-2 ring-inset',
-                      )
-                    "
+                    :class="cn('lab-cell h-9 min-w-11 border text-center', (!r.shown || v === null) && 'text-muted-foreground/50', r.focused && 'ring-primary ring-2 ring-inset')"
                   >
-                    {{ fmt(state[table][i]) }}
+                    {{ r.shown ? fmt(v) : '·' }}
                   </td>
                 </tr>
               </tbody>
             </table>
           </div>
+          <p class="text-muted-foreground mt-2 text-xs">{{ t('lab.morph.levelsLegend') }}</p>
+          <p v-if="state.merged && e.merged.crossingP.length + e.merged.crossingS.length" class="text-muted-foreground mt-1 text-xs">
+            {{ t('lab.morph.crossing', { prefix: e.merged.crossingP.length, suffix: e.merged.crossingS.length }) }}
+          </p>
         </section>
 
-        <!-- ② 還原變體與詞圖走訪 -->
-        <section :class="cn(PANEL, !reached('variants') && 'opacity-50')" aria-labelledby="morph-variants">
-          <h3 id="morph-variants" class="mb-3 flex items-baseline justify-between gap-3 text-sm font-semibold">
-            {{ t('lab.morph.variants') }}
-            <a :href="`${DOCS}bcdp.md#7-非串接步驟還原變體`" target="_blank" rel="noopener" class="text-primary text-xs font-normal">bcdp.md §7–8</a>
+        <!-- ② 通道與詞圖走訪 -->
+        <section :class="cn(PANEL, !reached('channels') && 'opacity-50')" aria-labelledby="morph-channels">
+          <h3 id="morph-channels" class="mb-3 flex items-baseline justify-between gap-3 text-sm font-semibold">
+            {{ t('lab.morph.channels') }}
+            <a :href="`${DOCS}bcdp.md#7-詞幹一次走訪與耦合`" target="_blank" rel="noopener" class="text-primary text-xs font-normal">bcdp.md §6–7</a>
           </h3>
           <ol class="space-y-2">
             <li
-              v-for="(v, vi) in e.variants"
-              v-show="vi < state.variants"
-              :key="vi"
-              :class="cn('lab-cell grid gap-x-4 gap-y-1 rounded-md border px-3 py-2 sm:grid-cols-[minmax(0,1fr)_auto]', focus?.variant === vi && 'ring-primary ring-2 ring-inset')"
+              v-for="(v, c) in e.variants"
+              v-show="c < state.channels"
+              :key="c"
+              :class="cn('lab-cell grid gap-x-4 gap-y-1 rounded-md border px-3 py-2 sm:grid-cols-[minmax(0,1fr)_auto]', focus?.channel === c && 'ring-primary ring-2 ring-inset')"
             >
               <div class="min-w-0">
-                <p class="native-text text-base">
-                  <template v-for="(piece, k) in variantPieces(v)" :key="k">
-                    <del v-if="piece.removed" class="bg-muted text-muted-foreground decoration-foreground/60 rounded-sm px-px">{{ piece.text }}</del>
-                    <template v-else>{{ piece.text }}</template>
-                  </template>
-                  <span v-if="v.op && v.op.type !== 'alternation'" class="text-muted-foreground ml-2 text-sm">→ {{ v.text }}</span>
-                </p>
-                <p class="text-muted-foreground text-xs">{{ variantLabel(v) }}</p>
+                <p class="native-text text-base">{{ v.text }}</p>
+                <p class="text-muted-foreground text-xs">{{ channelLabel(v) }}</p>
               </div>
-              <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
-                <span class="flex items-center gap-1" :aria-label="t('lab.morph.startsLabel', { count: v.starts.length })">
-                  {{ t('lab.morph.start') }}
-                  <span v-for="(c, i) in v.start" :key="i" :class="cn('size-2 rounded-full border', c !== null ? 'bg-foreground border-foreground' : 'border-muted-foreground/60')" aria-hidden="true" />
-                </span>
-                <span class="flex items-center gap-1" :aria-label="t('lab.morph.endsLabel', { count: v.ends.length })">
-                  {{ t('lab.morph.end') }}
-                  <span v-for="(c, i) in v.end" :key="i" :class="cn('size-2 rounded-full border', c !== null ? 'bg-foreground border-foreground' : 'border-muted-foreground/60')" aria-hidden="true" />
-                </span>
-                <span class="text-muted-foreground tabular-nums">
-                  {{ vi < state.walks ? t('lab.morph.candidates', { count: e.candidates[vi].length }) : '…' }}
-                </span>
-              </div>
+              <p class="text-muted-foreground self-center text-xs tabular-nums">
+                {{ c < state.walks ? t('lab.morph.walkResult', { visited: e.walks[c].length, found: e.candidates[c].length }) : '…' }}
+              </p>
             </li>
           </ol>
           <p v-if="e.truncated" class="text-muted-foreground mt-2 text-xs">{{ t('lab.morph.truncated') }}</p>
         </section>
 
-        <!-- ③ 計價格網 -->
-        <section v-if="e.term" :class="cn(PANEL, !reached('pricing') && 'opacity-50')" aria-labelledby="morph-pricing">
-          <h3 id="morph-pricing" class="mb-3 flex items-baseline justify-between gap-3 text-sm font-semibold">
-            {{ t('lab.morph.pricing', { term: e.term }) }}
-            <a :href="`${DOCS}bcdp.md#9-兩階段候選與計價`" target="_blank" rel="noopener" class="text-primary text-xs font-normal">bcdp.md §9</a>
+        <!-- ③ 整個詞的對齊 -->
+        <section v-if="e.alignment" :class="cn(PANEL, !reached('alignment') && !state.result && 'opacity-50')" aria-labelledby="morph-alignment">
+          <h3 id="morph-alignment" class="mb-3 flex items-baseline justify-between gap-3 text-sm font-semibold">
+            {{ t('lab.morph.alignment', { term: e.term }) }}
+            <a :href="`${DOCS}bcdp.md#8-說明找回詞綴鏈與整個詞的對齊`" target="_blank" rel="noopener" class="text-primary text-xs font-normal">bcdp.md §8</a>
           </h3>
-          <p v-if="!pricing.length" class="text-muted-foreground text-sm">{{ t('lab.morph.notCandidate', { term: e.term }) }}</p>
-          <div v-for="p in pricing" :key="p.variant" class="mb-4 last:mb-0">
-            <p class="native-text text-muted-foreground mb-1.5 text-xs">{{ e.variants[p.variant].text }}</p>
-            <div class="scrollbar-thin overflow-x-auto">
-              <table class="border-collapse font-mono text-xs tabular-nums" :aria-label="t('lab.morph.pricing', { term: e.term })">
-                <thead>
-                  <tr>
-                    <th class="bg-muted h-9 min-w-14 border px-2 font-sans font-normal" scope="col">i ＼ k</th>
-                    <th v-for="k in pricingCols(p)" :key="k" scope="col" class="bg-muted h-9 min-w-16 border px-2 font-sans font-medium">{{ k }}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="i in pricingRows(p)" :key="i">
-                    <th scope="row" class="bg-muted h-9 border px-2 font-sans font-medium">{{ i }}</th>
-                    <td
-                      v-for="k in pricingCols(p)"
-                      :key="k"
-                      :class="
-                        cn(
-                          'lab-cell h-9 min-w-16 border px-2 text-center',
-                          isBest(p, i, k) && 'bg-primary text-primary-foreground font-semibold',
-                          focus?.variant === p.variant && focus?.i === i && focus?.k === k && (isBest(p, i, k) ? 'ring-primary-foreground ring-2 ring-inset' : 'ring-primary ring-2 ring-inset'),
-                          (!cellAt(p, i, k) || !isPriced(p, i, k)) && 'text-muted-foreground/50',
-                        )
-                      "
-                      :title="cellAt(p, i, k) ? e.variants[p.variant].chars.slice(i, k).join('') : undefined"
-                    >
-                      <template v-if="!cellAt(p, i, k)">—</template>
-                      <template v-else-if="!isPriced(p, i, k)">·</template>
-                      <template v-else-if="cellAt(p, i, k).skip">{{ t(`lab.morph.skip.${cellAt(p, i, k).skip}`) }}</template>
-                      <template v-else>{{ fmt(cellAt(p, i, k).total) }}</template>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-          <p class="text-muted-foreground mt-2 text-xs">{{ t('lab.morph.pricingLegend') }}</p>
+          <p class="native-text mb-3 flex flex-wrap items-center gap-1 text-base">
+            <template v-for="(s, k) in segments" :key="k">
+              <span v-if="k > 0" class="text-muted-foreground px-0.5" aria-hidden="true">｜</span>
+              <span :class="cn('rounded-sm px-1.5', s.type === 'stem' ? 'bg-accent text-accent-foreground' : 'bg-muted')">{{ s.text }}</span>
+            </template>
+          </p>
+          <AlignmentStrip :steps="alignedSteps" compact />
+          <p class="text-muted-foreground mt-2 text-xs">{{ t('lab.morph.alignmentLegend') }}</p>
         </section>
 
-        <!-- ④ 最終分析 -->
+        <!-- ④ 分析 -->
         <section :class="cn(PANEL, !state.result && 'opacity-50')" aria-labelledby="morph-analysis">
           <h3 id="morph-analysis" class="mb-3 flex items-baseline justify-between gap-3 text-sm font-semibold">
             {{ t('lab.morph.analysis') }}
@@ -357,33 +287,32 @@ const PANEL = 'bg-card rounded-lg border p-4'
           </h3>
           <template v-if="e.hit">
             <ol class="flex flex-wrap items-stretch gap-1.5" :aria-label="t('lab.morph.analysis')">
-              <li
-                v-for="(piece, k) in pieces"
-                :key="k"
-                :class="
-                  cn(
-                    'flex flex-col items-center rounded-md px-2.5 py-1',
-                    piece.kind === 'stem' ? (state.result ? 'bg-primary text-primary-foreground' : 'bg-accent text-accent-foreground') : 'bg-muted',
-                  )
-                "
-              >
-                <span class="native-text text-base leading-tight">{{ piece.text }}</span>
-                <span class="text-[10px] leading-tight opacity-80">
-                  {{ piece.kind === 'stem' ? `≈ ${e.hit.term}` : morphGloss(piece.gloss) || t(`morph.type.${piece.kind}`) }}
-                </span>
-                <span class="font-mono text-[10px] tabular-nums opacity-80">+{{ fmt(piece.cost) }}</span>
+              <li v-for="(s, k) in pieces.before" :key="`b${k}`" class="bg-muted flex flex-col items-center rounded-md px-2.5 py-1">
+                <span class="native-text text-base leading-tight">{{ formatMorphStep(s) }}</span>
+                <span class="text-[10px] leading-tight opacity-80">{{ morphGloss(s.gloss) || t(`morph.type.${s.type}`) }}</span>
+                <span class="font-mono text-[10px] tabular-nums opacity-80">+{{ fmt(s.cost) }}</span>
+              </li>
+              <li :class="cn('flex flex-col items-center rounded-md px-2.5 py-1', state.result ? 'bg-primary text-primary-foreground' : 'bg-accent text-accent-foreground')">
+                <span class="native-text text-base leading-tight">{{ e.hit.term }}</span>
+                <span class="text-[10px] leading-tight opacity-80">{{ t('morph.where.stem') }}</span>
+              </li>
+              <li v-for="(s, k) in [...pieces.inner, ...pieces.after]" :key="`a${k}`" class="bg-muted flex flex-col items-center rounded-md px-2.5 py-1">
+                <span class="native-text text-base leading-tight">{{ formatMorphStep(s) }}</span>
+                <span class="text-[10px] leading-tight opacity-80">{{ morphGloss(s.gloss) || t(`morph.type.${s.type}`) }}</span>
+                <span class="font-mono text-[10px] tabular-nums opacity-80">+{{ fmt(s.cost) }}</span>
+              </li>
+              <li class="bg-muted flex flex-col items-center rounded-md px-2.5 py-1">
+                <span class="text-base leading-tight">≈</span>
+                <span class="text-[10px] leading-tight opacity-80">{{ t('lab.morph.soundCost') }}</span>
+                <span class="font-mono text-[10px] tabular-nums opacity-80">+{{ fmt(e.alignment?.distance ?? 0) }}</span>
               </li>
             </ol>
             <p class="mt-3 font-mono text-sm tabular-nums">
-              {{ pieces.map((p) => fmt(p.cost)).join(' ＋ ') }} ＝ <span class="font-semibold">{{ fmt(e.hit.distance) }}</span>
+              {{ fmt(stepCost) }} ＋ {{ fmt(e.alignment?.distance ?? 0) }} ＝ <span class="font-semibold">{{ fmt(e.hit.distance) }}</span>
             </p>
-            <div v-if="stemAlignment" class="mt-3">
-              <p class="text-muted-foreground mb-2 text-xs">{{ t('lab.morph.stemAlignment', { stem: e.hit.stemSurface, term: e.hit.term }) }}</p>
-              <AlignmentStrip :steps="stemAlignment" compact />
-            </div>
           </template>
           <p v-else-if="e.term" class="text-muted-foreground text-sm">
-            {{ t(`lab.note.bcdp.miss.${e.reason}`, { term: e.term, lambda: fmt(e.params.lemmaDistance), maxDistance: fmt(e.params.maxDistance), cutoff: fmt(e.cutoff) }) }}
+            {{ t(`lab.note.bcdp.miss.${e.reason}`, { term: e.term, maxDistance: fmt(e.params.maxDistance), cutoff: fmt(e.cutoff) }) }}
           </p>
           <p v-else class="text-muted-foreground text-sm">{{ t('lab.morph.pickTerm') }}</p>
         </section>
