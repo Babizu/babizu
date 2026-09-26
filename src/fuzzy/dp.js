@@ -29,12 +29,22 @@
  * - allowFinal = true ：假設 Y[j] 不存在或是邊界（列 F_j），此時才允許 final 規則
  * 往後的列引用第 j 列時，依實際的 Y[j] 選用正確的那一列。
  *
- * ## 邊界條件（構詞搜尋用）
- * 預設起點只有 D(0, 0) = 0。`compileQuery` 可以另外給起點成本向量 start：
- *   D(i, 0) = min( start[i], D(i-1, 0) + del(X[i-1]) )
- * 讓候選字串可以從 X 的任何位置 i 開始比對（前面的部分由呼叫端以 start[i] 計價，例如前綴鏈）。
- * 結尾的對應（後綴鏈）由呼叫端在詞尾取 min_i D(i, M) + end[i]。
- * 所有成本仍然非負，剪枝的下界論證不受影響（見 docs/bcdp.md 第 4、6 節）。
+ * ## 詞素交界（構詞搜尋用，docs/bcdp.md 第 1、4 節）
+ * 構詞搜尋把「前綴鏈 · 詞幹 · 後綴鏈」當作一條底層字串 Y，詞素交界是 Y 上的位置。
+ * 一次 DP 只走其中一段（一個詞綴或詞幹），前一段留下的「交界狀態」當作這一段的起點：
+ * - 起點列：`compileQuery` 的 start 就是交界列 R，D(i, 0) = min( R[i], D(i-1, 0) + del(X[i-1]) )
+ * - 還沒走完、跨越交界的規則：由呼叫端以「跨界狀態」（target trie 的節點＋它起點那一列）交給
+ *   prepareColumn，與本段路徑上的規則一起處理
+ *
+ * 交界的位置語意（Y 側在交界時，X 側不另外檢查，因為交界就是對齊經過的切點）：
+ * - 位置種類：EDGE_NONE 詞中、EDGE_WORD 詞首詞尾（或邊界字元旁）、EDGE_JUNCTION 詞素交界、
+ *   EDGE_CROSS 規則跨越了交界
+ * - initial／final 規則：Y 側在 EDGE_WORD 時照舊也要求 X 側在詞首／詞尾；在 EDGE_JUNCTION 時不要求
+ * - 構詞音變（只在交界適用的規則）：只看 EDGE_JUNCTION
+ * - 跨越交界的只能是沒有位置限制的方言規則
+ * - 交界列（第 0 列與詞尾的交界列）上，X 的切點不能在邊界字元（空白）旁：構詞不跨越空白
+ * 沒有交界時（普通搜尋），每個規則的取捨與加入這些語意之前完全相同。
+ * 所有成本仍然非負，剪枝的下界論證不受影響（見 docs/bcdp.md 第 6 節）。
  *
  * ## 實作：讓每一格只剩陣列存取與加法
  *
@@ -89,6 +99,37 @@ export function roundCost(x) {
 const FLAG_FINAL = 1
 /** 規則旗標：initial 規則（Y 側的 target 必須在詞首） */
 const FLAG_INITIAL = 2
+/** 規則旗標：X 側的位置條件（詞首／詞尾）在這個位置不成立；只有 Y 側在詞素交界時才可以用 */
+const FLAG_XFAIL = 4
+/** 規則旗標：構詞音變，只在詞素交界適用 */
+const FLAG_JUNCTION = 8
+/** 規則旗標：source 含邊界字元；交界列上不能用（構詞不跨越空白） */
+const FLAG_BSRC = 16
+
+/** 位置種類：詞中 */
+export const EDGE_NONE = 0
+/** 位置種類：詞首或詞尾（字串兩端、邊界字元旁） */
+export const EDGE_WORD = 1
+/** 位置種類：詞素交界 */
+export const EDGE_JUNCTION = 2
+/** 位置種類：規則的 target 跨越了詞素交界（起點在前一段） */
+export const EDGE_CROSS = 3
+
+/**
+ * 有位置旗標的規則在這裡是否適用。
+ * @param {number} flag 規則旗標（≠ 0）
+ * @param {number} start target 起點的位置種類
+ * @param {number} end target 終點的位置種類（即 fillRow 的 allowFinal）
+ */
+function admissible(flag, start, end) {
+  if (start === EDGE_CROSS) return false
+  const strict = flag & (FLAG_XFAIL | FLAG_JUNCTION)
+  if (flag & FLAG_INITIAL && (start === EDGE_NONE || (start === EDGE_WORD && strict))) return false
+  if (flag & FLAG_FINAL && (end === EDGE_NONE || (end === EDGE_WORD && strict))) return false
+  // 沒有指定側的構詞音變：target 的任一端碰到交界即可
+  if (flag & FLAG_JUNCTION && !(flag & (FLAG_INITIAL | FLAG_FINAL)) && start !== EDGE_JUNCTION && end !== EDGE_JUNCTION) return false
+  return true
+}
 
 /**
  * @typedef {import('./rules.js').Rule & {sourceLength: number, targetLength: number, targetId: number}} CompiledRule
@@ -107,19 +148,22 @@ const FLAG_INITIAL = 2
  * @property {Int32Array} ruleI 規則的 source 結束在 X 的位置 i
  * @property {Int32Array} ruleSrc source 長度
  * @property {Float64Array} ruleW 權重
- * @property {Uint8Array} ruleFlag FLAG_FINAL／FLAG_INITIAL
+ * @property {Uint8Array} ruleFlag FLAG_*
  * @property {CompiledRule[]} ruleRef 規則本身（追蹤模式回報用）
- * @property {boolean} hasFinal 是否有任何 final 規則匹配到 X（沒有的話 F_j 恆等於 N_j）
+ * @property {boolean} hasFinal 是否有任何「在詞尾適用」的規則匹配到 X（沒有的話 F_j 恆等於 N_j）
  * @property {Float64Array | null} start 第 0 列的起點成本（null 表示只有 D(0, 0) = 0）
+ * @property {Uint8Array} junctionMask junctionMask[i] ＝ 1：X 的位置 i 在邊界字元旁，不能當作詞素交界的切點
+ * @property {boolean} lockBoundary X 的邊界字元完全不能被消耗（詞綴的 DP 用）
  * @property {Float64Array} ruleMin 暫存：本列所有「來源在較早的列」的規則轉移的最小值
  * @property {ColumnContext} column 計算列時重複使用的暫存
  */
 
 /**
  * @typedef {object} QueryOptions
- * @property {ArrayLike<number> | null} [start] 起點成本向量（長度 N + 1）；見檔頭「邊界條件」
- * @property {ArrayLike<boolean> | null} [extraInitial] 額外視為「X 的詞首」的位置（例如前綴鏈的終點）
- * @property {ArrayLike<boolean> | null} [extraFinal] 額外視為「X 的詞尾」的位置（例如後綴鏈的起點）
+ * @property {ArrayLike<number> | null} [start] 起點成本向量（長度 N + 1），即前一段留下的交界列；見檔頭「詞素交界」
+ * @property {boolean} [junctions=false] 這段 DP 會碰到詞素交界：保留 X 側位置條件不成立的規則與構詞音變
+ *   （它們只在 Y 側位於交界時適用）。沒有交界的普通搜尋不需要，規則表與加入交界之前完全相同
+ * @property {boolean} [lockBoundary=false] X 的邊界字元（空白）完全不能被消耗：詞綴不含空白
  */
 
 /**
@@ -159,9 +203,11 @@ export class CompiledRules {
     /** @type {CompiledRule[]} */
     this.rules = rules.map((r) => ({
       ...r,
+      junction: Boolean(r.junction),
       sourceLength: Array.from(r.source).length,
       targetLength: Array.from(r.target).length,
       targetId: /** @type {number} */ (targetIds.get(r.target)),
+      sourceBoundary: Array.from(r.source).some((ch) => boundaries.has(ch)),
     }))
     /** @type {Map<string, CompiledRule[]>} 以 source 字串為鍵 */
     this.bySource = new Map()
@@ -187,6 +233,10 @@ export class CompiledRules {
     const targetAt = [-1]
     /** @type {number[]} 經過此節點、且比它更長的 target 的最小規則權重（跨列剪枝用） */
     const jump = [Infinity]
+    /** @type {number[]} 父節點（根為 -1）與進入這個節點的字元編號：由節點還原字串用 */
+    const parent = [-1]
+    /** @type {number[]} */
+    const via = [-1]
     const width = this.trieWidth
     for (let k = 0; k < width; k++) child.push(-1)
     this.targets.forEach((t, T) => {
@@ -199,6 +249,8 @@ export class CompiledRules {
           depth.push(depth[s] + 1)
           targetAt.push(-1)
           jump.push(Infinity)
+          parent.push(s)
+          via.push(c)
           for (let k = 0; k < width; k++) child.push(-1)
           child[s * width + c] = next
         }
@@ -221,6 +273,8 @@ export class CompiledRules {
     this.trieDepth = Int32Array.from(depth)
     this.trieTarget = Int32Array.from(targetAt)
     this.trieJump = Float64Array.from(jump)
+    this.trieParent = Int32Array.from(parent)
+    this.trieVia = Int32Array.from(via)
     /** target 長度（依 target 編號） */
     this.targetLength = Int32Array.from(this.targets, (t) => Array.from(t).length)
     /** 空字串 target（脫落規則）的編號；沒有則為 -1 */
@@ -253,6 +307,33 @@ export class CompiledRules {
   }
 
   /**
+   * target trie 節點代表的字串（由根到這個節點）。
+   * @param {number} node
+   */
+  trieString(node) {
+    /** @type {string[]} */
+    const out = []
+    for (let s = node; s > 0; s = this.trieParent[s]) out.push(this.chars[this.trieVia[s]])
+    return out.reverse().join('')
+  }
+
+  /**
+   * 由 node 沿著字元 chars 往下走；走不下去時回傳 -1。
+   * @param {number} node
+   * @param {Iterable<string>} chars
+   */
+  trieWalk(node, chars) {
+    let s = node
+    for (const ch of chars) {
+      const c = this.idOf(ch)
+      if (c >= this.trieWidth) return -1
+      s = this.trieChild[s * this.trieWidth + c]
+      if (s === -1) return -1
+    }
+    return s
+  }
+
+  /**
    * 為查詢字串建立成本表與規則表。
    * @param {string[]} x 查詢字串（code point 陣列）
    * @param {import('./costs.js').CostModel} costs
@@ -261,10 +342,12 @@ export class CompiledRules {
    */
   compileQuery(x, costs, options = {}) {
     const n = x.length
-    const { start = null, extraInitial = null, extraFinal = null } = options
+    const { start = null, junctions = false, lockBoundary = false } = options
     const ids = Int32Array.from(x, (ch) => this.idOf(ch))
     const del = new Float64Array(n + 1)
-    for (let i = 1; i <= n; i++) del[i] = costs.del(x[i - 1])
+    for (let i = 1; i <= n; i++) del[i] = lockBoundary && this.isBoundary(x[i - 1]) ? Infinity : costs.del(x[i - 1])
+    const junctionMask = new Uint8Array(n + 1)
+    for (let i = 0; i <= n; i++) if ((i > 0 && this.isBoundary(x[i - 1])) || (i < n && this.isBoundary(x[i]))) junctionMask[i] = 1
 
     // 先依出現順序收集，再依 target 做穩定的計數排序。桶內的順序＝舊版 at[i] 中同一 target 的規則順序
     // （i 遞增；同一個 i 依 source 長度遞增、再依規則原本的順序），追蹤模式因此與舊版一致。
@@ -272,6 +355,8 @@ export class CompiledRules {
     const foundI = []
     /** @type {CompiledRule[]} */
     const foundRule = []
+    /** @type {number[]} 每條規則在這個位置的旗標 */
+    const foundFlag = []
     let hasFinal = false
     const lengths = this.sourceLengths
     for (let i = 0; i <= n; i++) {
@@ -285,13 +370,24 @@ export class CompiledRules {
         const candidates = this.bySource.get(key)
         if (!candidates) continue
         for (const rule of candidates) {
-          if (rule.position === 'initial' && !(i - a === 0 || this.isBoundary(x[i - a - 1]) || extraInitial?.[i - a])) {
-            continue
-          }
-          if (rule.position === 'final' && !(i === n || this.isBoundary(x[i]) || extraFinal?.[i])) continue
-          if (rule.position === 'final') hasFinal = true
+          if (rule.junction && !junctions) continue // 構詞音變只在詞素交界適用
+          if (lockBoundary && rule.sourceBoundary) continue
+          // X 側的位置條件。不成立時，只有 Y 側在詞素交界才可以用（構詞音變本來就只看交界，不檢查 X 側）
+          const xfail =
+            !rule.junction &&
+            ((rule.position === 'initial' && !(i - a === 0 || this.isBoundary(x[i - a - 1]))) ||
+              (rule.position === 'final' && !(i === n || this.isBoundary(x[i]))))
+          if (xfail && !junctions) continue
+          if (rule.position === 'final' && !xfail && !rule.junction) hasFinal = true
           foundI.push(i)
           foundRule.push(rule)
+          foundFlag.push(
+            (rule.position === 'final' ? FLAG_FINAL : 0) |
+              (rule.position === 'initial' ? FLAG_INITIAL : 0) |
+              (xfail ? FLAG_XFAIL : 0) |
+              (rule.junction ? FLAG_JUNCTION : 0) |
+              (junctions && rule.sourceBoundary ? FLAG_BSRC : 0),
+          )
         }
       }
     }
@@ -312,11 +408,12 @@ export class CompiledRules {
       ruleI[k] = foundI[e]
       ruleSrc[k] = rule.sourceLength
       ruleW[k] = rule.weight
-      ruleFlag[k] = (rule.position === 'final' ? FLAG_FINAL : 0) | (rule.position === 'initial' ? FLAG_INITIAL : 0)
+      ruleFlag[k] = foundFlag[e]
       ruleRef[k] = rule
     }
 
-    const cap = this.maxTargetLength + 1
+    // 本段路徑上的 target（≤ maxTargetLength 個）＋從前一段延續過來、跨越交界的 target
+    const cap = 2 * (this.maxTargetLength + 1)
     return {
       chars: x,
       ids,
@@ -333,6 +430,8 @@ export class CompiledRules {
       ruleRef,
       hasFinal,
       start: start ? Float64Array.from(start) : null,
+      junctionMask,
+      lockBoundary,
       ruleMin: new Float64Array(n + 1),
       column: {
         j: 0,
@@ -343,7 +442,7 @@ export class CompiledRules {
         lengths: new Int32Array(cap),
         rows: new Array(cap).fill(null),
         initial: new Uint8Array(cap),
-        emptyInitial: false,
+        emptyInitial: EDGE_NONE,
       },
     }
   }
@@ -360,7 +459,9 @@ function subRowOf(plan, compiled, y) {
   if (row === undefined) {
     row = new Float64Array(plan.n + 1)
     const ch = compiled.chars[y]
-    for (let i = 1; i <= plan.n; i++) row[i] = plan.costs.sub(plan.chars[i - 1], ch)
+    for (let i = 1; i <= plan.n; i++) {
+      row[i] = plan.lockBoundary && compiled.isBoundary(plan.chars[i - 1]) ? Infinity : plan.costs.sub(plan.chars[i - 1], ch)
+    }
     plan.subRows[y] = row
   }
   return row
@@ -455,9 +556,18 @@ export class PathMatcher {
  * @property {number} count 本列匹配到、且在 X 中有規則的非空 target 個數
  * @property {Int32Array} targets targets[k]：target 編號（依長度遞增）
  * @property {Int32Array} lengths lengths[k]：target 長度 t
- * @property {Array<Float64Array | null>} rows rows[k]：規則轉移的來源列（第 j − t 列）
- * @property {Uint8Array} initial initial[k]：該 target 是否位於 Y 的詞首
- * @property {boolean} emptyInitial 空字串 target 是否位於 Y 的詞首（j = 0 或 Y[j-1] 是邊界）
+ * @property {Array<Float64Array | null>} rows rows[k]：規則轉移的來源列（第 j − t 列；跨界時是前一段的列）
+ * @property {Uint8Array} initial initial[k]：該 target 起點的位置種類（EDGE_*）
+ * @property {number} emptyInitial 空字串 target 所在位置 j 的位置種類（EDGE_NONE／EDGE_WORD／EDGE_JUNCTION）
+ */
+
+/**
+ * 從前一段延續過來、還沒走完的規則 target（跨越詞素交界）。第 j 層的狀態由第 j − 1 層沿 Y[j-1] 往下走得到。
+ * @typedef {object} Crossing
+ * @property {number} count
+ * @property {Int32Array} nodes target trie 的節點（深度 ＝ 前一段的部分 ＋ j）
+ * @property {Float64Array[]} rows 這個 target 起點那一列（在前一段）
+ * @property {Float64Array} mins 各列的最小值（剪枝用）
  */
 
 /**
@@ -467,14 +577,16 @@ export class PathMatcher {
  * @param {PathMatcher} path 已設定到第 j 層的路徑匹配器
  * @param {number} j
  * @param {(row: number) => Float64Array} rowAt 取得先前第 row 列（row < j）的「實際」數值
+ * @param {number} [startEdge=EDGE_WORD] 這一段的起點（Y 的位置 0）是詞首還是詞素交界
+ * @param {Crossing | null} [cross] 第 j 層、跨越交界的 target 狀態
  * @returns {ColumnContext}
  */
-export function prepareColumn(plan, compiled, path, j, rowAt) {
+export function prepareColumn(plan, compiled, path, j, rowAt, startEdge = EDGE_WORD, cross = null) {
   const ctx = plan.column
   ctx.j = j
   ctx.y = j > 0 ? path.ids[j - 1] : -1
   ctx.prevRow = j > 0 ? rowAt(j - 1) : null
-  ctx.emptyInitial = j === 0 || path.boundary[j - 1] === 1
+  ctx.emptyInitial = j === 0 ? startEdge : path.boundary[j - 1] === 1 ? EDGE_WORD : EDGE_NONE
 
   let count = 0
   const base = j * path.cap
@@ -488,8 +600,22 @@ export function prepareColumn(plan, compiled, path, j, rowAt) {
     ctx.targets[count] = T
     ctx.lengths[count] = t
     ctx.rows[count] = rowAt(j - t)
-    ctx.initial[count] = j - t === 0 || path.boundary[j - t - 1] === 1 ? 1 : 0
+    ctx.initial[count] = j - t === 0 ? startEdge : path.boundary[j - t - 1] === 1 ? EDGE_WORD : EDGE_NONE
     count++
+  }
+  // 跨越交界的 target（依長度遞增接在後面：它們都比 j 長）
+  if (cross) {
+    if (count + cross.count > ctx.targets.length) growColumn(ctx, count + cross.count)
+    for (let k = 0; k < cross.count; k++) {
+      const s = cross.nodes[k]
+      const T = compiled.trieTarget[s]
+      if (T === -1 || ruleOff[T + 1] === ruleOff[T]) continue
+      ctx.targets[count] = T
+      ctx.lengths[count] = compiled.trieDepth[s]
+      ctx.rows[count] = cross.rows[k]
+      ctx.initial[count] = EDGE_CROSS
+      count++
+    }
   }
   ctx.count = count
   return ctx
@@ -498,12 +624,14 @@ export function prepareColumn(plan, compiled, path, j, rowAt) {
 /**
  * 第 j 列的剪枝下界中「跨列」的部分：min over 狀態 s ∈ 第 j 層 of min(第 j − depth(s) 列) + jump(s)。
  * 第 r 列要跨過第 j 列，唯一的方式是一條 target 以 Y[r..j) 開頭、且比它更長的規則。
+ * 跨越交界的狀態同理，來源列在前一段。
  * @param {CompiledRules} compiled
  * @param {PathMatcher} path
  * @param {number} j
  * @param {(r: number) => number} minAt 第 r 列（依 Y[r] 選 N／F）的最小值
+ * @param {Crossing | null} [cross]
  */
-export function jumpBound(compiled, path, j, minAt) {
+export function jumpBound(compiled, path, j, minAt, cross = null) {
   let bound = Infinity
   const base = j * path.cap
   for (let k = 0; k < path.counts[j]; k++) {
@@ -513,7 +641,60 @@ export function jumpBound(compiled, path, j, minAt) {
     const v = minAt(j - compiled.trieDepth[s]) + jump
     if (v < bound) bound = v
   }
+  if (cross) {
+    for (let k = 0; k < cross.count; k++) {
+      const jump = compiled.trieJump[cross.nodes[k]]
+      if (jump === Infinity) continue
+      const v = cross.mins[k] + jump
+      if (v < bound) bound = v
+    }
+  }
   return bound
+}
+
+/**
+ * 由第 j − 1 層的跨界狀態沿 Y[j-1]（字元編號 y）往下走，得到第 j 層的跨界狀態（寫進 out）。
+ * @param {CompiledRules} compiled
+ * @param {Crossing} prev
+ * @param {number} y
+ * @param {Crossing} out
+ */
+export function advanceCrossing(compiled, prev, y, out) {
+  let count = 0
+  if (y < compiled.trieWidth) {
+    for (let k = 0; k < prev.count; k++) {
+      const next = compiled.trieChild[prev.nodes[k] * compiled.trieWidth + y]
+      if (next === -1) continue
+      out.nodes[count] = next
+      out.rows[count] = prev.rows[k]
+      out.mins[count] = prev.mins[k]
+      count++
+    }
+  }
+  out.count = count
+  return out
+}
+
+/**
+ * 擴充列的暫存（合併了很多前綴鏈的交界狀態，跨界的 target 可能多於一條路徑上的）。
+ * @param {ColumnContext} ctx
+ * @param {number} size
+ */
+function growColumn(ctx, size) {
+  const grow = (/** @type {Int32Array | Uint8Array} */ a, /** @type {Int32Array | Uint8Array} */ b) => (b.set(a), b)
+  ctx.targets = /** @type {Int32Array} */ (grow(ctx.targets, new Int32Array(size)))
+  ctx.lengths = /** @type {Int32Array} */ (grow(ctx.lengths, new Int32Array(size)))
+  ctx.initial = /** @type {Uint8Array} */ (grow(ctx.initial, new Uint8Array(size)))
+  ctx.rows.length = size
+}
+
+/**
+ * 建立跨界狀態的容器（容量 capacity）。
+ * @param {number} capacity
+ * @returns {Crossing}
+ */
+export function createCrossing(capacity) {
+  return { count: 0, nodes: new Int32Array(capacity), rows: new Array(capacity), mins: new Float64Array(capacity) }
 }
 
 /**
@@ -538,7 +719,8 @@ export function jumpBound(compiled, path, j, minAt) {
  * @param {QueryPlan} plan 查詢的成本表與規則表
  * @param {CompiledRules} compiled
  * @param {ColumnContext} ctx prepareColumn 的結果
- * @param {boolean} allowFinal 是否假設 Y 在位置 j 是詞尾（見檔頭說明）
+ * @param {boolean | number} allowFinal Y 在位置 j 之後是什麼：false／EDGE_NONE 下一字元不是邊界（N_j）、
+ *   true／EDGE_WORD 詞尾（F_j）、EDGE_JUNCTION 詞素交界（交界列；見檔頭說明）
  * @param {Float64Array} out 輸出，長度至少 N + 1
  * @param {((t: Transition) => void) | null} [trace] 追蹤模式：回報每個候選轉移（視覺化用）
  * @returns {number} min(out[0..N])
@@ -549,6 +731,7 @@ export function fillRow(plan, compiled, ctx, allowFinal, out, trace = null) {
   const { j, prevRow } = ctx
   const del = plan.del
   const { ruleI, ruleSrc, ruleW, ruleFlag } = plan
+  const fin = +allowFinal
 
   // ① 來源在較早的列（target 非空）的規則轉移：先整批算進暫存列 ruleMin。
   //    這些轉移只讀較早的列，與本列的計算順序無關，可以提前算好。
@@ -559,11 +742,10 @@ export function fillRow(plan, compiled, ctx, allowFinal, out, trace = null) {
     for (let k = 0; k < ctx.count; k++) {
       const T = ctx.targets[k]
       const predRow = /** @type {Float64Array} */ (ctx.rows[k])
-      const yInitial = ctx.initial[k] === 1
+      const startEdge = ctx.initial[k]
       for (let p = plan.ruleOff[T]; p < plan.ruleOff[T + 1]; p++) {
         const flag = ruleFlag[p]
-        if (flag & FLAG_FINAL && !allowFinal) continue
-        if (flag & FLAG_INITIAL && !yInitial) continue
+        if (flag !== 0 && !admissible(flag, startEdge, fin)) continue
         const i = ruleI[p]
         const c = predRow[i - ruleSrc[p]] + ruleW[p]
         if (c < ruleMin[i]) ruleMin[i] = c
@@ -572,10 +754,16 @@ export function fillRow(plan, compiled, ctx, allowFinal, out, trace = null) {
     hasRules = true
   }
 
-  // ② 空字串 target（脫落規則）的來源是同一列較小的 i，要在主迴圈中依 i 順序處理
+  // ② 空字串 target（脫落規則）的來源是同一列較小的 i，要在主迴圈中依 i 順序處理。
+  //    交界列上，位置 j 同時是前一個詞素的結尾與下一個詞素的開頭
   const E = compiled.emptyTarget
   let p = E === -1 ? 0 : plan.ruleOff[E]
   const pEnd = E === -1 ? 0 : plan.ruleOff[E + 1]
+  const junctionRow = fin === EDGE_JUNCTION || ctx.emptyInitial === EDGE_JUNCTION
+  const emptyStart = fin === EDGE_JUNCTION ? EDGE_JUNCTION : ctx.emptyInitial
+  const emptyEnd = junctionRow ? EDGE_JUNCTION : fin
+  // 交界列上 X 的切點不能在空白旁（構詞不跨越空白）
+  const mask = junctionRow ? plan.junctionMask : null
 
   // ③ 主迴圈
   const start = plan.start
@@ -583,7 +771,7 @@ export function fillRow(plan, compiled, ctx, allowFinal, out, trace = null) {
   const insertCost = prevRow ? insOf(plan, compiled, ctx.y) : 0
   let min = Infinity
   for (let i = 0; i <= n; i++) {
-    // 起點：預設 D(0, 0) = 0；有邊界條件時第 0 列的每一格都可以是起點
+    // 起點：預設 D(0, 0) = 0；有起點列（前一段的交界列）時第 0 列的每一格都可以是起點
     let best = j === 0 ? (start ? start[i] : i === 0 ? 0 : Infinity) : Infinity
     if (prevRow) {
       const c1 = prevRow[i] + insertCost // 插入 Y[j-1]
@@ -601,11 +789,11 @@ export function fillRow(plan, compiled, ctx, allowFinal, out, trace = null) {
     for (; p < pEnd && ruleI[p] <= i; p++) {
       if (ruleI[p] < i) continue
       const flag = ruleFlag[p]
-      if (flag & FLAG_FINAL && !allowFinal) continue
-      if (flag & FLAG_INITIAL && !ctx.emptyInitial) continue
+      if (flag !== 0 && (!admissible(flag, emptyStart, emptyEnd) || (flag & FLAG_BSRC && junctionRow))) continue
       const c4 = out[i - ruleSrc[p]] + ruleW[p]
       if (c4 < best) best = c4
     }
+    if (mask !== null && mask[i] === 1) best = Infinity
     out[i] = best
     if (best < min) min = best
   }
@@ -629,11 +817,16 @@ function fillRowTraced(plan, compiled, ctx, allowFinal, out, trace) {
   const { ruleOff, ruleI, ruleSrc, ruleW, ruleFlag, ruleRef } = plan
   const subRow = prevRow ? subRowOf(plan, compiled, ctx.y) : null
   const insertCost = prevRow ? insOf(plan, compiled, ctx.y) : 0
+  const fin = +allowFinal
+  const junctionRow = fin === EDGE_JUNCTION || ctx.emptyInitial === EDGE_JUNCTION
+  const mask = junctionRow ? plan.junctionMask : null
   /** 依 target 長度遞增：空字串 target（長度 0）在最前面 */
   const order = []
-  if (compiled.emptyTarget !== -1) order.push({ T: compiled.emptyTarget, t: 0, row: null, initial: ctx.emptyInitial })
+  if (compiled.emptyTarget !== -1) {
+    order.push({ T: compiled.emptyTarget, t: 0, row: null, start: fin === EDGE_JUNCTION ? EDGE_JUNCTION : ctx.emptyInitial, end: junctionRow ? EDGE_JUNCTION : fin })
+  }
   for (let k = 0; k < ctx.count; k++) {
-    order.push({ T: ctx.targets[k], t: ctx.lengths[k], row: ctx.rows[k], initial: ctx.initial[k] === 1 })
+    order.push({ T: ctx.targets[k], t: ctx.lengths[k], row: ctx.rows[k], start: ctx.initial[k], end: fin })
   }
   let min = Infinity
   for (let i = 0; i <= n; i++) {
@@ -656,18 +849,19 @@ function fillRowTraced(plan, compiled, ctx, allowFinal, out, trace) {
       if (c3 < best) best = c3
       trace({ i, j, fromI: i - 1, fromJ: j, cost: c3, stepCost: deleteCost, op: 'delete', rule: null })
     }
-    for (const { T, t, row, initial } of order) {
+    for (const { T, t, row, start, end } of order) {
       const predRow = row ?? out
       for (let p = ruleOff[T]; p < ruleOff[T + 1]; p++) {
         if (ruleI[p] !== i) continue
         const flag = ruleFlag[p]
-        if (flag & FLAG_FINAL && !allowFinal) continue
-        if (flag & FLAG_INITIAL && !initial) continue
+        if (flag !== 0 && !admissible(flag, start, end)) continue
+        if (flag & FLAG_BSRC && t === 0 && junctionRow) continue
         const c4 = predRow[i - ruleSrc[p]] + ruleW[p]
         if (c4 < best) best = c4
         trace({ i, j, fromI: i - ruleSrc[p], fromJ: j - t, cost: c4, stepCost: ruleW[p], op: 'rule', rule: ruleRef[p] })
       }
     }
+    if (mask !== null && mask[i] === 1) best = Infinity
     out[i] = best
     if (best < min) min = best
   }

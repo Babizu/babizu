@@ -7,6 +7,10 @@
  *
  * 使用者的查詢方向無法預測（可能拿 A 方言查 B 方言，也可能反過來），
  * 因此預設自動補上反向規則，確保距離對語音規則而言是對稱的。
+ *
+ * 構詞音變（`junction: true`）是只在詞素交界適用的規則，例如詞幹末的 t 在後綴前寫成 d。
+ * 它們與方言規則同一個格式、同一套 DP，只是位置條件不同（docs/bcdp.md 1.3）；
+ * 普通的兩字串距離沒有詞素交界，所以用不到它們。
  */
 
 /** @typedef {'any' | 'initial' | 'final'} RulePosition 規則適用位置：任何位置／詞首／詞尾 */
@@ -17,6 +21,7 @@
  * @property {boolean} [bidirectional=true] 是否自動補上反向規則
  * @property {string} [category] 分類（例如「閃音」），可整類開關
  * @property {string} [label] 顯示用說明
+ * @property {boolean} [junction=false] 構詞音變：只在詞素交界適用（initial／final 指交界的哪一側）
  */
 
 /**
@@ -28,6 +33,7 @@
  * @property {string | null} category
  * @property {string | null} label
  * @property {boolean} reversed 是否為自動產生的反向規則
+ * @property {boolean} junction 構詞音變：只在詞素交界適用
  * @property {number} origin 原始規則的序號（同一條規則的正反向共用）
  */
 
@@ -48,7 +54,7 @@ const POSITIONS = new Set(['any', 'initial', 'final'])
 
 export class RuleSet {
   constructor() {
-    /** @type {Array<{source: string, target: string, weight: number, position: RulePosition, bidirectional: boolean, category: string|null, label: string|null}>} */
+    /** @type {Array<{source: string, target: string, weight: number, position: RulePosition, bidirectional: boolean, category: string|null, label: string|null, junction: boolean}>} */
     this._defs = []
     /** @type {Set<string>} 已停用的分類 */
     this._disabled = new Set()
@@ -66,7 +72,7 @@ export class RuleSet {
    * rules.add('l', 'n', 0.1, { position: 'final', category: '詞尾' })
    */
   add(source, target, weight, options = {}) {
-    const { position = 'any', bidirectional = true, category = null, label = null } = options
+    const { position = 'any', bidirectional = true, category = null, label = null, junction = false } = options
     if (typeof source !== 'string' || typeof target !== 'string') {
       throw new TypeError('規則的 source 與 target 必須是字串')
     }
@@ -79,7 +85,7 @@ export class RuleSet {
     if (!POSITIONS.has(position)) {
       throw new RangeError(`未知的規則位置：${position}（可用：any、initial、final）`)
     }
-    this._defs.push({ source, target, weight, position, bidirectional, category, label })
+    this._defs.push({ source, target, weight, position, bidirectional, category, label, junction: Boolean(junction) })
     return this
   }
 
@@ -156,7 +162,7 @@ export class RuleSet {
       const variants = [{ source, target, reversed: false }]
       if (def.bidirectional) variants.push({ source: target, target: source, reversed: true })
       for (const v of variants) {
-        const key = `${def.position}\u0000${v.source}\u0000${v.target}`
+        const key = `${def.position}\u0000${def.junction ? 'J' : ''}\u0000${v.source}\u0000${v.target}`
         const prev = byKey.get(key)
         if (!prev || def.weight < prev.weight) {
           byKey.set(key, {
@@ -167,6 +173,7 @@ export class RuleSet {
             category: def.category,
             label: def.label,
             reversed: v.reversed,
+            junction: def.junction,
             origin,
           })
         }

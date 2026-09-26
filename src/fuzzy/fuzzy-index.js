@@ -34,10 +34,14 @@
  * say→tshay，L = 5，前 5 層幾乎無法剪枝）。
  * 測試中的「暴力比對性質測試」用來保證剪枝不會漏掉任何結果。
  *
- * ## 邊界條件（構詞搜尋）
- * `start`、`end` 兩個向量讓候選詞只對應查詢的一段：第 0 列取 start（詞幹可以從前綴鏈的
- * 任何終點開始），詞尾取 min_i F_j[i] + end[i]（詞幹可以在後綴鏈的任何起點結束）。
- * end ≥ 0，所以上面的下界照樣成立；普通搜尋就是 start = [0, ∞…]、end = [∞…, 0] 的特例。
+ * ## 詞素交界（構詞搜尋，docs/bcdp.md 第 4–8 節）
+ * 構詞搜尋把「前綴鏈 · 詞幹 · 後綴鏈」看成一條底層字串，每一段各走一次（詞綴 trie 或詞庫詞圖），
+ * 段與段之間以「交界狀態」銜接（dp.js 檔頭）：
+ * - `from`：起點是前一段留下的交界狀態——交界列當作第 0 列，還沒走完的規則 target 由跨界狀態延續
+ * - `onJunction`：走到詞尾時回報這一段結束時的交界狀態（前綴鏈、後綴鏈一段一段接下去）
+ * - `to`：走到詞尾時與後一段的交界狀態（由反方向算好）耦合，得到整個詞的成本
+ * 交界狀態的值都 ≥ 0，所以上面的下界照樣成立；普通搜尋沒有交界。
+ * `start`、`end` 兩個向量是沒有跨界狀態的特例。
  *
  * ## 實作上的最佳化（結果與最佳化前逐位元相同）
  * - 詞圖的邊標籤預先轉成字元編號（`_edgeCodes`，每個索引、每組規則只算一次），
@@ -48,8 +52,24 @@
  */
 
 import { Dawg } from './dawg.js'
-import { fillRow, jumpBound, PathMatcher, prepareColumn, roundCost, EPSILON } from './dp.js'
+import { advanceCrossing, createCrossing, EDGE_JUNCTION, EDGE_WORD, fillRow, jumpBound, PathMatcher, prepareColumn, roundCost, EPSILON } from './dp.js'
 import { resolveNormalization } from './normalization.js'
+
+/**
+ * @typedef {object} JunctionState 詞素交界上的 DP 狀態（docs/bcdp.md 第 4 節）
+ * @property {Float64Array} row 交界列 R：R[x] ＝ 對齊走到（查詢位置 x, 這個交界）的最小成本
+ * @property {Array<{node: number, row: Float64Array}>} pending 跨界表：還沒走完的規則 target
+ *   （target trie 的節點）與它起點那一列。交界之後的每個轉移只讀這兩樣，所以它們就是整個「過去」
+ */
+
+/**
+ * @typedef {object} JunctionEnd 詞尾要耦合的後一段（後綴鏈），由反方向算好、換回正向座標
+ * @property {Float64Array | null} row 後一段從查詢位置 x 開始的最小成本
+ * @property {Array<{tail: string[], row: Float64Array}>} pending 後一段開頭、跨界規則 target 的後半段
+ *   （tail）與它之後那一列：規則 target ＝ 這一段的尾巴 · tail
+ * @property {Float64Array | null} [word] 也接受「這一段就是詞尾」：這一段在查詢位置 x 結束時，
+ *   詞尾（F 列）之後還要付的成本（通常只有 word[n] ＝ 0；固定交界的變體另有限制）
+ */
 
 /**
  * @typedef {object} QueryExpansion 查詢展開（詞形還原的預留介面）
@@ -68,11 +88,15 @@ import { resolveNormalization } from './normalization.js'
  * @property {number} [limit=Infinity] 最多回傳幾筆
  * @property {QueryExpander[]} [expanders] 查詢展開器（實驗性，見 expanders.js）
  * @property {(event: NodeVisit) => void} [onNode] 每走訪一個節點回呼一次（視覺化用）
- * @property {ArrayLike<number>} [start] 邊界條件：第 0 列的起點成本（長度 = 查詢長度 + 1）
- * @property {ArrayLike<number>} [end] 邊界條件：詞尾在查詢各位置結束的附加成本（長度同上）
+ * @property {ArrayLike<number>} [start] 第 0 列的起點成本（長度 = 查詢長度 + 1）：沒有跨界狀態的 from
+ * @property {ArrayLike<number>} [end] 詞尾在查詢各位置結束的附加成本（長度同上）：沒有跨界狀態的 to
+ * @property {JunctionState} [from] 起點：前一段留下的交界狀態（位置 0 是詞素交界）
+ * @property {JunctionEnd} [to] 詞尾：與後一段的交界狀態耦合；結果的 distance 是整個詞的成本
+ * @property {(term: string, state: JunctionState, payloads: unknown[]) => void} [onJunction]
+ *   每走到一個詞尾就回呼一次，附上這一段結束時的交界狀態（複本）
+ * @property {boolean} [lockBoundary=false] 查詢的邊界字元（空白）完全不能被消耗（詞綴不含空白）
  * @property {(term: string, row: Float64Array, payloads: unknown[]) => void} [onTerminal]
- *   每走到一個詞尾就回呼一次，附上完整的 F 列（row[i] = 查詢前 i 個字元轉成這個詞的成本）。
- *   用於「查詢的每一個前綴對哪些詞在門檻內」這類需要整列的用途（構詞圖表）
+ *   每走到一個詞尾就回呼一次，附上完整的 F 列（row[i] = 查詢前 i 個字元轉成這個詞的成本）
  */
 
 /**
@@ -357,14 +381,26 @@ export class FuzzyIndex {
     const channels = specs.map(({ query, options }) => {
       const x = Array.isArray(query) ? query : this.metric.prepare(query)
       const n = x.length
-      const start = options.start ?? null
-      const end = options.end ?? null
-      if ((start && start.length !== n + 1) || (end && end.length !== n + 1)) {
-        throw new RangeError(`start／end 的長度必須是查詢長度 + 1（${n + 1}）`)
+      // start／end 是沒有跨界狀態的 from／to
+      const from = options.from ?? (options.start ? { row: Float64Array.from(options.start), pending: [] } : null)
+      const to = options.to ?? (options.end ? { row: Float64Array.from(options.end), pending: [], word: null } : null)
+      const vectors = [from?.row, ...(from?.pending ?? []).map((p) => p.row), to?.row, to?.word, ...(to?.pending ?? []).map((p) => p.row)]
+      for (const vec of vectors) {
+        if (vec && vec.length !== n + 1) throw new RangeError(`start／end（交界狀態）的長度必須是查詢長度 + 1（${n + 1}）`)
+        // 剪枝的下界依賴「交界成本不小於 0」（docs/bcdp.md 第 6 節）
+        if (vec && !Array.prototype.every.call(vec, (c) => c >= 0)) throw new RangeError('start／end（交界狀態）的值必須是非負數或 Infinity')
       }
-      // 剪枝的下界依賴「邊界成本不小於 0」（docs/bcdp.md 第 6 節）
-      for (const vec of [start, end]) {
-        if (vec && !Array.prototype.every.call(vec, (c) => c >= 0)) throw new RangeError('start／end 的值必須是非負數或 Infinity')
+      /** @type {import('./dp.js').Crossing[]} 第 j 層的跨界狀態（來自 from.pending，只在淺層） */
+      const cross = []
+      if (from && from.pending.length) {
+        const c0 = createCrossing(from.pending.length)
+        from.pending.forEach((p, k) => {
+          c0.nodes[k] = p.node
+          c0.rows[k] = p.row
+          c0.mins[k] = Math.min(...p.row)
+        })
+        c0.count = from.pending.length
+        cross[0] = c0
       }
       /**
        * rowsN[j]、rowsF[j]：路徑上第 j 層的兩種列；minN[j]、minF[j] 為各列最小值。
@@ -380,21 +416,24 @@ export class FuzzyIndex {
       const minN = []
       /** @type {number[]} */
       const minF = []
+      const junctions = Boolean(from || to || options.onJunction)
       return {
         n,
-        start,
-        end,
+        from,
+        to,
+        startEdge: from ? EDGE_JUNCTION : EDGE_WORD,
+        cross,
+        /** 詞尾的交界列（算完立刻使用，所以每個通道一個緩衝就夠） */
+        rowJ: junctions ? new Float64Array(n + 1) : null,
+        /** 跨界耦合：（這一段尾巴的 trie 節點, to.pending 的序號）→ 規則 target 編號（-1 表示沒有） */
+        coupleTarget: new Map(),
         maxDistance: options.maxDistance ?? 1,
         maxNormalized: options.maxNormalized ?? Infinity,
         norm: resolveNormalization(options.normalization ?? 'none'),
         onNode: options.onNode,
         onTerminal: options.onTerminal,
-        // 前綴鏈的終點也算詞首、後綴鏈的起點也算詞尾，詞首／詞尾規則才能套用在詞幹上
-        plan: compiled.compileQuery(x, costs, {
-          start,
-          extraInitial: start ? Array.from(start, (c) => c < Infinity) : null,
-          extraFinal: end ? Array.from(end, (c) => c < Infinity) : null,
-        }),
+        onJunction: options.onJunction,
+        plan: compiled.compileQuery(x, costs, { start: from?.row ?? null, junctions, lockBoundary: options.lockBoundary ?? false }),
         rowsN,
         rowsF,
         bufF,
@@ -444,7 +483,19 @@ export class FuzzyIndex {
         const c = current[a]
         const ch = channels[c]
         const { n, plan, rowsN, rowsF, bufF, minN, minF } = ch
-        const column = prepareColumn(plan, compiled, matcher, j, ch.rowAt)
+        // 跨界狀態：第 j 層由第 j − 1 層沿 Y[j-1] 往下走（只在還有狀態的淺層）。第 0 層的狀態是
+        // 「在交界剛好結束」的 target，已經在前一段的交界列算過，所以只用在剪枝的下界
+        /** @type {import('./dp.js').Crossing | null} */
+        let crossing = null
+        if (ch.cross.length) {
+          if (j === 0) crossing = ch.cross[0]
+          else {
+            const prev = ch.cross[j - 1]
+            if (prev && prev.count > 0) crossing = advanceCrossing(compiled, prev, matcher.ids[j - 1], (ch.cross[j] ??= createCrossing(ch.cross[0].nodes.length)))
+            else if (ch.cross[j]) ch.cross[j].count = 0
+          }
+        }
+        const column = prepareColumn(plan, compiled, matcher, j, ch.rowAt, ch.startEdge, j > 0 ? crossing : null)
 
         // N_j：子節點不是邊界字元時使用（fillRow 同時回傳這一列的最小值）
         const rowN = (rowsN[j] ??= new Float64Array(n + 1))
@@ -473,16 +524,17 @@ export class FuzzyIndex {
         let accepted = false
         if (isTerminal) {
           let endAt = n
-          if (ch.end) {
-            let best = Infinity
-            for (let i = 0; i <= n; i++) {
-              const v = rowF[i] + ch.end[i]
-              if (v < best) {
-                best = v
-                endAt = i
-              }
-            }
-            distance = roundCost(best)
+          // 交界列：這一段在這裡結束、後面接另一個詞素（詞尾與交界兩種規則都適用，X 的切點不在空白旁）
+          const rowJ = ch.rowJ
+          if (rowJ && (ch.onJunction || ch.to?.row || ch.to?.pending.length)) {
+            fillRow(plan, compiled, column, EDGE_JUNCTION, rowJ)
+            stats.computedRows++
+          }
+          if (ch.onJunction) ch.onJunction(path.slice(0, j).join(''), this._junctionState(ch, matcher, j, /** @type {Float64Array} */ (rowJ)), payloads[base] ?? [])
+          if (ch.to) {
+            const coupled = this._couple(ch, matcher, j, rowF, /** @type {Float64Array} */ (rowJ))
+            distance = roundCost(coupled.cost)
+            endAt = coupled.endAt
           } else {
             distance = roundCost(rowF[n])
           }
@@ -493,7 +545,7 @@ export class FuzzyIndex {
               accepted = true
               /** @type {SearchResult} */
               const result = { term: path.slice(0, j).join(''), distance, score, payloads: payloads[base] ?? [] }
-              if (ch.end) result.endAt = endAt
+              if (ch.to) result.endAt = endAt
               ch.results.push(result)
             }
           }
@@ -503,8 +555,9 @@ export class FuzzyIndex {
         let lowerBound = Infinity
         if (hasOtherChild) lowerBound = minN[j]
         if (hasBoundaryChild) lowerBound = Math.min(lowerBound, minF[j])
-        // 跨列：第 r 列經由一條更長的規則跳過第 j 列（狀態由 PathMatcher 提供，見 dp.js）
-        lowerBound = Math.min(lowerBound, jumpBound(compiled, matcher, j, ch.minAt))
+        // 跨列：第 r 列經由一條更長的規則跳過第 j 列（狀態由 PathMatcher 提供，見 dp.js）；
+        // 跨界狀態同理，來源列在前一段
+        lowerBound = Math.min(lowerBound, jumpBound(compiled, matcher, j, ch.minAt, crossing))
         const pruned = endEdge > firstEdge && lowerBound > bound + EPSILON
 
         if (ch.onNode) {
@@ -545,6 +598,99 @@ export class FuzzyIndex {
       this._spareMatcher = matcher
     }
     return channels.map((c) => c.results)
+  }
+
+  /**
+   * 這一段在深度 j 的詞尾結束時的交界狀態（複本）：交界列，加上路徑尾端還沒走完的規則 target。
+   * 只收本段路徑上的狀態：一條規則至多跨越一個交界（docs/bcdp.md 1.3）。
+   * @param {any} ch 通道
+   * @param {PathMatcher} matcher
+   * @param {number} j
+   * @param {Float64Array} rowJ 交界列
+   * @returns {JunctionState}
+   * @private
+   */
+  _junctionState(ch, matcher, j, rowJ) {
+    const compiled = matcher.compiled
+    /** @type {JunctionState['pending']} */
+    const pending = []
+    const base = j * matcher.cap
+    for (let k = 0; k < matcher.counts[j]; k++) {
+      const s = matcher.states[base + k]
+      if (compiled.trieJump[s] === Infinity) continue // 沒有更長的 target 經過這裡
+      pending.push({ node: s, row: Float64Array.from(ch.rowAt(j - compiled.trieDepth[s])) })
+    }
+    return { row: Float64Array.from(rowJ), pending }
+  }
+
+  /**
+   * 詞尾與後一段（to）的耦合：整個詞的最小成本。
+   * - to.word：這一段就是詞尾：min over x of F 列[x] ＋ word[x]
+   * - 不跨界：min over x of 交界列[x] ＋ to.row[x]
+   * - 跨界：規則 target ＝ 本段尾巴（路徑上的 trie 狀態 s）· 後一段的開頭（to.pending 的 tail），
+   *   X 側 source 占 [i − |source|, i)：本段第 j − depth(s) 列 ＋ 權重 ＋ 後一段從 i 開始的成本
+   * @param {any} ch 通道
+   * @param {PathMatcher} matcher
+   * @param {number} j
+   * @param {Float64Array} rowF
+   * @param {Float64Array} rowJ
+   * @returns {{cost: number, endAt: number}}
+   * @private
+   */
+  _couple(ch, matcher, j, rowF, rowJ) {
+    const { n, plan } = ch
+    const to = /** @type {JunctionEnd} */ (ch.to)
+    const compiled = matcher.compiled
+    let cost = Infinity
+    let endAt = -1
+    if (to.word) {
+      for (let x = 0; x <= n; x++) {
+        const v = rowF[x] + to.word[x]
+        if (v < cost) {
+          cost = v
+          endAt = x
+        }
+      }
+    }
+    if (to.row) {
+      for (let x = 0; x <= n; x++) {
+        const v = rowJ[x] + to.row[x]
+        if (v < cost) {
+          cost = v
+          endAt = x
+        }
+      }
+    }
+    const tails = to.pending
+    if (tails.length) {
+      const base = j * matcher.cap
+      for (let k = 0; k < matcher.counts[j]; k++) {
+        const s = matcher.states[base + k]
+        if (compiled.trieJump[s] === Infinity) continue
+        const fromRow = ch.rowAt(j - compiled.trieDepth[s])
+        for (let b = 0; b < tails.length; b++) {
+          const key = s * tails.length + b
+          let T = ch.coupleTarget.get(key)
+          if (T === undefined) {
+            const node = compiled.trieWalk(s, tails[b].tail)
+            T = node === -1 ? -1 : compiled.trieTarget[node]
+            ch.coupleTarget.set(key, T)
+          }
+          if (T === -1) continue
+          const after = tails[b].row
+          for (let p = plan.ruleOff[T]; p < plan.ruleOff[T + 1]; p++) {
+            if (plan.ruleFlag[p] !== 0) continue // 跨越交界的只能是沒有位置限制的方言規則
+            const i = plan.ruleI[p]
+            const v = fromRow[i - plan.ruleSrc[p]] + plan.ruleW[p] + after[i]
+            if (v < cost) {
+              cost = v
+              endAt = i
+            }
+          }
+        }
+      }
+    }
+    return { cost, endAt }
   }
 
   /**

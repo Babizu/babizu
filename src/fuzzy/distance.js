@@ -94,6 +94,33 @@ export class WeightedEditDistance {
   }
 
   /**
+   * 鏡像距離函式：每條（有方向的）規則的 source、target 反轉，initial ↔ final 對調，成本與詞邊界相同。
+   * 對任何 x、y：mirror().distance(reverse(x), reverse(y)) ＝ distance(x, y)，因為對齊反過來讀就是
+   * 鏡像的對齊。構詞搜尋用它由詞尾往前算後綴鏈（docs/bcdp.md 第 7 節）。
+   * 輸入必須已經正規化（鏡像的 normalize 是恆等函式）。規則替換（setRules）後重新建立。
+   * @returns {WeightedEditDistance}
+   */
+  mirror() {
+    if (this._mirror?.from === this.compiled) return this._mirror.metric
+    const swap = /** @type {const} */ ({ initial: 'final', final: 'initial', any: 'any' })
+    const reverse = (/** @type {string} */ s) => Array.from(s).reverse().join('')
+    const rules = new RuleSet()
+    for (const r of this.ruleSet.expand(this.normalize)) {
+      rules.add(reverse(r.source), reverse(r.target), r.weight, {
+        position: swap[r.position],
+        bidirectional: false, // 展開後已經包含兩個方向
+        category: r.category ?? undefined,
+        label: r.label ?? undefined,
+        junction: r.junction,
+      })
+    }
+    const metric = new WeightedEditDistance({ costs: this.costs, rules, normalize: (s) => s, boundaries: [...this.boundaries] })
+    /** @type {{from: CompiledRules, metric: WeightedEditDistance} | undefined} */
+    this._mirror = { from: this.compiled, metric }
+    return metric
+  }
+
+  /**
    * 正規化並拆成 code point。
    * @param {string} text
    */
