@@ -50,8 +50,12 @@ const onLocaleChange = (event) => setLocale(/** @type {HTMLSelectElement} */ (ev
           v-for="item in NAV_ITEMS"
           :key="item.name"
           :to="item.to"
-          class="hover:bg-muted rounded-md px-3 py-2 text-sm transition-colors"
-          :class="isActive(item.name) ? 'text-foreground font-medium' : 'text-muted-foreground'"
+          class="hover:bg-muted relative rounded-md px-3 py-2 text-sm transition-colors"
+          :class="
+            isActive(item.name)
+              ? 'text-foreground after:bg-primary font-medium after:absolute after:inset-x-3 after:-bottom-[11px] after:h-0.5'
+              : 'text-muted-foreground hover:text-foreground'
+          "
           :aria-current="isActive(item.name) ? 'page' : undefined"
         >
           {{ t(item.labelKey) }}

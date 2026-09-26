@@ -40,6 +40,9 @@ const TOTAL_ROWS = computed(() =>
     { key: 'scans', label: t('sources.scans') },
   ].filter((row) => totals.value[row.key] > 0),
 )
+
+/** 來源說明（略過空白的項目：轉接器的預留欄位不該畫成空的條列點） @param {{notes?: string[]}} s */
+const notesOf = (s) => (s.notes ?? []).filter((note) => note.trim())
 </script>
 
 <template>
@@ -89,7 +92,7 @@ const TOTAL_ROWS = computed(() =>
               class="bg-muted/60 hover:bg-accent hover:text-accent-foreground block rounded-lg px-3 py-2 transition-colors"
             >
               <dt class="text-muted-foreground text-xs">{{ t('sources.records') }}</dt>
-              <dd class="text-lg font-semibold tabular-nums">{{ formatCount(s.stats?.records ?? 0) }}</dd>
+              <dd class="font-serif text-lg font-semibold tabular-nums">{{ formatCount(s.stats?.records ?? 0) }}</dd>
             </RouterLink>
             <RouterLink
               v-for="u in UNIT_KEYS.filter((k) => s.stats?.[k])"
@@ -98,11 +101,11 @@ const TOTAL_ROWS = computed(() =>
               class="bg-muted/60 hover:bg-accent hover:text-accent-foreground block rounded-lg px-3 py-2 transition-colors"
             >
               <dt class="text-muted-foreground text-xs">{{ unitLabel(u) }}</dt>
-              <dd class="text-lg font-semibold tabular-nums">{{ formatCount(s.stats[u]) }}</dd>
+              <dd class="font-serif text-lg font-semibold tabular-nums">{{ formatCount(s.stats[u]) }}</dd>
             </RouterLink>
             <div v-if="s.stats?.audio" class="bg-muted/60 rounded-lg px-3 py-2">
               <dt class="text-muted-foreground text-xs">{{ t('sources.audio') }}</dt>
-              <dd class="text-lg font-semibold tabular-nums">{{ formatCount(s.stats.audio) }}</dd>
+              <dd class="font-serif text-lg font-semibold tabular-nums">{{ formatCount(s.stats.audio) }}</dd>
             </div>
           </dl>
 
@@ -111,8 +114,8 @@ const TOTAL_ROWS = computed(() =>
             <DialectBadge v-for="d in s.defaultDialects" :key="d" :dialect="d" />
           </div>
           <p v-if="s.orthography" class="text-muted-foreground text-xs">{{ t('sources.orthography', { value: s.orthography }) }}</p>
-          <ul v-if="s.notes.length" class="text-muted-foreground list-disc space-y-1 pl-4 text-xs leading-relaxed">
-            <li v-for="(note, k) in s.notes" :key="k">{{ note }}</li>
+          <ul v-if="notesOf(s).length" class="text-muted-foreground list-disc space-y-1 pl-4 text-xs leading-relaxed">
+            <li v-for="(note, k) in notesOf(s)" :key="k">{{ note }}</li>
           </ul>
           <p v-if="s.citation" class="bg-muted/40 rounded-md p-3 text-xs leading-relaxed">
             <span class="text-muted-foreground">{{ t('sources.cite') }}</span>{{ s.citation }}

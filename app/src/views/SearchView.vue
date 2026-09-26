@@ -289,7 +289,8 @@ const filterSheetOpen = ref(false)
         </div>
 
         <template v-else-if="response">
-          <div class="mb-3 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+          <!-- 結果數在上、相近拼寫在下：位置固定，不隨查詢長短左右跳動 -->
+          <div class="mb-3 space-y-1">
             <p class="text-muted-foreground text-sm">
               <template v-if="totalHits">
                 {{ t('search.resultCountBefore') }}<span class="text-foreground font-medium">{{ response.query }}</span
@@ -298,13 +299,15 @@ const filterSheetOpen = ref(false)
               <template v-else>{{ t('search.noResultsFor', { query: response.query }) }}</template>
               <span class="ml-2 text-xs tabular-nums opacity-70">{{ response.stats.elapsedMs }} ms</span>
             </p>
-            <p v-if="fuzzyTerms.length" class="text-muted-foreground text-xs">
-              {{ t('search.similarSpellings') }}
-              <span v-for="(term, k) in fuzzyTerms" :key="term.term">
-                <span class="native-text text-foreground">{{ term.term }}</span>
-                <span class="tabular-nums">（{{ formatDistance(term.distance) }}）</span>{{ k < fuzzyTerms.length - 1 ? t('common.listSeparator') : '' }}
-              </span>
-            </p>
+            <div v-if="fuzzyTerms.length" class="text-muted-foreground flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-xs">
+              <span>{{ t('search.similarSpellings') }}</span>
+              <ul class="contents">
+                <li v-for="term in fuzzyTerms" :key="term.term" class="inline-flex items-baseline gap-1 whitespace-nowrap">
+                  <span class="native-text text-foreground text-[13px]">{{ term.term }}</span>
+                  <span class="font-mono text-[10px] tabular-nums">{{ formatDistance(term.distance) }}</span>
+                </li>
+              </ul>
+            </div>
           </div>
 
           <StateMessage

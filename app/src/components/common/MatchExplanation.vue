@@ -3,7 +3,6 @@
  * 模糊命中的說明：距離＋每個非相同字元的對齊步驟（例如「l→n 詞尾」）。
  * 點擊可展開完整說明，並連到演算法實驗室看動態規劃表。
  */
-import { SparklesIcon } from '@lucide/vue'
 import { computed } from 'vue'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { t } from '@/i18n.js'
@@ -42,7 +41,6 @@ const allRules = computed(() => steps.value.length > 0 && steps.value.every((s) 
         :aria-label="t('match.explainButton', { distance: formatDistance(distance) })"
         @click.stop.prevent
       >
-        <SparklesIcon v-if="allRules" class="size-3" />
         <span>≈ {{ formatDistance(distance) }}</span>
         <span v-if="summary" class="truncate">{{ summary }}</span>
       </button>
