@@ -19,12 +19,13 @@
  */
 
 import { existsSync } from 'node:fs'
-import { readdir, readFile } from 'node:fs/promises'
+import { readFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { marked } from 'marked'
 import { validateProfile } from '../fuzzy/index.js'
-import { BUILTIN_LOCALES, FRAMEWORK_ROOT, loadBuiltinMessages } from './paths.js'
+import { extractMessages } from './extract-messages.js'
+import { BUILTIN_LOCALE_NAMES, BUILTIN_LOCALES, FRAMEWORK_ROOT, SOURCE_LOCALE, loadBuiltinMessages } from './paths.js'
 
 /**
  * 可以依語系提供的文字：字串（所有語系共用）或 `{ 'zh-TW': …, en: … }`。
@@ -92,18 +93,22 @@ export function localize(value, locales, fallbackLocale) {
 }
 
 /**
- * 巢狀的語系 JSON → 以點號連接的扁平鍵。
- * @param {Record<string, unknown>} obj
- * @param {string} [prefix]
+ * 檢查一份譯文檔：扁平的「中文原文 → 譯文」物件，值都是字串。
+ * @param {unknown} table
+ * @param {string} file 錯誤訊息用的檔名
+ * @param {string[]} errors
  * @returns {Record<string, string>}
  */
-export function flattenMessages(obj, prefix = '') {
+function checkMessages(table, file, errors) {
+  if (!table || typeof table !== 'object' || Array.isArray(table)) {
+    errors.push(`${file}：必須是「中文原文 → 譯文」的物件`)
+    return {}
+  }
   /** @type {Record<string, string>} */
   const out = {}
-  for (const [k, v] of Object.entries(obj)) {
-    const key = prefix ? `${prefix}.${k}` : k
-    if (v && typeof v === 'object') Object.assign(out, flattenMessages(/** @type {any} */ (v), key))
-    else if (typeof v === 'string') out[key] = v
+  for (const [k, v] of Object.entries(table)) {
+    if (typeof v === 'string') out[k] = v
+    else errors.push(`${file}：「${k}」的譯文必須是字串（譯文檔是扁平的，鍵是中文原文）`)
   }
   return out
 }
@@ -147,24 +152,26 @@ export async function loadSiteConfig(siteDir) {
   if (!locales.includes(defaultLocale)) errors.push(`defaultLocale「${defaultLocale}」不在 locales 中`)
   if (!input.title) errors.push('缺少 title')
 
-  // 介面字串：框架內建語系 ＋ 站台目錄 locales/<語系>.json（覆寫或新增）。
-  // 允許先開放一個語系、之後再慢慢翻譯：缺的字串在瀏覽器端回退到預設語系（`babizu locales` 列出缺哪些）
+  // 介面字串：中文原文直接寫在程式裡，其他語系是「中文原文 → 譯文」的對照表：
+  // 框架內建的譯文 ＋ 站台目錄 locales/<語系>.json（覆寫或新增；中文也可以覆寫）。
+  // 允許先開放一個語系、之後再慢慢翻譯：缺的字串在瀏覽器端回退到預設語系、再回退到中文
+  // （`babizu locales` 列出缺哪些）
   const messagesDir = join(root, input.messages ?? 'locales')
   const builtin = await loadBuiltinMessages()
   /** @type {Record<string, Record<string, string>>} */
   const messages = {}
+  /** 站台自己的譯文檔（檢查失效的覆寫用） @type {Record<string, Record<string, string>>} */
+  const overrides = {}
   for (const locale of locales) {
-    const own = existsSync(join(messagesDir, `${locale}.json`))
-      ? flattenMessages(JSON.parse(await readFile(join(messagesDir, `${locale}.json`), 'utf8')))
-      : {}
+    const file = join(messagesDir, `${locale}.json`)
+    const own = existsSync(file) ? checkMessages(JSON.parse(await readFile(file, 'utf8')), file, errors) : {}
+    if (existsSync(file)) overrides[locale] = own
     messages[locale] = { ...(builtin[locale] ?? {}), ...own }
   }
-  if (Object.keys(messages[defaultLocale] ?? {}).length === 0) {
-    errors.push(`預設語系「${defaultLocale}」沒有任何介面字串；框架內建語系：${BUILTIN_LOCALES.join('、')}`)
+  if (defaultLocale !== SOURCE_LOCALE && Object.keys(messages[defaultLocale] ?? {}).length === 0) {
+    errors.push(`預設語系「${defaultLocale}」沒有任何譯文；框架內建語系：${BUILTIN_LOCALES.join('、')}`)
   }
-  const localeNames = Object.fromEntries(
-    locales.map((l) => [l, input.localeNames?.[l] ?? builtin[l]?.['locale.name'] ?? l]),
-  )
+  const localeNames = Object.fromEntries(locales.map((l) => [l, input.localeNames?.[l] ?? BUILTIN_LOCALE_NAMES[l] ?? l]))
 
   // 語言設定檔
   const languageFile = join(root, input.language ?? 'language.json')
@@ -258,6 +265,7 @@ export async function loadSiteConfig(siteDir) {
     frameworkRoot: FRAMEWORK_ROOT,
     dataDir: join(root, input.data ?? 'data'),
     publicDir,
+    overrides,
     /** 會送進瀏覽器的部分（必須可以 JSON 序列化） */
     client: {
       id: input.id,
@@ -291,19 +299,25 @@ export async function loadSiteConfig(siteDir) {
 /** @typedef {Awaited<ReturnType<typeof loadSiteConfig>>} ResolvedSite */
 
 /**
- * 找出各語系缺少的介面字串（相對於預設語系）。
+ * 找出各語系缺少的譯文：框架程式裡的介面字串（extract-messages.js）中，譯文表沒有的。
+ * 原文語系（中文）不會缺。
  * @param {ResolvedSite} site
  * @returns {Record<string, string[]>}
  */
 export function missingMessages(site) {
-  const { messages, defaultLocale, locales } = site.client
-  const keys = Object.keys(messages[defaultLocale])
+  const { messages, locales } = site.client
+  const keys = extractMessages()
   return Object.fromEntries(
-    locales.filter((l) => l !== defaultLocale).map((l) => [l, keys.filter((k) => !(k in messages[l]))]),
+    locales.filter((l) => l !== SOURCE_LOCALE).map((l) => [l, keys.filter((k) => !(k in messages[l]))]),
   )
 }
 
-/** 列出框架目錄下的所有語系檔（供測試與文件使用） */
-export async function listBuiltinLocales() {
-  return (await readdir(join(FRAMEWORK_ROOT, 'locales'))).filter((f) => f.endsWith('.json')).map((f) => f.slice(0, -5))
+/**
+ * 找出站台譯文檔中程式已經不再使用的鍵（多半是框架改了中文原文，覆寫因此失效）。
+ * @param {ResolvedSite} site
+ * @returns {Record<string, string[]>}
+ */
+export function unusedMessages(site) {
+  const keys = new Set(extractMessages())
+  return Object.fromEntries(Object.entries(site.overrides).map(([l, table]) => [l, Object.keys(table).filter((k) => !keys.has(k))]))
 }

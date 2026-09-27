@@ -20,7 +20,7 @@
 
 /**
  * @typedef {object} AltText 其他書寫系統的寫法
- * @property {string} system 書寫系統代碼（顯示名稱由站台設定的 writingSystems 或語系檔 `writingSystem.<code>` 提供）
+ * @property {string} system 書寫系統代碼（顯示名稱由站台設定的 writingSystems 或 app/src/lib/labels.js 的 WRITING_SYSTEM_LABELS 提供）
  * @property {string} text
  */
 

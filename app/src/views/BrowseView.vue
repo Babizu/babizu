@@ -77,7 +77,7 @@ const groups = computed(() => {
     } else loose.push(r)
   }
   const out = data.groups.map((g) => ({ group: g, records: byGroup.get(g.id) ?? [] }))
-  if (loose.length) out.push({ group: { id: 'loose', type: 'list', title: t('browse.other'), subtitle: null }, records: loose })
+  if (loose.length) out.push({ group: { id: 'loose', type: 'list', title: t('其他'), subtitle: null }, records: loose })
   return out
 })
 
@@ -100,27 +100,27 @@ function onSelect(event) {
 
 <template>
   <div class="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-8">
-    <StateMessage v-if="sourcesError" tone="error" :title="t('sources.loadFailed')" :description="sourcesError" />
+    <StateMessage v-if="sourcesError" tone="error" :title="t('無法載入來源資訊')" :description="sourcesError" />
     <div v-else-if="!loaded" class="space-y-3">
       <Skeleton class="h-8 w-64" />
       <Skeleton class="h-96 w-full" />
     </div>
-    <StateMessage v-else-if="!source" :title="t('sources.notFound')" :description="t('sources.notFoundHint', { id: route.params.source })">
-      <Button as-child variant="outline"><RouterLink :to="{ name: 'sources' }">{{ t('sources.all') }}</RouterLink></Button>
+    <StateMessage v-else-if="!source" :title="t('找不到這個來源')" :description="t('來源 {id} 不存在。', { id: route.params.source })">
+      <Button as-child variant="outline"><RouterLink :to="{ name: 'sources' }">{{ t('所有來源') }}</RouterLink></Button>
     </StateMessage>
 
     <template v-else>
       <header class="mb-4">
-        <RouterLink :to="{ name: 'sources' }" class="text-muted-foreground text-sm hover:underline">{{ t('nav.sources') }}</RouterLink>
+        <RouterLink :to="{ name: 'sources' }" class="text-muted-foreground text-sm hover:underline">{{ t('資料來源') }}</RouterLink>
         <h1 class="mt-1 font-serif text-2xl font-bold tracking-tight sm:text-3xl">{{ source.title }}</h1>
       </header>
 
       <!-- 分片導覽：上一個／選單／下一個（行動裝置固定在頂部方便連續翻頁） -->
       <nav
         class="bg-background/95 supports-[backdrop-filter]:bg-background/80 sticky top-14 z-30 -mx-4 mb-4 flex items-center gap-2 border-b px-4 py-2 backdrop-blur sm:-mx-6 sm:px-6"
-        :aria-label="t('browse.select', { unit: shardUnitLabel(source) })"
+        :aria-label="t('選擇{unit}', { unit: shardUnitLabel(source) })"
       >
-        <Button variant="outline" size="icon" :disabled="shardIndex <= 0" :aria-label="t('browse.previous', { unit: shardUnitLabel(source) })" @click="go(-1)">
+        <Button variant="outline" size="icon" :disabled="shardIndex <= 0" :aria-label="t('上一{unit}', { unit: shardUnitLabel(source) })" @click="go(-1)">
           <ChevronLeftIcon />
         </Button>
         <select
@@ -129,23 +129,23 @@ function onSelect(event) {
           :aria-label="shardUnitLabel(source)"
           @change="onSelect"
         >
-          <option v-for="s in shards" :key="s.key" :value="s.key">{{ t('browse.option', { label: s.label, count: formatCount(s.records) }) }}</option>
+          <option v-for="s in shards" :key="s.key" :value="s.key">{{ t('{label}（{count} 筆）', { label: s.label, count: formatCount(s.records) }) }}</option>
         </select>
-        <Button variant="outline" size="icon" :disabled="shardIndex >= shards.length - 1" :aria-label="t('browse.next', { unit: shardUnitLabel(source) })" @click="go(1)">
+        <Button variant="outline" size="icon" :disabled="shardIndex >= shards.length - 1" :aria-label="t('下一{unit}', { unit: shardUnitLabel(source) })" @click="go(1)">
           <ChevronRightIcon />
         </Button>
         <span class="text-muted-foreground ml-auto hidden text-xs tabular-nums sm:inline">
           {{ shardIndex + 1 }} / {{ shards.length }}
         </span>
         <Button v-if="scan" variant="ghost" size="sm" class="hidden lg:inline-flex" @click="showScan = !showScan">
-          <FileImageIcon /> {{ showScan ? t('browse.hideScan') : t('browse.showScan') }}
+          <FileImageIcon /> {{ showScan ? t('隱藏掃描頁') : t('顯示掃描頁') }}
         </Button>
-        <Button v-if="scan" variant="outline" size="icon" class="lg:hidden" :aria-label="t('citation.viewScan')" @click="scanOpen = true">
+        <Button v-if="scan" variant="outline" size="icon" class="lg:hidden" :aria-label="t('查看原書掃描頁')" @click="scanOpen = true">
           <FileImageIcon />
         </Button>
       </nav>
 
-      <StateMessage v-if="loadError" tone="error" :title="t('common.loadFailed')" :description="loadError" />
+      <StateMessage v-if="loadError" tone="error" :title="t('載入失敗')" :description="loadError" />
 
       <div
         v-else
@@ -161,18 +161,18 @@ function onSelect(event) {
             </div>
             <GroupRecords :group="group" :records="records" :active-id="activeId" />
           </section>
-          <p v-if="!loading && groups.length === 0" class="text-muted-foreground text-sm">{{ t('browse.empty', { unit: shardUnitLabel(source) }) }}</p>
+          <p v-if="!loading && groups.length === 0" class="text-muted-foreground text-sm">{{ t('這個{unit}沒有資料。', { unit: shardUnitLabel(source) }) }}</p>
         </div>
 
         <div v-if="scan && showScan" class="hidden lg:block">
           <div class="sticky top-32">
             <img
               :src="dataUrl(scan)"
-              :alt="t('browse.scanAlt', { label: shard?.label ?? '' })"
+              :alt="t('{label} 原書掃描頁', { label: shard?.label ?? '' })"
               class="w-full rounded-md border"
               loading="lazy"
             />
-            <Button variant="link" size="sm" class="px-0" @click="scanOpen = true">{{ t('browse.zoom') }}</Button>
+            <Button variant="link" size="sm" class="px-0" @click="scanOpen = true">{{ t('放大檢視') }}</Button>
           </div>
         </div>
       </div>

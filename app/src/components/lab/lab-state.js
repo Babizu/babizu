@@ -86,7 +86,7 @@ export function createLabState() {
   const metric = computed(() => {
     const table = [
       ...state.groups.filter((g) => g.enabled).map((g) => ({ category: g.category, rules: g.rules.filter(valid) })),
-      { category: t('lab.customCategory'), rules: state.custom.filter(valid) },
+      { category: t('自訂'), rules: state.custom.filter(valid) },
     ]
     const rules = RuleSet.fromTable(/** @type {any} */ (table.map((g) => ({ ...g, rules: g.rules.map(row) }))))
     return createSearchMetric(PROFILE, { rules, costs: editedCosts(state.costs) })

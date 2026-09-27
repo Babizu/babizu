@@ -19,7 +19,7 @@ const isActive = (name) =>
 <template>
   <nav
     class="bg-background/95 supports-[backdrop-filter]:bg-background/80 pb-safe fixed inset-x-0 bottom-0 z-40 border-t backdrop-blur md:hidden"
-    :aria-label="t('nav.main')"
+    :aria-label="t('主選單')"
   >
     <ul class="mx-auto grid max-w-md grid-cols-3">
       <li v-for="item in NAV_ITEMS" :key="item.name">

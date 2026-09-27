@@ -22,7 +22,7 @@ const isActive = (name) => route.name === name || (name === 'sources' && route.n
 <template>
   <header class="bg-background/85 supports-[backdrop-filter]:bg-background/70 sticky top-0 z-40 border-b backdrop-blur">
     <div class="mx-auto flex h-14 max-w-6xl items-center gap-2 px-4 sm:gap-4 sm:px-6">
-      <RouterLink :to="{ name: 'search' }" class="flex min-w-0 items-center gap-2.5" :aria-label="t('app.home')">
+      <RouterLink :to="{ name: 'search' }" class="flex min-w-0 items-center gap-2.5" :aria-label="t('回到搜尋頁')">
         <img
           v-if="iconUrl"
           :src="iconUrl"
@@ -38,7 +38,7 @@ const isActive = (name) => route.name === name || (name === 'sources' && route.n
         </span>
       </RouterLink>
 
-      <nav class="ml-auto hidden items-center gap-1 md:flex" :aria-label="t('nav.main')">
+      <nav class="ml-auto hidden items-center gap-1 md:flex" :aria-label="t('主選單')">
         <RouterLink
           v-for="item in NAV_ITEMS"
           :key="item.name"

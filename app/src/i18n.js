@@ -1,8 +1,9 @@
 /**
  * @file 介面語系。
  *
- * 字串來自框架的 locales/*.json，站台可以覆寫任一字串或新增語系（站台目錄的 locales/）。
- * 某個語系缺的字串會回退到預設語系，所以可以先開放一個語系、再慢慢翻譯
+ * 介面字串直接寫在程式裡，中文原文就是鍵（src/site/messages.js）：中文介面直接顯示，
+ * 其他語系到框架的 locales/<語系>.json 查譯文；站台可以覆寫任一字串或新增語系（站台目錄的 locales/）。
+ * 查不到的字串回退到預設語系、再回退到中文原文，所以可以先開放一個語系、再慢慢翻譯
  * （`babizu locales` 會列出缺哪些）。
  *
  * ```vue
@@ -10,16 +11,20 @@
  * const { t, tr } = useI18n()
  * </script>
  * <template>
- *   <p>{{ t('search.noResultsFor', { query }) }}</p>          <!-- 介面字串 -->
- *   <h1>{{ tr(site.title) }}</h1>                              <!-- 站台設定中依語系提供的文字 -->
+ *   <p>{{ t('「{query}」沒有結果', { query }) }}</p>   <!-- 介面字串，{query} 代入參數 -->
+ *   <p>{{ t('詞條', null, '角色') }}</p>               <!-- 同一句中文要有不同譯文時加語境 -->
+ *   <h1>{{ tr(site.title) }}</h1>                      <!-- 站台設定中依語系提供的文字 -->
  * </template>
  * ```
  *
  * 不用 vue-i18n：需要的只是「查字串＋代入參數＋回退」，自己寫不到一百行，也少一個相依套件。
  */
 
+import { msg, sourceText } from '@babizu/site/messages.js'
 import { computed, ref, watch } from 'vue'
 import site from 'virtual:babizu/site'
+
+export { msg }
 
 const STORAGE_KEY = `${site.id}:locale`
 
@@ -74,13 +79,15 @@ function interpolate(message, params) {
 }
 
 /**
- * 查介面字串。找不到時依序回退到預設語系、鍵名本身（方便發現漏翻的字串）。
- * @param {string} key 例如 `search.placeholder`
- * @param {Record<string, unknown>} [params]
+ * 介面字串。中文原文就是鍵：依序查目前語系、預設語系的譯文（或站台的覆寫），都沒有就顯示中文原文。
+ * @param {string} text 中文原文（或 msg() 產生的鍵）
+ * @param {Record<string, unknown> | null} [params] 代入 `{name}` 的參數
+ * @param {string} [context] 語境：同一句中文要有不同譯文時才需要
  */
-export function t(key, params) {
-  const message = site.messages[locale.value]?.[key] ?? site.messages[site.defaultLocale]?.[key] ?? key
-  return interpolate(message, params)
+export function t(text, params, context) {
+  const key = msg(text, context)
+  const message = site.messages[locale.value]?.[key] ?? site.messages[site.defaultLocale]?.[key] ?? sourceText(key)
+  return interpolate(message, params ?? undefined)
 }
 
 /**

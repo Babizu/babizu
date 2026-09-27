@@ -51,7 +51,7 @@ const TONE_BADGE = {
         props.class,
       )
     "
-    :title="t('status.title', { label: statusLabel(status) })"
+    :title="t('校對狀態：{label}', { label: statusLabel(status) })"
   >
     <span v-if="variant === 'dot'" :class="cn('size-1.5 rounded-full', TONE_DOT[info.tone])" aria-hidden="true" />
     {{ statusLabel(status) }}

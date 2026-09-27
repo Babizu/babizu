@@ -30,14 +30,14 @@ onMounted(() => {
         href="#main"
         class="bg-primary text-primary-foreground sr-only z-50 rounded-md px-3 py-2 focus:not-sr-only focus:fixed focus:top-2 focus:left-2"
       >
-        {{ t('app.skipToContent') }}
+        {{ t('跳到主要內容') }}
       </a>
       <AppHeader />
       <main id="main" class="flex-1 pb-20 md:pb-0">
         <RouterView />
       </main>
       <footer class="text-muted-foreground mx-auto hidden w-full max-w-6xl px-6 py-8 text-xs md:block">
-        {{ site.footer ? tr(site.footer) : `${tr(site.title)} · ${t('app.footer')}` }}
+        {{ site.footer ? tr(site.footer) : `${tr(site.title)} · ${t('資料版權屬各原始來源，引用時請註明出處（每筆詞條皆附「出處」資訊）。')}` }}
       </footer>
       <MobileTabBar />
     </div>

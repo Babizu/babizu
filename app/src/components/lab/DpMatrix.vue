@@ -124,18 +124,18 @@ function onKeydown(event, i, j) {
 
 <template>
   <div class="scrollbar-thin w-fit max-w-full self-start overflow-x-auto rounded-lg border">
-    <table ref="table" class="border-collapse" role="grid" :aria-label="t('lab.matrix')" :aria-rowcount="e.matrix.length + 1" :aria-colcount="e.candidate.length + 2">
+    <table ref="table" class="border-collapse" role="grid" :aria-label="t('動態規劃表')" :aria-rowcount="e.matrix.length + 1" :aria-colcount="e.candidate.length + 2">
       <thead>
         <tr role="row">
           <th class="bg-muted sticky left-0 z-10 h-11 min-w-11 border text-xs font-normal" role="columnheader">
-            <span class="sr-only">{{ t('lab.matrixCorner') }}</span>
+            <span class="sr-only">{{ t('查詢＼候選') }}</span>
           </th>
           <th
             v-for="(ch, j) in ['', ...e.candidate]"
             :key="j"
             role="columnheader"
             class="bg-muted relative h-11 min-w-11 border px-1 text-sm font-medium"
-            :title="e.finalColumns[j] ? t('lab.finalColumn') : undefined"
+            :title="e.finalColumns[j] ? t('詞尾位置：可套用詞尾規則') : undefined"
           >
             <span class="native-text">{{ ch === ' ' ? '␣' : ch || 'ε' }}</span>
             <span class="text-muted-foreground absolute right-1 bottom-0.5 text-[9px] font-normal">{{ j }}</span>
@@ -158,7 +158,7 @@ function onKeydown(event, i, j) {
             :style="cellStyle(i, j)"
             :tabindex="active[0] === i && active[1] === j ? 0 : -1"
             :aria-selected="isSelected(i, j)"
-            :aria-label="`D(${i}, ${j}) = ${isRevealed(i, j) ? formatDistance(value) : t('lab.notComputed')}`"
+            :aria-label="`D(${i}, ${j}) = ${isRevealed(i, j) ? formatDistance(value) : t('尚未計算')}`"
             @click="((active = [i, j]), emit('select', [i, j]))"
             @keydown="onKeydown($event, i, j)"
           >

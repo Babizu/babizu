@@ -39,7 +39,7 @@ const errorMessage = ref('')
 const unitOptions = computed(() => {
   const stats = source.value?.stats ?? {}
   return [
-    { value: '', label: t('search.all'), count: stats.records ?? 0 },
+    { value: '', label: t('全部'), count: stats.records ?? 0 },
     ...UNIT_CODES.filter((u) => (stats[u] ?? 0) > 0).map((u) => ({ value: u, label: unitLabel(u), count: stats[u] })),
   ]
 })
@@ -93,25 +93,25 @@ function selectUnit(value) {
 <template>
   <div class="mx-auto max-w-4xl px-4 py-6 sm:px-6 sm:py-8">
     <Button variant="ghost" size="sm" class="text-muted-foreground -ml-2 mb-3" as-child>
-      <RouterLink :to="{ name: 'sources' }"><ArrowLeftIcon /> {{ t('nav.sources') }}</RouterLink>
+      <RouterLink :to="{ name: 'sources' }"><ArrowLeftIcon /> {{ t('資料來源') }}</RouterLink>
     </Button>
 
-    <StateMessage v-if="!loaded && !source" :title="t('common.loading')" :description="t('sources.loading')" />
+    <StateMessage v-if="!loaded && !source" :title="t('載入中…')" :description="t('正在讀取來源資訊。')" />
     <StateMessage
       v-else-if="loaded && !source"
-      :title="t('sources.notFound')"
-      :description="t('sources.notFoundHint', { id: sourceId })"
+      :title="t('找不到這個來源')"
+      :description="t('來源 {id} 不存在。', { id: sourceId })"
     />
 
     <template v-else>
       <header class="mb-4">
         <h1 class="font-serif text-2xl font-bold tracking-tight sm:text-3xl">{{ source?.title ?? sourceId }}</h1>
         <p class="text-muted-foreground mt-1 text-sm">
-          {{ unit ? t('sourceList.summaryUnit', { count: formatCount(total), unit: unitLabel(unit) }) : t('sourceList.summary', { count: formatCount(total) }) }}
+          {{ unit ? t('共 {count} 筆（{unit}），依詞形排序', { count: formatCount(total), unit: unitLabel(unit) }) : t('共 {count} 筆，依詞形排序', { count: formatCount(total) }) }}
         </p>
       </header>
 
-      <div class="scrollbar-thin -mx-4 mb-4 flex gap-2 overflow-x-auto px-4 sm:mx-0 sm:px-0" role="tablist" :aria-label="t('filter.units')">
+      <div class="scrollbar-thin -mx-4 mb-4 flex gap-2 overflow-x-auto px-4 sm:mx-0 sm:px-0" role="tablist" :aria-label="t('語言單位')">
         <button
           v-for="opt in unitOptions"
           :key="opt.value"
@@ -127,7 +127,7 @@ function selectUnit(value) {
         </button>
       </div>
 
-      <StateMessage v-if="errorMessage" tone="error" :title="t('common.loadFailed')" :description="errorMessage" />
+      <StateMessage v-if="errorMessage" tone="error" :title="t('載入失敗')" :description="errorMessage" />
 
       <div v-else-if="loading && items.length === 0" class="space-y-3" aria-busy="true">
         <Skeleton v-for="k in 8" :key="k" class="h-16 w-full" />
@@ -139,7 +139,7 @@ function selectUnit(value) {
 
       <div v-if="items.length < total" class="mt-6 flex justify-center">
         <Button variant="outline" :disabled="loading" @click="fetchPage(items.length)">
-          {{ loading ? t('common.loading') : t('search.showMore', { count: formatCount(total - items.length) }) }}
+          {{ loading ? t('載入中…') : t('顯示更多（還有 {count} 筆）', { count: formatCount(total - items.length) }) }}
         </Button>
       </div>
     </template>

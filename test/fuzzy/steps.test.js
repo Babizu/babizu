@@ -1,23 +1,19 @@
 /**
  * 演算法實驗室的步驟模型（src/fuzzy/steps.js）：步數與說明結果一致、最後一步的狀態等於正式實作的結果、
- * 狀態只由步驟序號決定（可以任意跳）、每個說明鍵都有兩種語系的文字。
+ * 狀態只由步驟序號決定（可以任意跳）、每個說明都有英文譯文。
  */
 
 import { describe, expect, it } from 'vitest'
 import en from '../../locales/en.json' with { type: 'json' }
-import zhTW from '../../locales/zh-TW.json' with { type: 'json' }
 import { createAnalyzer, createMorphSearch, FuzzyIndex, REDUPLICATION_PATTERNS, RuleSet, WeightedEditDistance } from '../../src/fuzzy/index.js'
 import { alternationRules } from '../../src/fuzzy/morphology.js'
 import { bcdpStateAt, bcdpSteps, dawgStateAt, dawgSteps, DISTANCE_PARAMS, dpStateAt, dpSteps } from '../../src/fuzzy/steps.js'
+import { sourceText } from '../../src/site/messages.js'
 import { createRandom, pick, randomString } from './helpers.js'
 
-/** @param {any} messages @param {string} key */
-const lookup = (messages, key) => key.split('.').reduce((o, k) => (o == null ? undefined : o[k]), messages)
-
-/** 說明鍵在兩種語系都有文字，文字中的 {參數} 都由步驟提供 @param {import('../../src/fuzzy/steps.js').Step} step */
+/** 說明（中文原文）有英文譯文，文字中的 {參數} 都由步驟提供 @param {import('../../src/fuzzy/steps.js').Step} step */
 function expectNote(step) {
-  for (const messages of [zhTW, en]) {
-    const text = lookup(messages, step.note.key)
+  for (const text of [sourceText(step.note.key), /** @type {Record<string, string>} */ (en)[step.note.key]]) {
     expect(typeof text, step.note.key).toBe('string')
     for (const [, name] of String(text).matchAll(/\{(\w+)\}/g)) expect(step.note.params, `${step.note.key} 缺參數 ${name}`).toHaveProperty(name)
   }

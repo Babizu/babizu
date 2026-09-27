@@ -219,7 +219,7 @@
 
 每個分頁的播放都由一個與 Vue 無關的步驟產生器提供（`src/fuzzy/steps.js`）：
 
-- 每一步是 `{ kind, phase, focus, note: { key, params }, proofRef? }`；說明文字由語系檔的 `note.key` 產生。
+- 每一步是 `{ kind, phase, focus, note: { key, params }, proofRef? }`；`note.key` 是說明的中文原文（`steps.js` 的 `CELL_NOTES` 等表），經過 `t()` 顯示。
 - 畫面狀態完全由步驟序號推出，所以跳到任何一步都是純函式；網址的 `step` 參數可以重現同一個畫面。
 - BCDP 的步驟依序：前綴各層 → 後綴各層 → 合併 → 每個通道（變體）→ 每個通道的詞圖走訪 → 命中 → 整個詞的對齊（每一步）。
 - 資料來自 `morphSearch.explain(query, term)`，它與搜尋走同一套程式，命中必須與 `finish` 的結果相同，對齊的成本加上步驟成本必須等於命中的成本（測試保證）。
@@ -271,7 +271,7 @@ lab: {
 - 每一步都有一句話說明，數字寫出算式（`0.3 ＋ 0.1 ＝ 0.4`），不只寫結果。
 - 剪枝、略過、找不到都寫出原因。
 - 所有互動都能用鍵盤完成；表格是 ARIA grid，一個 tab stop。
-- 新文字同時加進 `locales/zh-TW.json` 與 `locales/en.json`。
+- 新文字直接用中文寫在程式裡，英文譯文加進 `locales/en.json`。
 - 用站台資料中的真實詞當例子。
 
 ### 不該做

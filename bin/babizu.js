@@ -6,7 +6,7 @@
  *   babizu build [站台目錄]     建置網站到 <站台>/dist
  *   babizu preview [站台目錄]   預覽建置結果（http://localhost:4173/）
  *   babizu check [站台目錄]     檢查設定、語言設定檔與資料集
- *   babizu locales [站台目錄]   列出各語系缺少的介面字串
+ *   babizu locales [站台目錄]   列出各語系缺少的譯文
  *
  * 站台目錄預設為目前目錄。
  */
@@ -20,7 +20,7 @@ const HELP = `用法：babizu <指令> [站台目錄] [選項]
   build     建置網站到 <站台>/dist
   preview   預覽建置結果（--port <埠號>，預設 4173）
   check     檢查站台設定、語言設定檔與資料集
-  locales   列出各語系缺少的介面字串
+  locales   列出各語系缺少的譯文
 
 站台目錄預設為目前目錄。說明文件：https://github.com/Babizu/babizu`
 
@@ -52,11 +52,18 @@ try {
     case 'locales': {
       const config = await site.loadSiteConfig(siteDir)
       const missing = site.missingMessages(config)
-      if (Object.values(missing).every((keys) => keys.length === 0)) console.log('✓ 所有語系的介面字串都齊全')
+      const unused = site.unusedMessages(config)
+      if (Object.values(missing).every((keys) => keys.length === 0)) console.log('✓ 所有語系的譯文都齊全')
+      // 輸出可以直接貼進 locales/<語系>.json：鍵是中文原文，值留給譯者填
       for (const [locale, keys] of Object.entries(missing)) {
         if (keys.length === 0) continue
-        console.log(`\n${locale}（${config.client.localeNames[locale]}）缺 ${keys.length} 個：`)
-        for (const key of keys) console.log(`  ${key}  ← ${config.client.messages[config.client.defaultLocale][key]}`)
+        console.log(`\n${locale}（${config.client.localeNames[locale]}）缺 ${keys.length} 個譯文：`)
+        for (const key of keys) console.log(`  ${JSON.stringify(key)}: "",`)
+      }
+      for (const [locale, keys] of Object.entries(unused)) {
+        if (keys.length === 0) continue
+        console.log(`\n站台的 ${locale}.json 有 ${keys.length} 個程式沒有用到的字串（中文原文可能改過了）：`)
+        for (const key of keys) console.log(`  ${JSON.stringify(key)}`)
       }
       break
     }

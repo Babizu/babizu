@@ -34,7 +34,7 @@ const { shortTitle } = useSources()
               :query="query"
               :term="hit.term"
             />
-            <span v-else class="text-muted-foreground text-[11px]">{{ t('neighbors.sameSpelling') }}</span>
+            <span v-else class="text-muted-foreground text-[11px]">{{ t('拼寫相同') }}</span>
           </span>
         </div>
         <p class="text-muted-foreground mt-0.5 truncate text-sm">

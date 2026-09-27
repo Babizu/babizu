@@ -7,6 +7,7 @@
  */
 
 import { createRouter, createWebHashHistory } from 'vue-router'
+import { msg } from './i18n.js'
 import { pageTitle } from './composables/usePageTitle.js'
 import SearchView from './views/SearchView.vue'
 
@@ -22,43 +23,43 @@ export const router = createRouter({
       path: '/r/:source/:localId',
       name: 'record',
       component: () => import('./views/RecordView.vue'),
-      meta: { titleKey: 'page.record' },
+      meta: { titleKey: msg('詞條', '頁面標題') },
     },
     {
       path: '/sources',
       name: 'sources',
       component: () => import('./views/SourcesView.vue'),
-      meta: { titleKey: 'nav.sources' },
+      meta: { titleKey: msg('資料來源') },
     },
     {
       path: '/sources/:source/list',
       name: 'source-list',
       component: () => import('./views/SourceListView.vue'),
-      meta: { titleKey: 'page.sourceList' },
+      meta: { titleKey: msg('詞彙清單') },
     },
     {
       path: '/sources/:source/:shard?',
       name: 'browse',
       component: () => import('./views/BrowseView.vue'),
-      meta: { titleKey: 'page.browse' },
+      meta: { titleKey: msg('瀏覽') },
     },
     {
       path: '/lab',
       name: 'lab',
       component: () => import('./views/LabView.vue'),
-      meta: { titleKey: 'page.lab' },
+      meta: { titleKey: msg('演算法實驗室') },
     },
     {
       path: '/about',
       name: 'about',
       component: () => import('./views/AboutView.vue'),
-      meta: { titleKey: 'nav.about' },
+      meta: { titleKey: msg('關於') },
     },
     {
       path: '/:pathMatch(.*)*',
       name: 'not-found',
       component: () => import('./views/NotFoundView.vue'),
-      meta: { titleKey: 'page.notFound' },
+      meta: { titleKey: msg('找不到頁面') },
     },
   ],
   scrollBehavior(to, from, saved) {

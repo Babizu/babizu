@@ -9,7 +9,7 @@ my-dictionary/
 ├── language.json          語言設定檔（見 language-profile.md）
 ├── data/                  資料集（見 data-format.md）
 ├── content/               「關於」頁的 Markdown，依語系分檔
-├── locales/               介面字串覆寫與額外語系（見 i18n.md）
+├── locales/               介面譯文的覆寫與額外語系（中文原文 → 譯文，見 i18n.md）
 └── public/                站徽等靜態檔
 ```
 
@@ -49,7 +49,7 @@ export default defineSite({
 | 欄位 | 型別 | 預設 | 說明 |
 |---|---|---|---|
 | `id` | string | **必填** | 站台代號（小寫英數與連字號）。瀏覽器儲存空間的前綴，同一個網域放多個辭典時不會互相干擾 |
-| `locales` | string[] | `['zh-TW']` | 介面語系。框架內建 `zh-TW`、`en`；其他語系在 `locales/` 提供字串（見 [i18n.md](i18n.md)） |
+| `locales` | string[] | `['zh-TW']` | 介面語系。框架內建 `zh-TW`（原文）、`en`；其他語系在 `locales/` 提供譯文（見 [i18n.md](i18n.md)） |
 | `defaultLocale` | string | `locales[0]` | 預設語系；缺字時回退到這裡 |
 | `localeNames` | `{語系: 名稱}` | 內建語系已有名稱 | 語系選單上的顯示名稱 |
 | `title` | Localized | **必填** | 網站名稱 |

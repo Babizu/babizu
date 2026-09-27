@@ -23,7 +23,7 @@ const summary = computed(() =>
   steps.value
     .slice(0, 2)
     .map((s) => (s.category ? `${formatStep(s)} ${categoryLabel(s.category)}` : formatStep(s)))
-    .join(t('common.listSeparator')),
+    .join(t('、')),
 )
 const allRules = computed(() => steps.value.length > 0 && steps.value.every((s) => s.op === 'rule'))
 </script>
@@ -37,7 +37,7 @@ const allRules = computed(() => steps.value.length > 0 && steps.value.every((s) 
         size="tag"
         :variant="allRules ? 'soft' : 'quiet'"
         class="max-w-full cursor-pointer"
-        :aria-label="t('match.explainButton', { distance: formatDistance(distance) })"
+        :aria-label="t('相近拼寫，距離 {distance}，查看說明', { distance: formatDistance(distance) })"
         @click.stop.prevent
       >
         <span class="tabular-nums">≈ {{ formatDistance(distance) }}</span>
@@ -45,13 +45,13 @@ const allRules = computed(() => steps.value.length > 0 && steps.value.every((s) 
       </Badge>
     </PopoverTrigger>
     <PopoverContent class="w-72 text-sm" align="start" @click.stop>
-      <p class="font-medium">{{ t('match.whyTitle') }}</p>
+      <p class="font-medium">{{ t('為什麼算相近？') }}</p>
       <p class="text-muted-foreground mt-1 text-xs">
-        {{ t('match.distance', { distance: formatDistance(distance) }) }}
+        {{ t('加權編輯距離 {distance}。', { distance: formatDistance(distance) }) }}
         {{
           COSTS.rule === null
-            ? t('match.costsNoRules', { substitute: COSTS.substitute, delete: COSTS.delete, insert: COSTS.insert })
-            : t('match.costs', { rule: COSTS.rule, substitute: COSTS.substitute, delete: COSTS.delete, insert: COSTS.insert })
+            ? t('替換、刪除、插入的成本分別是 {substitute}／{delete}／{insert}。', { substitute: COSTS.substitute, delete: COSTS.delete, insert: COSTS.insert })
+            : t('方言對應規則每條只算 {rule}，一般的替換、刪除、插入則是 {substitute}／{delete}／{insert}。', { rule: COSTS.rule, substitute: COSTS.substitute, delete: COSTS.delete, insert: COSTS.insert })
         }}
       </p>
       <ul v-if="steps.length" class="mt-3 space-y-1.5">
@@ -68,7 +68,7 @@ const allRules = computed(() => steps.value.length > 0 && steps.value.every((s) 
         :to="{ name: 'lab', query: { a: query, b: term } }"
         class="text-primary mt-3 inline-block text-xs font-medium hover:underline"
       >
-        {{ t('match.openLab') }}
+        {{ t('在演算法實驗室查看計算過程 →') }}
       </RouterLink>
     </PopoverContent>
   </Popover>

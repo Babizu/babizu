@@ -23,7 +23,7 @@ const model = defineModel({ type: String, default: '' })
 
 const input = ref(/** @type {HTMLInputElement | null} */ (null))
 const SPECIAL_CHARS = site.specialChars
-const placeholderText = computed(() => props.placeholder || t('search.placeholder'))
+const placeholderText = computed(() => props.placeholder || t('輸入族語、中文或英文'))
 
 function submit() {
   input.value?.blur()
@@ -77,7 +77,7 @@ defineExpose({ focus: () => input.value?.focus() })
         autocapitalize="off"
         autocorrect="off"
         spellcheck="false"
-        :aria-label="t('nav.search')"
+        :aria-label="t('搜尋')"
         :class="
           cn(
             'placeholder:text-muted-foreground/80 min-w-0 flex-1 bg-transparent outline-none [&::-webkit-search-cancel-button]:hidden',
@@ -89,7 +89,7 @@ defineExpose({ focus: () => input.value?.focus() })
         v-if="model"
         type="button"
         class="text-muted-foreground hover:text-foreground hover:bg-muted flex size-8 shrink-0 items-center justify-center rounded-sm"
-        :aria-label="t('search.clear')"
+        :aria-label="t('清除')"
         @click="clear"
       >
         <XIcon class="size-4" />
@@ -101,7 +101,7 @@ defineExpose({ focus: () => input.value?.focus() })
         而且一旦做成「聚焦時才出現」，手指按在下方選項上時輸入框失焦、整列收合，
         版面上移會害人點到別的項目。放在框內就沒有這些問題。
       -->
-      <div v-if="SPECIAL_CHARS.length" class="flex shrink-0 items-center gap-0.5" :aria-label="t('search.specialChars')">
+      <div v-if="SPECIAL_CHARS.length" class="flex shrink-0 items-center gap-0.5" :aria-label="t('插入特殊字元')">
         <button
           v-for="ch in SPECIAL_CHARS"
           :key="ch"
@@ -112,7 +112,7 @@ defineExpose({ focus: () => input.value?.focus() })
               size === 'lg' ? 'size-9 text-base' : 'size-7 text-sm',
             )
           "
-          :aria-label="t('search.insertChar', { char: ch })"
+          :aria-label="t('插入 {char}', { char: ch })"
           @mousedown.prevent
           @touchstart.prevent="insert(ch)"
           @click="insert(ch)"

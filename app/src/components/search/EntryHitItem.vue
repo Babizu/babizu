@@ -25,7 +25,7 @@ const showUnit = computed(() => doc.value.unit !== 'word')
 const contextLabel = computed(() => {
   const role = doc.value.role
   if (role === 'form' || role === 'example') {
-    return t('hit.underEntry', { entry: doc.value.groupTitle, role: roleLabel(role) })
+    return t('{entry} 條下{role}', { entry: doc.value.groupTitle, role: roleLabel(role) })
   }
   return ''
 })
@@ -57,7 +57,7 @@ const contextLabel = computed(() => {
       <p v-if="doc.zh || doc.en || doc.nan" class="gloss-zh text-[15px]">
         <span v-if="doc.zh">{{ doc.zh }}</span>
         <span v-if="doc.en" class="text-muted-foreground" :class="doc.zh && 'ml-2'">{{ doc.en }}</span>
-        <span v-if="doc.nan" class="text-muted-foreground ml-2 text-sm">{{ t('gloss.nanPrefix') }}{{ doc.nan }}</span>
+        <span v-if="doc.nan" class="text-muted-foreground ml-2 text-sm">{{ t('臺：') }}{{ doc.nan }}</span>
       </p>
       <p v-if="contextLabel" class="text-muted-foreground text-xs">{{ contextLabel }}</p>
       <ResultCitation :source="doc.source" :citation="doc.citation" :status="doc.status" />

@@ -6,7 +6,7 @@ import { LoaderCircleIcon, PauseIcon, PlayIcon, TriangleAlertIcon } from '@lucid
 import { computed } from 'vue'
 import { Button } from '@/components/ui/button'
 import { useAudioPlayer } from '@/composables/useAudioPlayer.js'
-import { t } from '@/i18n.js'
+import { msg, t } from '@/i18n.js'
 import { cn } from '@/lib/utils'
 
 const props = defineProps({
@@ -27,8 +27,8 @@ const active = computed(() => player.currentKey.value === props.playKey)
 const state = computed(() => (active.value ? player.state.value : 'idle'))
 const ariaLabel = computed(() => {
   const playing = state.value === 'playing'
-  if (props.label) return t(playing ? 'audio.stopLabel' : 'audio.playLabel', { label: props.label })
-  return t(playing ? 'audio.stop' : 'audio.play')
+  if (props.label) return t(playing ? msg('停止：{label}') : msg('播放：{label}'), { label: props.label })
+  return t(playing ? msg('停止錄音') : msg('播放錄音'))
 })
 
 function onClick(/** @type {MouseEvent} */ event) {
@@ -54,7 +54,7 @@ function onClick(/** @type {MouseEvent} */ event) {
     "
     :aria-label="ariaLabel"
     :aria-pressed="state === 'playing'"
-    :title="state === 'error' ? t('audio.error') : undefined"
+    :title="state === 'error' ? t('音檔無法播放') : undefined"
     @click="onClick"
   >
     <LoaderCircleIcon v-if="state === 'loading'" class="animate-spin" />

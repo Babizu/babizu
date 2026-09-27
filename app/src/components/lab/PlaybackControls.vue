@@ -20,30 +20,30 @@ const BUTTON = 'pointer-coarse:size-11'
 </script>
 
 <template>
-  <div class="flex flex-wrap items-center gap-x-3 gap-y-2" role="group" :aria-label="t('lab.playback.label')">
+  <div class="flex flex-wrap items-center gap-x-3 gap-y-2" role="group" :aria-label="t('逐步播放')">
     <div class="flex items-center gap-1">
-      <Button variant="outline" size="icon-sm" :class="BUTTON" :disabled="playback.atStart.value" :aria-label="t('lab.playback.first')" :title="t('lab.playback.first')" @click="playback.first">
+      <Button variant="outline" size="icon-sm" :class="BUTTON" :disabled="playback.atStart.value" :aria-label="t('回到開頭')" :title="t('回到開頭')" @click="playback.first">
         <ChevronFirstIcon />
       </Button>
-      <Button variant="outline" size="icon-sm" :class="BUTTON" :disabled="playback.atStart.value" :aria-label="t('lab.playback.prev')" :title="t('lab.playback.prev')" @click="playback.prev">
+      <Button variant="outline" size="icon-sm" :class="BUTTON" :disabled="playback.atStart.value" :aria-label="t('上一步')" :title="t('上一步')" @click="playback.prev">
         <StepBackIcon />
       </Button>
       <Button
         variant="outline"
         size="icon-sm"
         :class="BUTTON"
-        :aria-label="playback.playing.value ? t('lab.playback.pause') : t('lab.playback.play')"
+        :aria-label="playback.playing.value ? t('暫停') : t('播放')"
         :aria-pressed="playback.playing.value"
-        :title="playback.playing.value ? t('lab.playback.pause') : t('lab.playback.play')"
+        :title="playback.playing.value ? t('暫停') : t('播放')"
         @click="playback.toggle"
       >
         <PauseIcon v-if="playback.playing.value" />
         <PlayIcon v-else />
       </Button>
-      <Button variant="outline" size="icon-sm" :class="BUTTON" :disabled="playback.atEnd.value" :aria-label="t('lab.playback.next')" :title="t('lab.playback.next')" @click="playback.next">
+      <Button variant="outline" size="icon-sm" :class="BUTTON" :disabled="playback.atEnd.value" :aria-label="t('下一步')" :title="t('下一步')" @click="playback.next">
         <StepForwardIcon />
       </Button>
-      <Button variant="outline" size="icon-sm" :class="BUTTON" :disabled="playback.atEnd.value" :aria-label="t('lab.playback.last')" :title="t('lab.playback.last')" @click="playback.last">
+      <Button variant="outline" size="icon-sm" :class="BUTTON" :disabled="playback.atEnd.value" :aria-label="t('跳到結尾')" :title="t('跳到結尾')" @click="playback.last">
         <ChevronLastIcon />
       </Button>
     </div>
@@ -53,13 +53,13 @@ const BUTTON = 'pointer-coarse:size-11'
       :min="0"
       :max="Math.max(1, total)"
       :step="1"
-      :thumb-label="t('lab.playback.progress')"
-      :thumb-value-text="t('lab.playback.progressValue', { step: playback.index.value + 1, total })"
+      :thumb-label="t('步驟')"
+      :thumb-value-text="t('第 {step} 步，共 {total} 步', { step: playback.index.value + 1, total })"
       @update:model-value="(v) => playback.seek(v[0] - 1)"
     />
     <span class="text-muted-foreground font-mono text-xs tabular-nums" aria-hidden="true">{{ playback.index.value + 1 }} / {{ total }}</span>
     <label class="text-muted-foreground flex items-center gap-1.5 text-xs">
-      {{ t('lab.playback.speed') }}
+      {{ t('速度') }}
       <select v-model.number="playback.speed.value" class="border-input bg-background h-8 rounded-md border px-1 text-xs pointer-coarse:h-11">
         <option v-for="s in SPEEDS" :key="s" :value="s">{{ s }}×</option>
       </select>

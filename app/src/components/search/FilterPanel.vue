@@ -14,7 +14,7 @@ import { Slider } from '@/components/ui/slider'
 import { UNIT_CODES } from '@babizu/schema/constants.js'
 import { useSources } from '@/composables/useSources.js'
 import { t } from '@/i18n.js'
-import { dialectLabel, orderedVarieties, site, unitLabel } from '@/lib/labels.js'
+import { dialectLabel, FIELD_LABELS, fuzzinessLabel, orderedVarieties, site, unitLabel } from '@/lib/labels.js'
 
 /**
  * @typedef {object} FilterState
@@ -52,10 +52,10 @@ const fuzzinessIndex = computed({
   get: () => [Math.max(0, FUZZINESS_STEPS.indexOf(model.value.fuzziness))],
   set: ([i]) => (model.value = { ...model.value, fuzziness: FUZZINESS_STEPS[i] }),
 })
-const fuzzinessLabel = computed(() => t(`fuzziness.${model.value.fuzziness ?? 'normal'}`))
+const currentFuzziness = computed(() => fuzzinessLabel(model.value.fuzziness ?? 'normal'))
 
 /** @param {string} code */
-const varietyOptionLabel = (code) => (code === 'none' ? t('filter.noVariety') : dialectLabel(code))
+const varietyOptionLabel = (code) => (code === 'none' ? t('未標方言') : dialectLabel(code))
 
 const hasFilters = computed(
   () => model.value.sources.length > 0 || model.value.dialects.length > 0 || model.value.units.length > 0,
@@ -81,20 +81,20 @@ function reset() {
 <template>
   <div class="@container space-y-6 text-sm">
     <fieldset>
-      <legend class="mb-2 font-medium">{{ t('filter.fields') }}</legend>
+      <legend class="mb-2 font-medium">{{ t('搜尋範圍') }}</legend>
       <div :class="GRID">
-        <label v-for="f in FIELD_OPTIONS" :key="f" :class="OPTION" :title="t(`filter.field.${f}Hint`)">
+        <label v-for="f in FIELD_OPTIONS" :key="f" :class="OPTION" :title="t(FIELD_LABELS[f].hint)">
           <Checkbox :model-value="model.fields.includes(f)" @update:model-value="(v) => toggle('fields', f, v)" />
-          <span>{{ t(`filter.field.${f}`) }}</span>
+          <span>{{ t(FIELD_LABELS[f].label) }}</span>
         </label>
       </div>
-      <p v-if="model.fields.length === 0" class="text-destructive mt-1 text-xs">{{ t('filter.fieldsRequired') }}</p>
+      <p v-if="model.fields.length === 0" class="text-destructive mt-1 text-xs">{{ t('請至少選擇一個搜尋範圍。') }}</p>
     </fieldset>
 
     <section>
       <div class="mb-3 flex items-baseline justify-between">
-        <h3 id="filter-fuzziness" class="font-medium">{{ t('filter.fuzziness') }}</h3>
-        <span class="text-muted-foreground text-xs">{{ fuzzinessLabel }}</span>
+        <h3 id="filter-fuzziness" class="font-medium">{{ t('模糊程度') }}</h3>
+        <span class="text-muted-foreground text-xs">{{ currentFuzziness }}</span>
       </div>
       <!--
         強度拉桿：三個停留點，刻度圓點畫在軌道上。
@@ -108,8 +108,8 @@ function reset() {
           :max="FUZZINESS_STEPS.length - 1"
           :step="1"
           aria-labelledby="filter-fuzziness"
-:thumb-label="t('filter.fuzziness')"
-          :thumb-value-text="fuzzinessLabel"
+:thumb-label="t('模糊程度')"
+          :thumb-value-text="currentFuzziness"
         />
         <div class="pointer-events-none absolute inset-0" aria-hidden="true">
           <span
@@ -130,16 +130,16 @@ function reset() {
           :class="model.fuzziness === s && 'text-foreground font-medium'"
           @click="model = { ...model, fuzziness: s }"
         >
-          {{ t(`fuzziness.${s}`) }}
+          {{ fuzzinessLabel(s) }}
         </button>
       </div>
       <p class="text-muted-foreground mt-1 text-xs leading-relaxed">
-        {{ t('filter.fuzzinessHint') }}
+        {{ t('「標準」會找出方言間的語音對應與少量拼寫差異；「精確」只比對拼寫正規化後相同的詞。不論哪一種，都會另外列出「開頭相符」與「包含」查詢字串的詞。') }}
       </p>
     </section>
 
     <fieldset>
-      <legend class="mb-2 font-medium">{{ t('filter.sources') }}</legend>
+      <legend class="mb-2 font-medium">{{ t('資料來源') }}</legend>
       <div :class="GRID_WIDE">
         <label v-for="s in sources" :key="s.id" :class="OPTION">
           <Checkbox :model-value="model.sources.includes(s.id)" @update:model-value="(v) => toggle('sources', s.id, v)" />
@@ -149,7 +149,7 @@ function reset() {
     </fieldset>
 
     <fieldset v-if="hasVarieties">
-      <legend class="mb-2 font-medium">{{ t('filter.varieties') }}</legend>
+      <legend class="mb-2 font-medium">{{ t('方言') }}</legend>
       <div :class="GRID">
         <label v-for="code in VARIETY_CODES" :key="code" :class="OPTION">
           <Checkbox :model-value="model.dialects.includes(code)" @update:model-value="(v) => toggle('dialects', code, v)" />
@@ -157,12 +157,12 @@ function reset() {
         </label>
       </div>
       <p v-for="v in nested" :key="v.code" class="text-muted-foreground mt-1 text-xs">
-        {{ t('filter.varietyNote', { child: dialectLabel(v.code), parent: dialectLabel(v.parent ?? '') }) }}
+        {{ t('{child}是{parent}的地方變體，勾「{parent}」時會一併出現。', { child: dialectLabel(v.code), parent: dialectLabel(v.parent ?? '') }) }}
       </p>
     </fieldset>
 
     <fieldset>
-      <legend class="mb-2 font-medium">{{ t('filter.units') }}</legend>
+      <legend class="mb-2 font-medium">{{ t('語言單位') }}</legend>
       <div :class="GRID">
         <label v-for="u in UNIT_CODES" :key="u" :class="OPTION">
           <Checkbox :model-value="model.units.includes(u)" @update:model-value="(v) => toggle('units', u, v)" />
@@ -171,6 +171,6 @@ function reset() {
       </div>
     </fieldset>
 
-    <Button v-if="hasFilters" variant="outline" class="w-full" @click="reset">{{ t('filter.reset') }}</Button>
+    <Button v-if="hasFilters" variant="outline" class="w-full" @click="reset">{{ t('清除篩選') }}</Button>
   </div>
 </template>

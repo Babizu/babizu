@@ -8,7 +8,7 @@
 import site from 'virtual:babizu/site'
 import { QUALITY_STATUSES } from '@babizu/schema/constants.js'
 import { circumfixLabel } from '@babizu/fuzzy/steps.js'
-import { locale, t, tr } from '@/i18n.js'
+import { locale, msg, t, tr } from '@/i18n.js'
 
 export { QUALITY_STATUSES }
 export { formatCount } from '@/i18n.js'
@@ -16,23 +16,88 @@ export { formatCount } from '@/i18n.js'
 /** 站台設定（瀏覽器端的部分） */
 export { site }
 
-/** 單位名稱 @param {string} code */
-export const unitLabel = (code) => t(`unit.${code}`)
+/**
+ * 代碼 → 名稱。表中寫的是中文原文（也是譯文檔的鍵），顯示時再經過 t()；
+ * 表裡沒有的代碼原樣顯示。
+ * @param {Record<string, string>} table
+ * @param {string} code
+ */
+const labelOf = (table, code) => (code in table ? t(table[code]) : code)
 
-/** 群組角色名稱 @param {string} code */
-export const roleLabel = (code) => t(`role.${code}`)
+/** 單位名稱 */
+export const UNIT_LABELS = {
+  word: msg('詞'),
+  phrase: msg('片語'),
+  sentence: msg('句子'),
+  affix: msg('詞綴／詞根'),
+}
+/** @param {string} code */
+export const unitLabel = (code) => labelOf(UNIT_LABELS, code)
 
-/** 來源類型名稱 @param {string} code */
-export const sourceTypeLabel = (code) => t(`sourceType.${code}`)
+/** 群組角色名稱 */
+export const ROLE_LABELS = {
+  head: msg('詞條', '角色'),
+  example: msg('例句', '角色'),
+  form: msg('派生詞'),
+  item: msg('條目'),
+  segment: msg('語料句'),
+}
+/** @param {string} code */
+export const roleLabel = (code) => labelOf(ROLE_LABELS, code)
 
-/** 校對狀態名稱 @param {string} code */
-export const statusLabel = (code) => t(`status.${code}`)
+/** 來源類型名稱 */
+export const SOURCE_TYPE_LABELS = { dictionary: msg('辭典'), wordlist: msg('詞表'), corpus: msg('語料') }
+/** @param {string} code */
+export const sourceTypeLabel = (code) => labelOf(SOURCE_TYPE_LABELS, code)
 
-/** 詞在記錄中出現的身分（見 babizu/search 的 MatchKind） @param {string} kind */
-export const matchKindLabel = (kind) => t(`matchKind.${kind}`)
+/** 校對狀態名稱 */
+export const STATUS_LABELS = { unreviewed: msg('未校對'), reviewed: msg('初步校對'), verified: msg('二審校對') }
+/** @param {string} code */
+export const statusLabel = (code) => labelOf(STATUS_LABELS, code)
 
-/** 編輯操作的名稱 @param {string} op */
-export const opLabel = (op) => t(`op.${op}`)
+/** 詞在記錄中出現的身分（見 babizu/search 的 MatchKind） */
+export const MATCH_KIND_LABELS = {
+  head: msg('詞形'),
+  alt: msg('其他寫法'),
+  variant: msg('變體'),
+  root: msg('衍生自'),
+  token: msg('句中'),
+}
+/** @param {string} kind */
+export const matchKindLabel = (kind) => labelOf(MATCH_KIND_LABELS, kind)
+
+/** 編輯操作的名稱 */
+export const OP_LABELS = {
+  match: msg('相同'),
+  substitute: msg('替換'),
+  delete: msg('刪除'),
+  insert: msg('插入'),
+  rule: msg('語音規則'),
+}
+/** @param {string} op */
+export const opLabel = (op) => labelOf(OP_LABELS, op)
+
+/** 命中方式的名稱與說明（見 babizu/search 的 MatchType；fuzzy 沒有標籤） */
+export const MATCH_TYPES = {
+  prefix: { label: msg('開頭相符'), hint: msg('這個詞以你輸入的字串開頭') },
+  substring: { label: msg('包含'), hint: msg('這個詞裡面含有你輸入的字串') },
+  lemma: { label: msg('自動拆解'), hint: msg('演算法自動去掉詞綴後得到這個詞；是推定的結果，不是確定的分析') },
+  derived: { label: msg('衍生形'), hint: msg('這個詞是你輸入的詞加上詞綴') },
+}
+/** @param {string} type */
+export const matchTypeLabel = (type) => (type in MATCH_TYPES ? t(MATCH_TYPES[/** @type {keyof typeof MATCH_TYPES} */ (type)].label) : type)
+/** @param {string} type */
+export const matchTypeHint = (type) => (type in MATCH_TYPES ? t(MATCH_TYPES[/** @type {keyof typeof MATCH_TYPES} */ (type)].hint) : '')
+
+/** 構詞音變的說明中，音變落在哪裡 */
+export const MORPH_WHERE_LABELS = {
+  prefix: msg('前綴', '位置'),
+  stem: msg('詞幹'),
+  suffix: msg('後綴', '位置'),
+  junction: msg('詞素交界'),
+}
+/** @param {string} where */
+export const morphWhereLabel = (where) => labelOf(MORPH_WHERE_LABELS, where)
 
 /**
  * 語言變體（方言）名稱。站台設定沒有的代碼原樣顯示。
@@ -43,16 +108,17 @@ export function dialectLabel(code) {
   return variety ? tr(variety.label) : code
 }
 
+/** 框架內建的書寫系統名稱 */
+export const WRITING_SYSTEM_LABELS = { phonetic: msg('語音標記'), segmented: msg('分詞形式') }
+
 /**
- * 書寫系統名稱：先查站台設定，再查框架字串（`writingSystem.<code>`），都沒有就顯示代碼。
+ * 書寫系統名稱：先查站台設定，再查框架內建的名稱，都沒有就顯示代碼。
  * @param {string} code
  */
 export function writingSystemLabel(code) {
   const own = site.writingSystems[code]
   if (own) return tr(own)
-  const key = `writingSystem.${code}`
-  const label = t(key)
-  return label === key ? code : label
+  return labelOf(WRITING_SYSTEM_LABELS, code)
 }
 
 /**
@@ -102,8 +168,17 @@ export function formatMorphStep(step) {
   return step.form
 }
 
-/** 構詞步驟類型的名稱 @param {string} type */
-export const morphStepLabel = (type) => t(`morph.type.${type}`)
+/** 構詞步驟類型的名稱 */
+export const MORPH_STEP_LABELS = {
+  prefix: msg('前綴'),
+  suffix: msg('後綴'),
+  infix: msg('中綴'),
+  reduplication: msg('重疊'),
+  alternation: msg('構詞音變'),
+  circumfix: msg('環綴'),
+}
+/** @param {string} type */
+export const morphStepLabel = (type) => labelOf(MORPH_STEP_LABELS, type)
 
 /**
  * 詞綴的語法說明（語言設定檔中可以是字串或依語系提供）。
@@ -158,14 +233,17 @@ export function recordRoute(id) {
 
 /**
  * 來源的分片單位名稱（「頁」「章」「場次」…）。來源資料裡寫的是資料本身的語言，
- * 所以預設語系直接用它，其他語系改用依瀏覽模式的通用名稱（`browse.shard.<mode>`）。
+ * 所以預設語系直接用它，其他語系改用依瀏覽模式的通用名稱（SHARD_LABELS）。
  * @param {{browse?: {mode: string, shardLabel: string}} | null | undefined} source
  */
 export function shardUnitLabel(source) {
   if (!source?.browse) return ''
   if (locale.value === site.defaultLocale) return source.browse.shardLabel
-  return t(`browse.shard.${source.browse.mode}`)
+  return labelOf(SHARD_LABELS, source.browse.mode)
 }
+
+/** 瀏覽模式 → 分片單位的通用名稱 */
+export const SHARD_LABELS = { page: msg('頁'), category: msg('類'), list: msg('部分'), recording: msg('場次') }
 
 /** 網站名稱（依目前語系） */
 export const siteTitle = () => tr(site.title)
@@ -192,3 +270,35 @@ export const COSTS = (() => {
     rule: weights.length ? Math.min(...weights) : null,
   }
 })()
+
+/** 規則的適用位置（演算法實驗室） */
+export const POSITION_LABELS = { any: msg('任何位置'), initial: msg('詞首'), final: msg('詞尾') }
+/** @param {string} position */
+export const positionLabel = (position) => labelOf(POSITION_LABELS, position)
+
+/** 編輯操作的成本名稱（演算法實驗室的成本設定） */
+export const COST_LABELS = { substitute: msg('替換'), delete: msg('刪除'), insert: msg('插入'), space: msg('空白（三種操作）') }
+/** @param {string} kind */
+export const costLabel = (kind) => labelOf(COST_LABELS, kind)
+
+/** 模糊程度 */
+export const FUZZINESS_LABELS = { exact: msg('精確'), normal: msg('標準'), loose: msg('寬鬆') }
+/** @param {string} level */
+export const fuzzinessLabel = (level) => labelOf(FUZZINESS_LABELS, level)
+
+/** 搜尋範圍 */
+export const FIELD_LABELS = {
+  native: { label: msg('族語'), hint: msg('詞形、變體、其他書寫系統，以及句子中的詞') },
+  gloss: { label: msg('釋義'), hint: msg('中文、英文、臺語譯解') },
+}
+
+/** 構詞規格的各項清單（演算法實驗室的規格摘要） */
+export const SPEC_LABELS = {
+  prefixes: msg('前綴', '規格清單'),
+  suffixes: msg('後綴', '規格清單'),
+  infixes: msg('中綴', '規格清單'),
+  reduplication: msg('重疊型式'),
+  alternations: msg('構詞音變', '規格清單'),
+}
+/** @param {string} key */
+export const specLabel = (key) => labelOf(SPEC_LABELS, key)

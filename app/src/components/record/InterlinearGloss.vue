@@ -12,7 +12,7 @@ defineProps({
 </script>
 
 <template>
-  <div class="flex flex-wrap gap-x-4 gap-y-3" role="table" :aria-label="t('record.interlinear')">
+  <div class="flex flex-wrap gap-x-4 gap-y-3" role="table" :aria-label="t('逐詞對譯')">
     <div v-for="(pair, k) in pairs" :key="k" class="flex flex-col" role="row">
       <span class="native-text font-medium" role="cell">{{ pair.form || '—' }}</span>
       <span class="text-muted-foreground text-sm" role="cell">{{ pair.gloss || '—' }}</span>

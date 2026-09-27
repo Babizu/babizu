@@ -30,14 +30,14 @@ const rows = computed(() => {
   const c = citation.value
   /** @type {Array<[string, string]>} */
   const out = []
-  if (c.pages?.length) out.push([t('citation.page'), c.pages.map((/** @type {number} */ p) => `p.${p}`).join('–')])
-  else if (c.page !== null) out.push([t('citation.page'), `p.${c.page}`])
-  if (c.code) out.push([t('citation.code'), c.code])
-  if (c.row !== null) out.push([t('citation.row'), t('citation.rowValue', { row: c.row })])
-  if (c.file) out.push([t('citation.file'), c.file])
-  if (c.timecode) out.push([t('citation.timecode'), `${formatTimecode(c.timecode.start)}–${formatTimecode(c.timecode.end)}`])
-  if (props.record.attribution) out.push([t('citation.attribution'), props.record.attribution])
-  if (props.record.speaker) out.push([t('citation.speaker'), props.record.speaker])
+  if (c.pages?.length) out.push([t('頁碼'), c.pages.map((/** @type {number} */ p) => `p.${p}`).join('–')])
+  else if (c.page !== null) out.push([t('頁碼'), `p.${c.page}`])
+  if (c.code) out.push([t('編號'), c.code])
+  if (c.row !== null) out.push([t('列號'), t('第 {row} 列', { row: c.row })])
+  if (c.file) out.push([t('原始檔案'), c.file])
+  if (c.timecode) out.push([t('時間碼'), `${formatTimecode(c.timecode.start)}–${formatTimecode(c.timecode.end)}`])
+  if (props.record.attribution) out.push([t('原始出處'), props.record.attribution])
+  if (props.record.speaker) out.push([t('講者'), props.record.speaker])
   return out
 })
 
@@ -47,9 +47,9 @@ async function copyCitation() {
   const text = parts.join('\n')
   try {
     await navigator.clipboard.writeText(text)
-    toast.success(t('citation.copied'))
+    toast.success(t('已複製引用資訊'))
   } catch {
-    toast.error(t('citation.copyFailed'))
+    toast.error(t('無法存取剪貼簿，請手動複製'))
   }
 }
 </script>
@@ -59,14 +59,14 @@ async function copyCitation() {
     <CardHeader class="px-5">
       <CardTitle class="flex items-center gap-2 text-base">
         <BookOpenIcon class="text-muted-foreground size-4" />
-        {{ t('citation.title') }}
+        {{ t('出處') }}
       </CardTitle>
     </CardHeader>
     <CardContent class="space-y-4 px-5 text-sm">
       <div>
         <p class="font-medium">{{ source?.title ?? record.source }}</p>
         <p v-if="source && (source.authors.length || source.year)" class="text-muted-foreground mt-0.5 text-xs">
-          {{ source.authors.join(t('common.listSeparator')) }}<template v-if="source.year">（{{ source.year }}）</template>
+          {{ source.authors.join(t('、')) }}<template v-if="source.year">（{{ source.year }}）</template>
         </p>
         <p class="mt-2 leading-relaxed">{{ citation.label }}</p>
       </div>
@@ -78,31 +78,31 @@ async function copyCitation() {
         </template>
         <!-- 只有設了校對流程的來源才談校對狀態（見 useSources 的 tracksReview） -->
         <template v-if="source?.reviewTracked">
-          <dt class="text-muted-foreground">{{ t('citation.status') }}</dt>
+          <dt class="text-muted-foreground">{{ t('校對狀態') }}</dt>
           <dd class="flex flex-wrap items-center gap-1.5">
             <StatusBadge :status="record.quality.status" variant="badge" />
             <span v-if="record.quality.flags.length" class="text-muted-foreground text-xs">
-              （{{ record.quality.flags.join(t('common.listSeparator')) }}）
+              （{{ record.quality.flags.join(t('、')) }}）
             </span>
           </dd>
         </template>
         <template v-else-if="record.quality.flags.length">
-          <dt class="text-muted-foreground">{{ t('citation.flags') }}</dt>
-          <dd>{{ record.quality.flags.join(t('common.listSeparator')) }}</dd>
+          <dt class="text-muted-foreground">{{ t('備註') }}</dt>
+          <dd>{{ record.quality.flags.join(t('、')) }}</dd>
         </template>
       </dl>
 
       <div class="flex flex-col gap-2">
         <Button v-if="citation.scan" variant="default" class="w-full" @click="scanOpen = true">
-          <FileImageIcon /> {{ t('citation.viewScan') }}
+          <FileImageIcon /> {{ t('查看原書掃描頁') }}
         </Button>
         <div class="grid grid-cols-2 gap-2">
           <Button variant="outline" as-child>
             <RouterLink :to="{ name: 'browse', params: { source: record.source, shard: shard.key }, hash: `#${record.id}` }">
-              <ListTreeIcon /> {{ t('citation.browseShard', { unit: shardUnitLabel(source) }) }}
+              <ListTreeIcon /> {{ t('瀏覽{unit}', { unit: shardUnitLabel(source) }) }}
             </RouterLink>
           </Button>
-          <Button variant="outline" @click="copyCitation"><CopyIcon /> {{ t('citation.copy') }}</Button>
+          <Button variant="outline" @click="copyCitation"><CopyIcon /> {{ t('複製引用') }}</Button>
         </div>
       </div>
     </CardContent>
@@ -113,6 +113,6 @@ async function copyCitation() {
     v-model:open="scanOpen"
     :scan="citation.scan"
     :title="citation.label"
-    :description="t('scan.description')"
+    :description="t('可放大檢視，與電子化文字對照。')"
   />
 </template>

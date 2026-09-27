@@ -55,7 +55,7 @@ const visible = computed(() => {
       :active="item.record.id === activeId"
     />
     <p v-if="window && visible.length < ordered.length" class="text-muted-foreground px-3 pt-2 text-xs">
-      {{ t('group.windowed', { total: ordered.length, window }) }}
+      {{ t('共 {total} 筆，只顯示前後各 {window} 筆。', { total: ordered.length, window }) }}
     </p>
   </div>
 </template>

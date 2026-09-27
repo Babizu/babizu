@@ -156,9 +156,9 @@ const sections = computed(() => {
   if (!r) return []
   const fields = filters.value.fields
   return [
-    { key: 'entries', label: t('search.section.entries'), items: r.entries, total: r.totals.entries, field: 'native' },
-    { key: 'occurrences', label: t('search.section.occurrences'), items: r.occurrences, total: r.totals.occurrences, field: 'native' },
-    { key: 'glosses', label: t('search.section.glosses'), items: r.glosses, total: r.totals.glosses, field: 'gloss' },
+    { key: 'entries', label: t('詞條'), items: r.entries, total: r.totals.entries, field: 'native' },
+    { key: 'occurrences', label: t('例句'), items: r.occurrences, total: r.totals.occurrences, field: 'native' },
+    { key: 'glosses', label: t('釋義'), items: r.glosses, total: r.totals.glosses, field: 'gloss' },
   ].filter(
     (s) =>
       // 沒選到的搜尋範圍不顯示；有選的範圍即使 0 筆也保留分頁（讓使用者知道有搜）
@@ -183,7 +183,7 @@ const filterSheetOpen = ref(false)
         <Sheet v-model:open="filterSheetOpen">
           <SheetTrigger as-child>
             <Button variant="outline" class="h-11 shrink-0 gap-1.5 px-3 lg:hidden">
-              {{ t('search.filters') }}
+              {{ t('搜尋條件') }}
               <span
                 v-if="activeFilterCount"
                 class="bg-primary text-primary-foreground flex size-5 items-center justify-center rounded-full text-[10px] tabular-nums"
@@ -194,8 +194,8 @@ const filterSheetOpen = ref(false)
           </SheetTrigger>
           <SheetContent side="bottom" class="overflow-y-auto">
             <SheetHeader>
-              <SheetTitle>{{ t('search.filters') }}</SheetTitle>
-              <SheetDescription>{{ t('search.filtersHint') }}</SheetDescription>
+              <SheetTitle>{{ t('搜尋條件') }}</SheetTitle>
+              <SheetDescription>{{ t('調整模糊程度，或限定來源、方言、語言單位。') }}</SheetDescription>
             </SheetHeader>
             <div class="px-4 pb-6">
               <FilterPanel v-model="filters" />
@@ -217,19 +217,19 @@ const filterSheetOpen = ref(false)
         <StateMessage
           v-if="indexStatus === 'error' || searchError"
           tone="error"
-          :title="t('search.loadFailed')"
+          :title="t('無法載入搜尋資料')"
           :description="indexError ?? searchError ?? ''"
         >
-          <Button variant="outline" @click="load">{{ t('common.retry') }}</Button>
+          <Button variant="outline" @click="load">{{ t('重試') }}</Button>
         </StateMessage>
 
         <!-- 沒有選搜尋範圍 -->
         <StateMessage
           v-else-if="filters.fields.length === 0"
-          :title="t('search.noFieldsTitle')"
-          :description="t('search.noFieldsHint')"
+          :title="t('請選擇搜尋範圍')"
+          :description="t('至少要勾選「族語」或「釋義」其中一項。')"
         >
-          <Button variant="outline" @click="filters = { ...filters, fields: ['native', 'gloss'] }">{{ t('search.searchBoth') }}</Button>
+          <Button variant="outline" @click="filters = { ...filters, fields: ['native', 'gloss'] }">{{ t('兩者都搜尋') }}</Button>
         </StateMessage>
 
         <!--
@@ -241,13 +241,13 @@ const filterSheetOpen = ref(false)
           <p v-if="site.description" class="text-muted-foreground mt-2 leading-relaxed">{{ tr(site.description) }}</p>
           <p class="text-muted-foreground mt-1 text-sm tabular-nums" aria-live="polite">
             <template v-if="indexStatus === 'ready' && stats">
-              {{ t('search.loaded', { records: formatCount(stats.records), terms: formatCount(stats.terms) }) }}
+              {{ t('已載入 {records} 筆記錄、{terms} 個詞形', { records: formatCount(stats.records), terms: formatCount(stats.terms) }) }}
             </template>
-            <template v-else-if="indexStatus === 'loading'">{{ t('search.loadingIndex') }}</template>
+            <template v-else-if="indexStatus === 'loading'">{{ t('正在載入辭典索引…') }}</template>
           </p>
 
           <div v-if="recent.length" class="mt-6">
-            <h2 class="text-muted-foreground mb-2 text-xs font-medium tracking-wide">{{ t('search.recent') }}</h2>
+            <h2 class="text-muted-foreground mb-2 text-xs font-medium tracking-wide">{{ t('最近搜尋') }}</h2>
             <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
               <RouterLink
                 v-for="q in recent"
@@ -257,12 +257,12 @@ const filterSheetOpen = ref(false)
               >
                 {{ q }}
               </RouterLink>
-              <button type="button" class="text-muted-foreground text-xs hover:underline" @click="clearRecent">{{ t('search.clear') }}</button>
+              <button type="button" class="text-muted-foreground text-xs hover:underline" @click="clearRecent">{{ t('清除') }}</button>
             </div>
           </div>
 
           <h2 v-if="EXAMPLES.length" class="text-muted-foreground mt-6 mb-2 text-xs font-medium tracking-wide">
-            {{ t('search.tryThese') }}
+            {{ t('試試這些查詢') }}
           </h2>
           <ul v-if="EXAMPLES.length" class="divide-border border-border divide-y border-y">
             <li v-for="ex in EXAMPLES" :key="ex.q">
@@ -280,7 +280,7 @@ const filterSheetOpen = ref(false)
 
         <!-- 搜尋中（第一次） -->
         <div v-else-if="!response && (searching || indexStatus !== 'ready')" class="space-y-4" aria-busy="true">
-          <p class="text-muted-foreground text-sm">{{ indexStatus === 'ready' ? t('search.searching') : t('search.loadingIndex') }}</p>
+          <p class="text-muted-foreground text-sm">{{ indexStatus === 'ready' ? t('搜尋中…') : t('正在載入辭典索引…') }}</p>
           <div v-for="k in 4" :key="k" class="space-y-2 px-4 py-3">
             <Skeleton class="h-6 w-40" />
             <Skeleton class="h-4 w-3/4" />
@@ -293,14 +293,14 @@ const filterSheetOpen = ref(false)
           <div class="mb-3 space-y-1">
             <p class="text-muted-foreground text-sm">
               <template v-if="totalHits">
-                {{ t('search.resultCountBefore') }}<span class="text-foreground font-medium">{{ response.query }}</span
-                >{{ t('search.resultCountAfter', { count: formatCount(totalHits) }) }}
+                {{ t('「') }}<span class="text-foreground font-medium">{{ response.query }}</span
+                >{{ t('」共 {count} 筆', { count: formatCount(totalHits) }) }}
               </template>
-              <template v-else>{{ t('search.noResultsFor', { query: response.query }) }}</template>
+              <template v-else>{{ t('「{query}」沒有結果', { query: response.query }) }}</template>
               <span class="ml-2 text-xs tabular-nums opacity-70">{{ response.stats.elapsedMs }} ms</span>
             </p>
             <div v-if="fuzzyTerms.length" class="text-muted-foreground flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-xs">
-              <span>{{ t('search.similarSpellings') }}</span>
+              <span>{{ t('含相近拼寫：') }}</span>
               <ul class="contents">
                 <li v-for="term in fuzzyTerms" :key="term.term" class="inline-flex items-baseline gap-1 whitespace-nowrap">
                   <span class="native-text text-foreground text-[13px]">{{ term.term }}</span>
@@ -312,8 +312,8 @@ const filterSheetOpen = ref(false)
 
           <StateMessage
             v-if="totalHits === 0"
-            :title="t('search.noResults')"
-            :description="filters.fuzziness !== 'loose' ? t('search.noResultsHintLoose') : t('search.noResultsHint')"
+            :title="t('找不到相符的詞')"
+            :description="filters.fuzziness !== 'loose' ? t('試試把模糊程度調成「寬鬆」，或減少篩選條件。') : t('試試換個拼寫、減少篩選條件，或改用中文、英文查詢。')"
           >
             <template #icon><SearchXIcon /></template>
             <Button
@@ -321,14 +321,14 @@ const filterSheetOpen = ref(false)
               variant="outline"
               @click="filters = { ...filters, fuzziness: 'loose' }"
             >
-              {{ t('search.useLoose') }}
+              {{ t('改用寬鬆搜尋') }}
             </Button>
           </StateMessage>
 
           <Tabs v-else v-model="tab" class="gap-4" :class="searching && 'opacity-60 transition-opacity'">
             <div class="scrollbar-thin -mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
               <TabsList class="h-10">
-                <TabsTrigger value="all" class="px-3">{{ t('search.all') }}</TabsTrigger>
+                <TabsTrigger value="all" class="px-3">{{ t('全部') }}</TabsTrigger>
                 <TabsTrigger v-for="s in sections" :key="s.key" :value="s.key" :disabled="s.total === 0" class="px-3">
                   {{ s.label }}
                   <span class="text-muted-foreground text-xs tabular-nums">{{ formatCount(s.total) }}</span>
@@ -350,7 +350,7 @@ const filterSheetOpen = ref(false)
                     class="text-primary text-sm font-medium hover:underline"
                     @click="tab = s.key"
                   >
-                    {{ t('search.seeAll') }}
+                    {{ t('查看全部 →') }}
                   </button>
                 </div>
                 <div class="divide-y">
@@ -374,11 +374,11 @@ const filterSheetOpen = ref(false)
               </div>
               <div v-if="s.items.length > limits[s.key]" class="mt-4 flex justify-center">
                 <Button variant="outline" @click="showMore(s.key)">
-                  {{ t('search.showMore', { count: formatCount(s.items.length - limits[s.key]) }) }}
+                  {{ t('顯示更多（還有 {count} 筆）', { count: formatCount(s.items.length - limits[s.key]) }) }}
                 </Button>
               </div>
               <p v-else-if="s.total > s.items.length" class="text-muted-foreground mt-4 text-center text-xs">
-                {{ t('search.truncated', { count: formatCount(s.items.length) }) }}
+                {{ t('只顯示前 {count} 筆，請加上篩選條件或更精確的查詢。', { count: formatCount(s.items.length) }) }}
               </p>
             </TabsContent>
           </Tabs>

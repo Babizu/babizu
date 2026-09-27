@@ -25,13 +25,13 @@ const OPS = {
 
 <template>
   <div>
-    <ol class="flex flex-wrap gap-1.5" :aria-label="t('lab.alignment')">
+    <ol class="flex flex-wrap gap-1.5" :aria-label="t('對齊結果')">
       <li
         v-for="(step, k) in steps"
         :key="k"
         class="relative flex min-w-9 flex-col items-center rounded-md px-2 pt-2.5 pb-1"
         :class="OPS[step.op].cls"
-        :title="t('lab.stepTitle', { op: opLabel(step.op) + (step.rule?.category ? ` · ${categoryLabel(step.rule.category)}` : ''), cost: formatDistance(step.cost) })"
+        :title="t('{op}，成本 {cost}', { op: opLabel(step.op) + (step.rule?.category ? ` · ${categoryLabel(step.rule.category)}` : ''), cost: formatDistance(step.cost) })"
       >
         <span class="absolute top-0 left-1 text-[10px] leading-tight opacity-70" aria-hidden="true">{{ OPS[step.op].symbol }}</span>
         <span class="sr-only">{{ opLabel(step.op) }}</span>

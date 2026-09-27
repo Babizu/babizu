@@ -39,7 +39,7 @@ const isSentence = computed(() => doc.value.unit === 'sentence')
           <HighlightText mode="plain" :text="doc.en" :needle="hit.field === 'en' ? query : ''" />
         </span>
         <span v-if="doc.nan" class="text-muted-foreground ml-2 text-sm">
-          {{ t('gloss.nanPrefix') }}<HighlightText mode="plain" :text="doc.nan" :needle="hit.field === 'nan' ? query : ''" />
+          {{ t('臺：') }}<HighlightText mode="plain" :text="doc.nan" :needle="hit.field === 'nan' ? query : ''" />
         </span>
       </p>
       <ResultCitation :source="doc.source" :citation="doc.citation" :status="doc.status" />

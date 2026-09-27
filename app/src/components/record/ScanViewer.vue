@@ -46,7 +46,7 @@ function step(direction) {
       </DialogHeader>
       <div class="bg-muted relative min-h-0 flex-1 overflow-auto rounded-md border">
         <div v-if="!loaded" class="text-muted-foreground absolute inset-0 flex items-center justify-center gap-2 text-sm">
-          <ScanIcon class="size-4 animate-pulse" /> {{ t('scan.loading') }}
+          <ScanIcon class="size-4 animate-pulse" /> {{ t('載入掃描圖…') }}
         </div>
         <img
           :src="url"
@@ -58,16 +58,16 @@ function step(direction) {
       </div>
       <div class="flex items-center justify-between gap-2">
         <div class="flex items-center gap-1">
-          <Button variant="outline" size="icon" :disabled="zoom === ZOOM_STEPS[0]" :aria-label="t('scan.zoomOut')" @click="step(-1)">
+          <Button variant="outline" size="icon" :disabled="zoom === ZOOM_STEPS[0]" :aria-label="t('縮小')" @click="step(-1)">
             <MinusIcon />
           </Button>
           <span class="text-muted-foreground w-12 text-center text-sm tabular-nums">{{ Math.round(zoom * 100) }}%</span>
-          <Button variant="outline" size="icon" :disabled="zoom === ZOOM_STEPS.at(-1)" :aria-label="t('scan.zoomIn')" @click="step(1)">
+          <Button variant="outline" size="icon" :disabled="zoom === ZOOM_STEPS.at(-1)" :aria-label="t('放大')" @click="step(1)">
             <PlusIcon />
           </Button>
         </div>
         <Button variant="ghost" as="a" :href="url" target="_blank" rel="noopener">
-          <ExternalLinkIcon /> {{ t('scan.openInNewTab') }}
+          <ExternalLinkIcon /> {{ t('在新分頁開啟') }}
         </Button>
       </div>
     </DialogContent>

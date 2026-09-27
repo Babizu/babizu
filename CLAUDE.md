@@ -30,7 +30,7 @@ node bin/babizu.js build ../pazeh-kaxabu     # 用本機框架建真實站台
 | `src/pipeline/` | 轉接器工具、`exportDataset`（驗證→寫資料集→同步並清除媒體） |
 | `src/site/` | `config.js`（讀站台設定）、`prepare.js`（資料集→網站資料＋索引）、`vite.js`（虛擬模組 `virtual:babizu/site`） |
 | `app/` | Vue 3＋Tailwind v4＋手動移植的 shadcn-vue（JS 版）；`i18n.js` 自製語系 |
-| `locales/` | `zh-TW.json`、`en.json`，鍵必須完全相同（`test/site/locales.test.js` 檢查） |
+| `locales/` | 譯文檔：`en.json`（中文原文 → 英文）。中文是原文語系，直接寫在程式裡，沒有語系檔；`test/site/locales.test.js` 從程式抽出字串檢查譯文齊全 |
 | `examples/minimal/` | 虛構語言的示範站台，也是端對端測試對象 |
 | `test/fixtures/` | 巴宰–噶哈巫語的語言設定檔與測試用站台設定（有從屬變體與真實規則表） |
 
@@ -38,7 +38,7 @@ node bin/babizu.js build ../pazeh-kaxabu     # 用本機框架建真實站台
 
 - **框架裡不能寫死任何語言的內容**：變體代碼、方言名稱、詞形範例、來源名稱都來自站台設定或語言設定檔。
   註解與測試可以用巴宰–噶哈巫語當例子，但執行路徑不能依賴它。
-- **介面文字一律 `t('鍵')`**，同時加進兩個語系檔；代碼的顯示名稱用 `app/src/lib/labels.js`。
+- **介面文字一律 `t('中文原文')`**（對照表等不在呼叫處的字串用 `msg('…')`，不用樣板字串組鍵），英文加進 `locales/en.json`；代碼的顯示名稱用 `app/src/lib/labels.js`。見 `docs/i18n.md`。
 - **搜尋索引格式**（`INDEX_FORMAT_VERSION`）改了要升版；`SearchEngine` 會拒絕版本不符的索引。
 - **UI 設計語言**見 `docs/ui-guidelines.md`：小圓角（3px 基準）、髮絲線不用陰影、不用漸層、目標語言用 Gentium Book Plus。
 - **前端非同步**：切換頁面時舊請求可能晚回來，載入函式要檢查「這還是目前的請求」再寫入狀態。

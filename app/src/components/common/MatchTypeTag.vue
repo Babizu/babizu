@@ -5,7 +5,7 @@
  * 這裡處理前綴、包含，以及例句的構詞命中（詞根相符、衍生形）。
  */
 import { computed } from 'vue'
-import { t } from '@/i18n.js'
+import { MATCH_TYPES, matchTypeHint, matchTypeLabel } from '@/lib/labels.js'
 import MetaTag from './MetaTag.vue'
 
 const props = defineProps({
@@ -15,11 +15,7 @@ const props = defineProps({
   term: { type: String, default: '' },
 })
 
-const info = computed(() =>
-  ['prefix', 'substring', 'lemma', 'derived'].includes(props.matchType)
-    ? { label: t(`matchType.${props.matchType}`), hint: t(`matchType.${props.matchType}Hint`) }
-    : null,
-)
+const info = computed(() => (props.matchType in MATCH_TYPES ? { label: matchTypeLabel(props.matchType), hint: matchTypeHint(props.matchType) } : null))
 </script>
 
 <template>

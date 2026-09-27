@@ -34,10 +34,10 @@ const totals = computed(() => {
 /** 總計要顯示的欄位，沒有資料的就不列 */
 const TOTAL_ROWS = computed(() =>
   [
-    { key: 'records', label: t('sources.records') },
+    { key: 'records', label: t('總筆數') },
     ...UNIT_KEYS.map((u) => ({ key: u, label: unitLabel(u) })),
-    { key: 'audio', label: t('sources.audio') },
-    { key: 'scans', label: t('sources.scans') },
+    { key: 'audio', label: t('錄音') },
+    { key: 'scans', label: t('掃描頁') },
   ].filter((row) => totals.value[row.key] > 0),
 )
 
@@ -48,18 +48,18 @@ const notesOf = (s) => (s.notes ?? []).filter((note) => note.trim())
 <template>
   <div class="mx-auto max-w-6xl px-4 py-8 sm:px-6 sm:py-12">
     <header class="mb-8 max-w-2xl">
-      <h1 class="font-serif text-3xl font-bold tracking-tight">{{ t('nav.sources') }}</h1>
+      <h1 class="font-serif text-3xl font-bold tracking-tight">{{ t('資料來源') }}</h1>
       <p class="text-muted-foreground mt-2">
-        {{ t('sources.intro') }}
+        {{ t('每個來源都由獨立的轉接器轉成統一格式，原始拼寫與出處資訊完整保留。以下列出各來源的收錄內容與處理說明；點統計數字可以看該類別的完整清單。') }}
       </p>
     </header>
 
-    <StateMessage v-if="error" tone="error" :title="t('sources.loadFailed')" :description="error" />
+    <StateMessage v-if="error" tone="error" :title="t('無法載入來源資訊')" :description="error" />
 
     <!-- 全部來源加總：先給整體規模，再進到各來源 -->
     <section v-else-if="loaded" class="border-border mb-8 border-y py-4" aria-labelledby="h-totals">
       <h2 id="h-totals" class="text-muted-foreground mb-3 text-xs font-medium tracking-wide">
-        {{ t('sources.totals', { count: sources.length }) }}
+        {{ t('全部 {count} 個來源合計', { count: sources.length }) }}
       </h2>
       <dl class="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3 lg:grid-cols-6">
         <div v-for="row in TOTAL_ROWS" :key="row.key">
@@ -79,7 +79,7 @@ const notesOf = (s) => (s.notes ?? []).filter((note) => note.trim())
           <p class="text-muted-foreground text-xs">{{ sourceTypeLabel(s.type) }}</p>
           <CardTitle class="text-lg">{{ s.title }}</CardTitle>
           <CardDescription v-if="s.authors.length || s.year || s.publisher">
-            {{ [s.authors.join(t('common.listSeparator')), s.publisher, s.year].filter(Boolean).join(' · ') }}
+            {{ [s.authors.join(t('、')), s.publisher, s.year].filter(Boolean).join(' · ') }}
           </CardDescription>
         </CardHeader>
         <CardContent class="space-y-4 text-sm">
@@ -91,7 +91,7 @@ const notesOf = (s) => (s.notes ?? []).filter((note) => note.trim())
               :to="{ name: 'source-list', params: { source: s.id } }"
               class="bg-muted/60 hover:bg-accent hover:text-accent-foreground block rounded-lg px-3 py-2 transition-colors"
             >
-              <dt class="text-muted-foreground text-xs">{{ t('sources.records') }}</dt>
+              <dt class="text-muted-foreground text-xs">{{ t('總筆數') }}</dt>
               <dd class="font-serif text-lg font-semibold tabular-nums">{{ formatCount(s.stats?.records ?? 0) }}</dd>
             </RouterLink>
             <RouterLink
@@ -104,27 +104,27 @@ const notesOf = (s) => (s.notes ?? []).filter((note) => note.trim())
               <dd class="font-serif text-lg font-semibold tabular-nums">{{ formatCount(s.stats[u]) }}</dd>
             </RouterLink>
             <div v-if="s.stats?.audio" class="bg-muted/60 rounded-lg px-3 py-2">
-              <dt class="text-muted-foreground text-xs">{{ t('sources.audio') }}</dt>
+              <dt class="text-muted-foreground text-xs">{{ t('錄音') }}</dt>
               <dd class="font-serif text-lg font-semibold tabular-nums">{{ formatCount(s.stats.audio) }}</dd>
             </div>
           </dl>
 
           <div v-if="s.defaultDialects.length" class="flex items-center gap-2">
-            <span class="text-muted-foreground text-xs">{{ t('filter.varieties') }}</span>
+            <span class="text-muted-foreground text-xs">{{ t('方言') }}</span>
             <DialectBadge v-for="d in s.defaultDialects" :key="d" :dialect="d" />
           </div>
-          <p v-if="s.orthography" class="text-muted-foreground text-xs">{{ t('sources.orthography', { value: s.orthography }) }}</p>
+          <p v-if="s.orthography" class="text-muted-foreground text-xs">{{ t('書寫系統：{value}', { value: s.orthography }) }}</p>
           <ul v-if="notesOf(s).length" class="text-muted-foreground list-disc space-y-1 pl-4 text-xs leading-relaxed">
             <li v-for="(note, k) in notesOf(s)" :key="k">{{ note }}</li>
           </ul>
           <p v-if="s.citation" class="bg-muted/40 rounded-md p-3 text-xs leading-relaxed">
-            <span class="text-muted-foreground">{{ t('sources.cite') }}</span>{{ s.citation }}
+            <span class="text-muted-foreground">{{ t('建議引用：') }}</span>{{ s.citation }}
           </p>
         </CardContent>
         <CardFooter class="mt-auto">
           <Button as-child variant="outline" class="w-full sm:w-auto">
             <RouterLink :to="{ name: 'browse', params: { source: s.id } }">
-              {{ t('sources.browse', { count: formatCount(s.shards.length), unit: shardUnitLabel(s) }) }}<ArrowRightIcon />
+              {{ t('瀏覽（{count} {unit}）', { count: formatCount(s.shards.length), unit: shardUnitLabel(s) }) }}<ArrowRightIcon />
             </RouterLink>
           </Button>
         </CardFooter>

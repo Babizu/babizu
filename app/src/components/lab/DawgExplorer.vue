@@ -82,18 +82,18 @@ const isFocus = (row) => state.value.focus?.prefix === row.prefix && playback.in
   <div class="grid gap-6 lg:grid-cols-[18rem_minmax(0,1fr)]">
     <div class="space-y-5 text-sm">
       <div>
-        <label for="dawg-query" class="mb-1.5 block font-medium">{{ t('lab.query') }}</label>
+        <label for="dawg-query" class="mb-1.5 block font-medium">{{ t('查詢') }}</label>
         <Input id="dawg-query" v-model="query" class="native-text h-10" autocapitalize="off" autocorrect="off" spellcheck="false" />
       </div>
       <div>
         <div class="mb-2 flex justify-between">
-          <label id="dawg-max" class="font-medium">{{ t('lab.maxDistance') }}</label>
+          <label id="dawg-max" class="font-medium">{{ t('最大距離') }}</label>
           <span class="font-mono tabular-nums">{{ formatDistance(maxDistance[0]) }}</span>
         </div>
         <Slider v-model="maxDistance" :min="0" :max="3" :step="0.1" aria-labelledby="dawg-max" />
       </div>
       <div>
-        <label for="dawg-words" class="mb-1.5 block font-medium">{{ t('lab.words') }}</label>
+        <label for="dawg-words" class="mb-1.5 block font-medium">{{ t('詞庫（以空白分隔，最多 200 詞）') }}</label>
         <textarea
           id="dawg-words"
           v-model="wordsText"
@@ -105,20 +105,20 @@ const isFocus = (row) => state.value.focus?.prefix === row.prefix && playback.in
 
       <dl class="grid grid-cols-3 gap-2 text-center">
         <div class="bg-muted/60 rounded-lg px-2 py-2">
-          <dt class="text-muted-foreground text-xs">{{ t('lab.visited') }}</dt>
+          <dt class="text-muted-foreground text-xs">{{ t('走訪') }}</dt>
           <dd class="font-semibold tabular-nums">{{ run.stats.visitedNodes - 1 }}</dd>
         </div>
         <div class="bg-muted/60 rounded-lg px-2 py-2">
-          <dt class="text-muted-foreground text-xs">{{ t('lab.pruned') }}</dt>
+          <dt class="text-muted-foreground text-xs">{{ t('剪枝') }}</dt>
           <dd class="font-semibold tabular-nums">{{ run.stats.prunedNodes }}</dd>
         </div>
         <div class="bg-muted/60 rounded-lg px-2 py-2">
-          <dt class="text-muted-foreground text-xs">{{ t('lab.results') }}</dt>
+          <dt class="text-muted-foreground text-xs">{{ t('結果') }}</dt>
           <dd class="font-semibold tabular-nums">{{ run.results.length }}</dd>
         </div>
       </dl>
       <p class="text-muted-foreground text-xs">
-        {{ t('lab.dawgSize', { nodes: run.nodeCount, edges: run.edgeCount }) }}
+        {{ t('詞圖：{nodes} 個節點、{edges} 條邊（同樣的詞用 Trie 會多出不少節點）', { nodes: run.nodeCount, edges: run.edgeCount }) }}
       </p>
 
       <ul v-if="run.results.length" class="space-y-1">
@@ -132,12 +132,12 @@ const isFocus = (row) => state.value.focus?.prefix === row.prefix && playback.in
     <div class="min-w-0">
       <div class="mb-3 space-y-3">
         <PlaybackControls :playback="playback" :total="total" />
-        <StepNote :step="step" :playing="playback.playing.value" :idle="t('lab.playback.idleDawg')" />
+        <StepNote :step="step" :playing="playback.playing.value" :idle="t('按「播放」或 → 逐個節點走訪詞圖；下界超過上限的子樹直接略過。')" />
       </div>
       <p class="text-muted-foreground mb-3 text-xs leading-relaxed">
-        {{ t('lab.dawgHelp') }}
+        {{ t('每個節點顯示「子樹距離下界 ／ 允許上界」。下界超過上界時剪枝，其下所有節點都不必計算。主色的詞是符合門檻的結果。下界同時考慮「多字元規則可能一次跨越好幾層」，所以不會漏掉結果。詞圖合併了共同後綴，同一個節點編號可能在不同路徑下重複出現。') }}
       </p>
-      <ol class="scrollbar-thin max-h-[36rem] overflow-auto rounded-lg border py-1 font-mono text-sm" :aria-label="t('lab.dawgTrace')">
+      <ol class="scrollbar-thin max-h-[36rem] overflow-auto rounded-lg border py-1 font-mono text-sm" :aria-label="t('詞圖走訪結果')">
         <li
           v-for="(row, k) in run.rows"
           :key="k"
@@ -162,9 +162,9 @@ const isFocus = (row) => state.value.focus?.prefix === row.prefix && playback.in
                 d={{ formatDistance(row.visit.distance) }}
               </span>
               <span class="text-muted-foreground">{{ formatDistance(row.visit.lowerBound) }}／{{ formatDistance(row.visit.bound) }}</span>
-              <span v-if="row.visit.pruned" class="font-sans font-medium">{{ t('lab.prunedReason') }}</span>
+              <span v-if="row.visit.pruned" class="font-sans font-medium">{{ t('剪枝：下界超過上界') }}</span>
             </template>
-            <span v-else class="font-sans">{{ t('lab.notVisited') }}</span>
+            <span v-else class="font-sans">{{ t('未走訪') }}</span>
           </span>
         </li>
       </ol>

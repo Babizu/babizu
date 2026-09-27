@@ -9,7 +9,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Slider } from '@/components/ui/slider'
 import { t } from '@/i18n.js'
-import { categoryLabel, formatDistance } from '@/lib/labels.js'
+import { categoryLabel, costLabel, formatDistance, positionLabel } from '@/lib/labels.js'
 
 const props = defineProps({
   /** createLabState() 的 state（reactive，直接修改） */
@@ -34,11 +34,11 @@ function addCustom() {
 <template>
   <div class="space-y-6 text-sm">
     <section>
-      <h3 class="mb-3 font-medium">{{ t('lab.costs') }}</h3>
+      <h3 class="mb-3 font-medium">{{ t('基本成本') }}</h3>
       <div class="space-y-4">
         <div v-for="c in COSTS" :key="c">
           <div class="mb-2 flex justify-between text-xs">
-            <label :id="`cost-${c}`">{{ t(`lab.cost.${c}`) }}</label>
+            <label :id="`cost-${c}`">{{ costLabel(c) }}</label>
             <span class="font-mono tabular-nums">{{ formatDistance(state.costs[c]) }}</span>
           </div>
           <Slider
@@ -47,7 +47,7 @@ function addCustom() {
             :max="3"
             :step="0.1"
             :aria-labelledby="`cost-${c}`"
-            :thumb-label="t(`lab.cost.${c}`)"
+            :thumb-label="costLabel(c)"
             :thumb-value-text="formatDistance(state.costs[c])"
             @update:model-value="(v) => (state.costs[c] = v[0])"
           />
@@ -57,15 +57,15 @@ function addCustom() {
 
     <section>
       <div class="mb-2 flex items-baseline justify-between">
-        <h3 class="font-medium">{{ t('lab.rules') }}</h3>
-        <span class="text-muted-foreground text-xs">{{ t('lab.activeRules', { count: activeRuleCount }) }}</span>
+        <h3 class="font-medium">{{ t('語音對應規則') }}</h3>
+        <span class="text-muted-foreground text-xs">{{ t('啟用 {count} 條（皆自動補反向）', { count: activeRuleCount }) }}</span>
       </div>
       <div class="divide-y rounded-lg border">
         <details v-for="group in state.groups" :key="group.category" class="group/rule">
           <summary class="hover:bg-muted/50 flex min-h-11 cursor-pointer list-none items-center gap-3 px-3 [&::-webkit-details-marker]:hidden">
             <Checkbox
               :model-value="group.enabled"
-              :aria-label="t('lab.enableCategory', { category: categoryLabel(group.category) })"
+              :aria-label="t('啟用{category}', { category: categoryLabel(group.category) })"
               @click.stop
               @update:model-value="(v) => (group.enabled = v === true)"
             />
@@ -82,9 +82,9 @@ function addCustom() {
               <select
                 v-model="rule.position"
                 class="border-input bg-background h-8 rounded-md border px-1 text-xs"
-                :aria-label="t('lab.rulePosition', { rule: `${rule.source}↔${rule.target}` })"
+                :aria-label="t('{rule} 的適用位置', { rule: `${rule.source}↔${rule.target}` })"
               >
-                <option v-for="p in POSITIONS" :key="p" :value="p">{{ t(`lab.position.${p}`) }}</option>
+                <option v-for="p in POSITIONS" :key="p" :value="p">{{ positionLabel(p) }}</option>
               </select>
               <Input
                 v-model.number="rule.weight"
@@ -92,7 +92,7 @@ function addCustom() {
                 min="0"
                 step="0.1"
                 class="h-8 w-16 px-2 text-xs"
-                :aria-label="t('lab.ruleWeight', { rule: `${rule.source}↔${rule.target}` })"
+                :aria-label="t('{rule} 的權重', { rule: `${rule.source}↔${rule.target}` })"
               />
             </div>
           </div>
@@ -101,27 +101,27 @@ function addCustom() {
     </section>
 
     <section>
-      <h3 class="mb-2 font-medium">{{ t('lab.customRules') }}</h3>
+      <h3 class="mb-2 font-medium">{{ t('自訂規則') }}</h3>
       <div v-for="(rule, k) in state.custom" :key="k" class="mb-1.5 flex items-center gap-2">
         <code class="bg-muted min-w-0 flex-1 truncate rounded px-1.5 py-1 font-mono text-xs">
-          {{ rule.source || '∅' }} ↔ {{ rule.target || '∅' }} · {{ t(`lab.position.${rule.position}`) }} ·
+          {{ rule.source || '∅' }} ↔ {{ rule.target || '∅' }} · {{ positionLabel(rule.position) }} ·
           {{ rule.weight }}
         </code>
-        <Button variant="ghost" size="icon-sm" :aria-label="t('lab.deleteRule', { rule: `${rule.source}↔${rule.target}` })" @click="state.custom.splice(k, 1)">
+        <Button variant="ghost" size="icon-sm" :aria-label="t('刪除規則 {rule}', { rule: `${rule.source}↔${rule.target}` })" @click="state.custom.splice(k, 1)">
           <Trash2Icon />
         </Button>
       </div>
       <form class="grid grid-cols-[1fr_1fr_4rem] gap-2" @submit.prevent="addCustom">
-        <Input v-model="draft.source" :placeholder="t('lab.sourcePlaceholder')" class="h-9" :aria-label="t('lab.ruleSource')" />
-        <Input v-model="draft.target" :placeholder="t('lab.targetPlaceholder')" class="h-9" :aria-label="t('lab.ruleTarget')" />
-        <Input v-model.number="draft.weight" type="number" min="0" step="0.1" class="h-9 px-2" :aria-label="t('lab.weight')" />
-        <select v-model="draft.position" class="border-input bg-background col-span-2 h-9 rounded-md border px-2 text-sm" :aria-label="t('lab.position.label')">
-          <option v-for="p in POSITIONS" :key="p" :value="p">{{ t(`lab.position.${p}`) }}</option>
+        <Input v-model="draft.source" :placeholder="t('來源（可空）')" class="h-9" :aria-label="t('規則來源字串')" />
+        <Input v-model="draft.target" :placeholder="t('目標（可空）')" class="h-9" :aria-label="t('規則目標字串')" />
+        <Input v-model.number="draft.weight" type="number" min="0" step="0.1" class="h-9 px-2" :aria-label="t('權重')" />
+        <select v-model="draft.position" class="border-input bg-background col-span-2 h-9 rounded-md border px-2 text-sm" :aria-label="t('適用位置')">
+          <option v-for="p in POSITIONS" :key="p" :value="p">{{ positionLabel(p) }}</option>
         </select>
-        <Button type="submit" variant="outline" size="icon" class="h-9 w-full" :aria-label="t('lab.addRule')"><PlusIcon /></Button>
+        <Button type="submit" variant="outline" size="icon" class="h-9 w-full" :aria-label="t('新增規則')"><PlusIcon /></Button>
       </form>
     </section>
 
-    <Button variant="ghost" class="w-full" @click="emit('reset')"><RotateCcwIcon /> {{ t('lab.reset') }}</Button>
+    <Button variant="ghost" class="w-full" @click="emit('reset')"><RotateCcwIcon /> {{ t('恢復預設') }}</Button>
   </div>
 </template>

@@ -67,11 +67,11 @@ function usePreset([x, y]) {
     <!-- 輸入 -->
     <div class="grid gap-3 sm:grid-cols-2">
       <div>
-        <label for="lab-a" class="mb-1.5 block text-sm font-medium">{{ t('lab.queryRow') }}</label>
+        <label for="lab-a" class="mb-1.5 block text-sm font-medium">{{ t('查詢（列）') }}</label>
         <Input id="lab-a" v-model="a" :maxlength="MAX_LENGTH" class="native-text h-11 text-base" autocapitalize="off" autocorrect="off" spellcheck="false" />
       </div>
       <div>
-        <label for="lab-b" class="mb-1.5 block text-sm font-medium">{{ t('lab.candidateColumn') }}</label>
+        <label for="lab-b" class="mb-1.5 block text-sm font-medium">{{ t('候選（欄）') }}</label>
         <Input id="lab-b" v-model="b" :maxlength="MAX_LENGTH" class="native-text h-11 text-base" autocapitalize="off" autocorrect="off" spellcheck="false" />
       </div>
     </div>
@@ -90,24 +90,24 @@ function usePreset([x, y]) {
     <!-- 結果摘要 -->
     <div class="bg-card flex flex-wrap items-end gap-x-8 gap-y-3 rounded-xl border p-4">
       <div>
-        <p class="text-muted-foreground text-xs">{{ t('lab.distance') }}</p>
+        <p class="text-muted-foreground text-xs">{{ t('加權編輯距離') }}</p>
         <p class="text-3xl font-semibold tabular-nums">{{ formatDistance(explanation.distance) }}</p>
       </div>
       <div class="text-sm">
-        <p class="text-muted-foreground text-xs">{{ t('lab.normalized') }}</p>
+        <p class="text-muted-foreground text-xs">{{ t('依長度正規化') }}</p>
         <p class="tabular-nums">
           max {{ formatDistance(explanation.normalized.max) }} · sum {{ formatDistance(explanation.normalized.sum) }} · query
           {{ formatDistance(explanation.normalized.query) }}
         </p>
       </div>
       <div class="w-full">
-        <p class="text-muted-foreground mb-2 text-xs">{{ t('lab.bestAlignment') }}</p>
+        <p class="text-muted-foreground mb-2 text-xs">{{ t('最佳對齊') }}</p>
         <AlignmentStrip :steps="explanation.alignment" />
       </div>
     </div>
 
     <PlaybackControls :playback="playback" :total="total" />
-    <StepNote :step="step" :playing="playback.playing.value" :idle="t('lab.playback.idleDp')" />
+    <StepNote :step="step" :playing="playback.playing.value" :idle="t('按「播放」或 → 逐格計算；每一格取所有候選轉移中成本最低的一個。')" />
 
     <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_18rem]">
       <DpMatrix
@@ -121,7 +121,7 @@ function usePreset([x, y]) {
       <CellInspector v-if="selected" :explanation="explanation" :cell="selected" />
     </div>
     <p class="text-muted-foreground text-xs leading-relaxed">
-      {{ t('lab.legend') }}
+      {{ t('格角箭頭：↖ 相同或替換、↑ 刪除、← 插入、⤡ 語音規則（可能跨越多格）。欄標題的圓點表示該位置是詞尾，可以套用「詞尾」規則。格子顏色越深代表成本越高；主色格子是最佳路徑。') }}
     </p>
   </div>
 </template>

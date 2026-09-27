@@ -32,7 +32,7 @@ const docHref = computed(() => (props.step?.proofRef ? `${DOCS}${props.step.proo
   <p class="bg-card min-h-11 rounded-md border px-3 py-2.5 text-sm leading-relaxed" :aria-live="playing ? 'off' : 'polite'">
     <span>{{ text }}</span>
     <a v-if="docHref" :href="docHref" target="_blank" rel="noopener" class="text-primary ml-1.5 whitespace-nowrap underline-offset-2 hover:underline">
-      {{ t('lab.playback.why') }}
+      {{ t('為什麼？') }}
     </a>
   </p>
 </template>

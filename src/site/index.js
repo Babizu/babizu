@@ -4,14 +4,15 @@
 
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { loadSiteConfig, missingMessages } from './config.js'
+import { loadSiteConfig, missingMessages, unusedMessages } from './config.js'
 import { prepareSiteData } from './prepare.js'
 import { createViteConfig } from './vite.js'
 
-export { defineSite, loadSiteConfig, localize, missingMessages, varietyColors, flattenMessages } from './config.js'
+export { defineSite, loadSiteConfig, localize, missingMessages, unusedMessages, varietyColors } from './config.js'
+export { extractMessages } from './extract-messages.js'
 export { prepareSiteData, SITE_DATA_VERSION } from './prepare.js'
 export { createViteConfig, varietyCss } from './vite.js'
-export { APP_DIR, BUILTIN_LOCALES, FRAMEWORK_ROOT } from './paths.js'
+export { APP_DIR, BUILTIN_LOCALES, FRAMEWORK_ROOT, SOURCE_LOCALE } from './paths.js'
 
 /**
  * 建置網站到 `<站台>/dist/`。
@@ -75,7 +76,10 @@ export async function checkSite(siteDir, { log = console.log } = {}) {
   log(`${errors.length ? '✗' : '✓'} 資料集：${loaded.length} 個來源、${records} 筆記錄；${errors.length} 個錯誤、${issues.length - errors.length} 個警告`)
   for (const e of errors.slice(0, 20)) log(`  ${e.source}：${e.message}`)
   for (const [locale, keys] of Object.entries(missingMessages(site))) {
-    if (keys.length) log(`· 語系 ${locale} 缺 ${keys.length} 個介面字串（顯示時回退到 ${site.client.defaultLocale}）`)
+    if (keys.length) log(`· 語系 ${locale} 缺 ${keys.length} 個譯文（顯示時回退到 ${site.client.defaultLocale}，再回退到中文）`)
+  }
+  for (const [locale, keys] of Object.entries(unusedMessages(site))) {
+    if (keys.length) log(`· 站台譯文檔 ${locale}.json 有 ${keys.length} 個程式沒有用到的字串（中文原文可能改過了）：${keys.join('、')}`)
   }
   return errors.length === 0
 }

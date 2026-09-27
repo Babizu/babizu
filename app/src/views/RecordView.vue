@@ -118,8 +118,8 @@ const hasMorphology = computed(
 )
 const groupHeading = computed(() => {
   if (!group.value) return ''
-  if (group.value.type === 'entry') return t('record.entryGroup', { title: group.value.title })
-  if (group.value.type === 'recording') return t('record.recordingGroup', { title: group.value.title })
+  if (group.value.type === 'entry') return t('「{title}」詞條', { title: group.value.title })
+  if (group.value.type === 'recording') return t('錄音 {title}', { title: group.value.title })
   return group.value.title
 })
 const showGroup = computed(() => groupRecords.value.length > 1)
@@ -134,7 +134,7 @@ function goBack() {
 <template>
   <div class="mx-auto max-w-6xl px-4 py-4 sm:px-6 sm:py-8">
     <Button variant="ghost" size="sm" class="text-muted-foreground -ml-2 mb-3" @click="goBack">
-      <ArrowLeftIcon /> {{ t('common.back') }}
+      <ArrowLeftIcon /> {{ t('返回') }}
     </Button>
 
     <div v-if="status === 'loading'" class="space-y-4" aria-busy="true">
@@ -145,14 +145,14 @@ function goBack() {
 
     <StateMessage
       v-else-if="status === 'not-found'"
-      :title="t('record.notFound')"
-      :description="t('record.notFoundHint', { id })"
+      :title="t('找不到這筆資料')"
+      :description="t('記錄 {id} 不存在，可能是資料更新後編號改變了。', { id })"
     >
       <template #icon><FileQuestionIcon /></template>
-      <Button as-child variant="outline"><RouterLink :to="{ name: 'search' }">{{ t('record.goSearch') }}</RouterLink></Button>
+      <Button as-child variant="outline"><RouterLink :to="{ name: 'search' }">{{ t('前往搜尋') }}</RouterLink></Button>
     </StateMessage>
 
-    <StateMessage v-else-if="status === 'error'" tone="error" :title="t('common.loadFailed')" :description="errorMessage" />
+    <StateMessage v-else-if="status === 'error'" tone="error" :title="t('載入失敗')" :description="errorMessage" />
 
     <div v-else-if="record" class="grid gap-8 lg:grid-cols-[minmax(0,1fr)_20rem]">
       <article class="min-w-0 space-y-8">
@@ -178,24 +178,24 @@ function goBack() {
           </div>
           <p v-if="record.altTexts.length" class="text-muted-foreground text-sm">
             <span v-for="alt in record.altTexts" :key="alt.system + alt.text" class="mr-4 inline-block">
-              {{ writingSystemLabel(alt.system) }}{{ t('common.colon') }}<span class="native-text text-foreground">{{ alt.text }}</span>
+              {{ writingSystemLabel(alt.system) }}{{ t('：') }}<span class="native-text text-foreground">{{ alt.text }}</span>
             </span>
           </p>
           <div class="flex flex-wrap items-center gap-1.5">
             <DialectBadge v-for="d in record.dialects" :key="d" :dialect="d" />
-            <MetaTag v-if="record.dialectRaw" :title="t('record.dialectRawHint')">{{ t('record.dialectRaw', { raw: record.dialectRaw }) }}</MetaTag>
+            <MetaTag v-if="record.dialectRaw" :title="t('來源上的原始方言標記')">{{ t('原標記 {raw}', { raw: record.dialectRaw }) }}</MetaTag>
             <MetaTag>{{ unitLabel(record.unit) }}</MetaTag>
             <MetaTag v-if="record.group && record.group.role !== 'item'">{{ roleLabel(record.group.role) }}</MetaTag>
-            <MetaTag v-if="record.pos">{{ t('record.pos', { pos: record.pos }) }}</MetaTag>
+            <MetaTag v-if="record.pos">{{ t('詞性 {pos}', { pos: record.pos }) }}</MetaTag>
             <MetaTag v-if="record.domain">
-              {{ t('record.domain', { domain: record.domain.label ?? record.domain.code }) }}
+              {{ t('分類 {domain}', { domain: record.domain.label ?? record.domain.code }) }}
             </MetaTag>
           </div>
         </header>
 
         <!-- 義項 -->
         <section v-if="record.senses.length" aria-labelledby="h-senses">
-          <h2 id="h-senses" class="text-muted-foreground mb-2 text-sm font-medium">{{ t('record.senses') }}</h2>
+          <h2 id="h-senses" class="text-muted-foreground mb-2 text-sm font-medium">{{ t('釋義') }}</h2>
           <ol class="space-y-3">
             <li v-for="(sense, k) in record.senses" :key="k" class="flex gap-3">
               <span v-if="record.senses.length > 1" class="text-muted-foreground w-5 shrink-0 pt-0.5 text-right text-sm tabular-nums">
@@ -204,7 +204,7 @@ function goBack() {
               <div class="min-w-0 space-y-0.5">
                 <p v-if="sense.zh" class="gloss-zh text-lg">{{ sense.zh }}</p>
                 <p v-if="sense.en" class="text-muted-foreground">{{ sense.en }}</p>
-                <p v-if="sense.nan" class="text-muted-foreground text-sm">{{ t('record.nan') }}{{ sense.nan }}</p>
+                <p v-if="sense.nan" class="text-muted-foreground text-sm">{{ t('臺語：') }}{{ sense.nan }}</p>
                 <p v-if="sense.note" class="text-muted-foreground text-sm">{{ sense.note }}</p>
               </div>
             </li>
@@ -213,7 +213,7 @@ function goBack() {
 
         <!-- 逐詞對譯 -->
         <section v-if="record.interlinear.length" aria-labelledby="h-igt" class="bg-muted/40 rounded-xl border p-4">
-          <h2 id="h-igt" class="text-muted-foreground mb-3 text-sm font-medium">{{ t('record.interlinear') }}</h2>
+          <h2 id="h-igt" class="text-muted-foreground mb-3 text-sm font-medium">{{ t('逐詞對譯') }}</h2>
           <InterlinearGloss :pairs="record.interlinear" />
         </section>
 
@@ -222,10 +222,10 @@ function goBack() {
           v-if="hasMorphology || record.variants.length || related.length || record.notes.length"
           aria-labelledby="h-morph"
         >
-          <h2 id="h-morph" class="sr-only">{{ t('record.morphology') }}</h2>
+          <h2 id="h-morph" class="sr-only">{{ t('構詞與變體') }}</h2>
           <dl class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-6 gap-y-2 text-sm">
             <template v-if="morphology?.derivedFrom.length">
-              <dt class="text-muted-foreground">{{ t('record.derivedFrom') }}</dt>
+              <dt class="text-muted-foreground">{{ t('衍生自') }}</dt>
               <dd class="flex flex-wrap gap-x-3">
                 <RouterLink
                   v-for="d in morphology.derivedFrom"
@@ -238,15 +238,15 @@ function goBack() {
               </dd>
             </template>
             <template v-if="morphology?.segmentation">
-              <dt class="text-muted-foreground">{{ t('record.segmentation') }}</dt>
+              <dt class="text-muted-foreground">{{ t('分詞') }}</dt>
               <dd class="native-text">{{ morphology.segmentation }}</dd>
             </template>
             <template v-if="morphology?.gloss">
-              <dt class="text-muted-foreground">{{ t('record.morphemeGloss') }}</dt>
+              <dt class="text-muted-foreground">{{ t('詞素對譯') }}</dt>
               <dd>{{ morphology.gloss }}</dd>
             </template>
             <template v-if="record.variants.length">
-              <dt class="text-muted-foreground">{{ t('record.variants') }}</dt>
+              <dt class="text-muted-foreground">{{ t('變體', null, '詞條頁') }}</dt>
               <dd class="flex flex-wrap gap-x-4 gap-y-1">
                 <span v-for="v in record.variants" :key="v.relation + v.text">
                   <span class="text-muted-foreground mr-1">{{ v.relation === '=' ? '＝' : '～' }}</span>
@@ -259,7 +259,7 @@ function goBack() {
               </dd>
             </template>
             <template v-if="related.length">
-              <dt class="text-muted-foreground">{{ t('record.related') }}</dt>
+              <dt class="text-muted-foreground">{{ t('參見') }}</dt>
               <dd class="flex flex-wrap gap-x-4">
                 <RouterLink v-for="r in related" :key="r.id" :to="recordRoute(r.id)" class="native-text text-primary hover:underline">
                   {{ r.text }}
@@ -267,7 +267,7 @@ function goBack() {
               </dd>
             </template>
             <template v-if="record.notes.length">
-              <dt class="text-muted-foreground">{{ t('record.notes') }}</dt>
+              <dt class="text-muted-foreground">{{ t('備註') }}</dt>
               <dd class="space-y-1">
                 <p v-for="(note, k) in record.notes" :key="k">{{ note }}</p>
               </dd>
@@ -295,13 +295,13 @@ function goBack() {
         <!-- 跨來源相近詞 -->
         <section v-if="record.unit !== 'sentence'" aria-labelledby="h-neighbors">
           <div class="mb-1 border-b pb-2">
-            <h2 id="h-neighbors" class="font-semibold">{{ t('record.neighbors') }}</h2>
-            <p class="text-muted-foreground mt-0.5 text-xs">{{ t('record.neighborsHint') }}</p>
+            <h2 id="h-neighbors" class="font-semibold">{{ t('其他來源的相近詞形') }}</h2>
+            <p class="text-muted-foreground mt-0.5 text-xs">{{ t('跨方言、跨書寫系統的相似拼寫，供比對參考，不代表必為同一詞。') }}</p>
           </div>
           <div v-if="neighbors === null" class="space-y-2 py-2">
             <Skeleton v-for="k in 3" :key="k" class="h-10 w-full" />
           </div>
-          <p v-else-if="neighbors.length === 0" class="text-muted-foreground py-4 text-sm">{{ t('record.noNeighbors') }}</p>
+          <p v-else-if="neighbors.length === 0" class="text-muted-foreground py-4 text-sm">{{ t('沒有找到相近的詞形。') }}</p>
           <NeighborList v-else :hits="neighbors" :query="record.text" />
         </section>
       </article>

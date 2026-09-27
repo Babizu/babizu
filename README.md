@@ -87,7 +87,7 @@ npm run bench             # 模糊搜尋效能基準
 │   ├── site/          站台設定、網站資料準備、Vite 建置
 │   └── dataset.js     資料集讀寫與驗證
 ├── app/               網站前端（Vue 3＋shadcn-vue＋Tailwind CSS v4）
-├── locales/           內建介面語系（zh-TW、en）
+├── locales/           介面譯文（en；中文是原文，寫在程式裡）
 ├── examples/minimal/  示範站台
 ├── test/              單元測試
 ├── e2e/               端對端測試（示範站台）

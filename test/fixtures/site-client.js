@@ -4,22 +4,7 @@
  */
 
 import en from '../../locales/en.json' with { type: 'json' }
-import zhTW from '../../locales/zh-TW.json' with { type: 'json' }
 import PAZEH_PROFILE from './pazeh-kaxabu.profile.json' with { type: 'json' }
-
-/**
- * 巢狀語系 JSON → 點號鍵（與 src/site/config.js 的 flattenMessages 相同；
- * 這裡跑在 jsdom 環境，不能引入那個依賴 Node.js 的模組）
- * @param {Record<string, any>} obj
- * @param {string} [prefix]
- * @returns {Record<string, string>}
- */
-function flattenMessages(obj, prefix = '') {
-  return Object.entries(obj).reduce((out, [k, v]) => {
-    const key = prefix ? `${prefix}.${k}` : k
-    return typeof v === 'object' ? { ...out, ...flattenMessages(v, key) } : { ...out, [key]: v }
-  }, {})
-}
 
 export default {
   id: 'test-site',
@@ -42,6 +27,7 @@ export default {
   examples: [],
   about: null,
   lab: { pairs: [['semer', 'semee']], words: null, morph: { examples: [], failures: [] } },
-  messages: { 'zh-TW': flattenMessages(zhTW), en: flattenMessages(en) },
+  // 中文是原文語系（程式裡直接寫中文），不需要譯文表
+  messages: { 'zh-TW': {}, en },
   profile: PAZEH_PROFILE,
 }

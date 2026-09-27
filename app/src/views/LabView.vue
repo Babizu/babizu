@@ -20,7 +20,7 @@ import MorphLab from '@/components/lab/MorphLab.vue'
 import RuleEditor from '@/components/lab/RuleEditor.vue'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { t } from '@/i18n.js'
-import { COSTS, site } from '@/lib/labels.js'
+import { COSTS, site, specLabel } from '@/lib/labels.js'
 
 const route = useRoute()
 const router = useRouter()
@@ -66,18 +66,18 @@ const morphSummary = computed(() =>
 <template>
   <div class="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-10">
     <header class="mb-6 max-w-3xl">
-      <h1 class="font-serif text-3xl font-bold tracking-tight">{{ t('page.lab') }}</h1>
+      <h1 class="font-serif text-3xl font-bold tracking-tight">{{ t('演算法實驗室') }}</h1>
       <p class="text-muted-foreground mt-2 leading-relaxed">
-        {{ COSTS.rule === null ? t('lab.introNoRules') : t('lab.intro', { rule: COSTS.rule }) }}
+        {{ COSTS.rule === null ? t('觀察加權編輯距離怎麼算。調整「規則與成本設定」，表格與詞圖搜尋會即時重新計算。') : t('觀察跨方言加權編輯距離怎麼算：一般的替換、刪除、插入成本較高，方言間系統性的語音對應只算 {rule}。調整「規則與成本設定」，表格與詞圖搜尋會即時重新計算。', { rule: COSTS.rule }) }}
       </p>
     </header>
 
     <div class="grid gap-8 lg:grid-cols-[minmax(0,1fr)_20rem]">
       <Tabs v-model="tab" class="min-w-0 gap-5">
         <TabsList class="scrollbar-thin h-10 max-w-full justify-start overflow-x-auto">
-          <TabsTrigger value="dp" class="px-4">{{ t('lab.matrix') }}</TabsTrigger>
-          <TabsTrigger value="dawg" class="px-4">{{ t('lab.dawgTab') }}</TabsTrigger>
-          <TabsTrigger v-if="MORPHOLOGY" value="bcdp" class="px-4">{{ t('lab.morphTab') }}</TabsTrigger>
+          <TabsTrigger value="dp" class="px-4">{{ t('動態規劃表') }}</TabsTrigger>
+          <TabsTrigger value="dawg" class="px-4">{{ t('詞圖搜尋') }}</TabsTrigger>
+          <TabsTrigger v-if="MORPHOLOGY" value="bcdp" class="px-4">{{ t('構詞 BCDP') }}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="dp">
@@ -94,15 +94,15 @@ const morphSummary = computed(() =>
       <aside class="min-w-0">
         <details v-if="!isDesktop" class="group rounded-xl border">
           <summary class="flex min-h-12 cursor-pointer list-none items-center justify-between px-4 font-medium [&::-webkit-details-marker]:hidden">
-            {{ t('lab.settings') }}
+            {{ t('規則與成本設定') }}
             <span class="text-muted-foreground text-xs transition-transform group-open:rotate-90" aria-hidden="true">▸</span>
           </summary>
           <div class="border-t p-4">
             <template v-if="tab === 'bcdp'">
-              <p class="text-muted-foreground mb-4 text-xs leading-relaxed">{{ t('lab.morph.settingsNote') }}</p>
+              <p class="text-muted-foreground mb-4 text-xs leading-relaxed">{{ t('構詞分頁使用網站實際的方言規則與構詞規格，不受左側規則設定影響（規則設定只影響前兩個分頁）。') }}</p>
               <dl class="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
                 <template v-for="[key, count] in morphSummary" :key="key">
-                  <dt class="text-muted-foreground">{{ t(`lab.morph.spec.${key}`) }}</dt>
+                  <dt class="text-muted-foreground">{{ specLabel(key) }}</dt>
                   <dd class="font-mono tabular-nums">{{ count }}</dd>
                 </template>
               </dl>
@@ -111,12 +111,12 @@ const morphSummary = computed(() =>
           </div>
         </details>
         <div v-else>
-          <h2 class="mb-4 font-semibold">{{ t('lab.settings') }}</h2>
+          <h2 class="mb-4 font-semibold">{{ t('規則與成本設定') }}</h2>
           <template v-if="tab === 'bcdp'">
-            <p class="text-muted-foreground mb-4 text-xs leading-relaxed">{{ t('lab.morph.settingsNote') }}</p>
+            <p class="text-muted-foreground mb-4 text-xs leading-relaxed">{{ t('構詞分頁使用網站實際的方言規則與構詞規格，不受左側規則設定影響（規則設定只影響前兩個分頁）。') }}</p>
             <dl class="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
               <template v-for="[key, count] in morphSummary" :key="key">
-                <dt class="text-muted-foreground">{{ t(`lab.morph.spec.${key}`) }}</dt>
+                <dt class="text-muted-foreground">{{ specLabel(key) }}</dt>
                 <dd class="font-mono tabular-nums">{{ count }}</dd>
               </template>
             </dl>

@@ -2,8 +2,8 @@
  * @file 標準語料的代碼表（與語言無關的部分）。
  *
  * 本檔不依賴任何 Node.js 模組，網站前端可以直接引入。
- * 這裡只有代碼；顯示名稱依介面語系而定，放在 locales/*.json（鍵名見各表的說明）。
- * 新增代碼時，請同步修改 json/record.schema.json 中對應的 enum 與語系檔。
+ * 這裡只有代碼；顯示名稱依介面語系而定，寫在 app/src/lib/labels.js 的對照表（中文原文，譯文在 locales/en.json）。
+ * 新增代碼時，請同步修改 json/record.schema.json 中對應的 enum 與顯示名稱表。
  *
  * 語言變體（方言）因語言而異，不在這裡定義，而是由站台設定的 `varieties` 提供。
  */

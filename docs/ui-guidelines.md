@@ -188,7 +188,8 @@
 - 以 `defineOptions({ inheritAttrs: false })` 加上 `v-bind="$attrs"` 把屬性與事件轉給 reka-ui。
 - 樣式類別放在 `<script>` 的常數中（避免類別字串裡的引號與模板衝突）。
 
-## 文字一律來自語系檔
+## 文字一律經過 t()
 
-介面上不能寫死任何文字（包括 `aria-label`、`title`、頁面標題）：一律用 `t('鍵名')`，並在 `locales/zh-TW.json` 與 `locales/en.json` 同時加上。
+介面上的每一段文字（包括 `aria-label`、`title`、頁面標題）都要經過 `t('中文原文')`；不在呼叫處寫出來的字串（對照表、路由標題）用 `msg('中文原文')` 標出。
+中文直接寫在程式裡，英文譯文加進 `locales/en.json`（鍵是中文原文）。
 站台可以覆寫任何字串，所以措辭要中性、不能假設特定語言或特定來源。詳見 [i18n.md](i18n.md)。

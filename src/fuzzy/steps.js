@@ -13,6 +13,43 @@
  * - proofRef：對應的文件段落（選填），例如 `bcdp.md#4-交界狀態`
  */
 
+import { msg } from '../site/messages.js'
+
+/** 動態規劃表：每一格的值由哪一種操作得到 */
+export const CELL_NOTES = {
+  match: msg('D({i}, {j}) ＝ {value}：兩邊的字元相同，沿用 D({fromI}, {fromJ}) ＝ {from}。'),
+  substitute: msg('D({i}, {j}) ＝ {value}：替換，D({fromI}, {fromJ}) ＋ {stepCost}。'),
+  delete: msg('D({i}, {j}) ＝ {value}：刪除查詢多出的字元，D({fromI}, {fromJ}) ＋ {stepCost}。'),
+  insert: msg('D({i}, {j}) ＝ {value}：補上查詢少的字元，D({fromI}, {fromJ}) ＋ {stepCost}。'),
+  rule: msg('D({i}, {j}) ＝ {value}：方言規則 {rule}，D({fromI}, {fromJ}) ＋ {stepCost}。'),
+}
+
+/** 構詞搜尋：每一個通道的說明 */
+export const CHANNEL_NOTES = {
+  plain: msg('通道「{text}」：沒有前綴，詞幹從詞首開始，至少要接一個後綴。'),
+  prefix: msg('通道「{text}」：詞幹從合併後的前綴狀態開始，之後可以接後綴，也可以就是詞尾。'),
+  circumfix: msg('通道「{text}」：詞幹接在環綴 {form} 的左邊之後，詞尾一定接它的後綴；兩側合起來算一個步驟。'),
+  infix: msg('拿掉中綴 <{form}>，得到還原變體「{text}」：詞幹的起點固定在查詢上。'),
+  reduplication: msg('拿掉重疊部分「{form}」，得到還原變體「{text}」：詞幹的起點與長度由重疊模板決定。'),
+  circumfixInner: msg('拿掉環綴 {form} 的左邊「{left}」，得到還原變體「{text}」：詞幹的起點固定在查詢上，詞尾一定接它的後綴。'),
+}
+
+/** 構詞搜尋：找不到指定詞根的原因 */
+export const MISS_NOTES = {
+  same: msg('「{term}」就是查詢本身，屬於普通的模糊命中。'),
+  short: msg('「{term}」比詞根的最短長度還短。'),
+  bound: msg('「{term}」最好的分析也超過總成本上限 {maxDistance}。'),
+  spread: msg('「{term}」的成本超過截斷線 {cutoff}（最佳命中 ＋ lemmaSpread），所以沒有列出。'),
+}
+
+/** 整個詞的對齊：每一步的說明 */
+export const ALIGN_NOTES = {
+  substitute: msg('「{source}」換成「{target}」，成本 {cost}。'),
+  delete: msg('刪掉查詢中的「{source}」，成本 {cost}。'),
+  insert: msg('補上「{target}」，成本 {cost}。'),
+  rule: msg('規則「{source}」→「{target}」，成本 {cost}。'),
+}
+
 /**
  * @typedef {object} Step
  * @property {string} kind
@@ -57,7 +94,7 @@ export function dpSteps(e) {
       phase: 'fill',
       focus: { i, j },
       note: {
-        key: `lab.note.cell.${best.op}`,
+        key: CELL_NOTES[/** @type {keyof typeof CELL_NOTES} */ (best.op)],
         params: {
           i,
           j,
@@ -76,7 +113,7 @@ export function dpSteps(e) {
     kind: 'path',
     phase: 'path',
     focus: null,
-    note: { key: 'lab.note.path', params: { distance: e.distance, length: e.alignment.length } },
+    note: { key: msg('表格填完，右下角就是距離 {distance}。沿著每格的最佳來源回溯，得到最佳對齊（{length} 步）。'), params: { distance: e.distance, length: e.alignment.length } },
   })
   return steps
 }
@@ -122,7 +159,7 @@ export function dawgSteps(events) {
     phase: 'walk',
     focus: { index: n, depth: ev.depth, prefix: ev.prefix },
     note: {
-      key: ev.pruned ? 'lab.note.node.pruned' : ev.accepted ? 'lab.note.node.accepted' : ev.terminal ? 'lab.note.node.rejected' : 'lab.note.node.open',
+      key: ev.pruned ? msg('剪枝「{prefix}」：下界 {lowerBound} ＞ 上限 {bound}，整個子樹略過。') : ev.accepted ? msg('「{prefix}」是詞，距離 {distance} 在上限 {bound} 以內，收進結果。') : ev.terminal ? msg('「{prefix}」是詞，但距離 {distance} 超過上限 {bound}；子樹中可能還有更近的詞，繼續往下。') : msg('走訪「{prefix}」：這一列的下界 {lowerBound} 不超過上限 {bound}，繼續往下。'),
       params: { prefix: ev.prefix, lowerBound: ev.lowerBound, bound: ev.bound, distance: ev.distance },
     },
   }))
@@ -158,21 +195,21 @@ export function bcdpSteps(e) {
   /** @type {Step[]} */
   const steps = []
   if (e.tooShort) {
-    steps.push({ kind: 'result', phase: 'result', focus: null, note: { key: 'lab.note.bcdp.tooShort', params: { minStem: e.params.minStem } } })
+    steps.push({ kind: 'result', phase: 'result', focus: null, note: { key: msg('查詢太短：至少要比詞根最短長度（{minStem}）多一個字元，才做構詞搜尋。'), params: { minStem: e.params.minStem } } })
     return steps
   }
   e.prefixLevels.forEach((/** @type {Array<number | null>} */ row, /** @type {number} */ s) => {
-    steps.push({ kind: 'level', phase: 'levels', focus: { side: 'prefix', level: s + 1 }, note: { key: 'lab.note.bcdp.levelPrefix', params: { level: s + 1, count: finiteCount(row) } }, proofRef: BCDP_DOC.levels })
+    steps.push({ kind: 'level', phase: 'levels', focus: { side: 'prefix', level: s + 1 }, note: { key: msg('前綴第 {level} 層：所有「恰好 {level} 個前綴」的鏈，在最內側交界的狀態逐項取 min 合併，{count} 格有值。每一層只走一次前綴 trie。'), params: { level: s + 1, count: finiteCount(row) } }, proofRef: BCDP_DOC.levels })
   })
   e.suffixLevels.forEach((/** @type {Array<number | null>} */ row, /** @type {number} */ s) => {
-    steps.push({ kind: 'level', phase: 'levels', focus: { side: 'suffix', level: s + 1 }, note: { key: 'lab.note.bcdp.levelSuffix', params: { level: s + 1, count: finiteCount(row) } }, proofRef: BCDP_DOC.levels })
+    steps.push({ kind: 'level', phase: 'levels', focus: { side: 'suffix', level: s + 1 }, note: { key: msg('後綴第 {level} 層：由詞尾往內，用鏡像的規則走後綴 trie，「恰好 {level} 個後綴」的鏈合併成一列，{count} 格有值。'), params: { level: s + 1, count: finiteCount(row) } }, proofRef: BCDP_DOC.levels })
   })
   steps.push({
     kind: 'merge',
     phase: 'levels',
     focus: null,
     note: {
-      key: 'lab.note.bcdp.merge',
+      key: msg('各層前綴合併成詞幹的起點（{prefix} 格有值），各層後綴合併成詞尾的耦合（{suffix} 格有值）；另有 {crossing} 個還沒走完、會跨越交界的規則。'),
       params: { prefix: finiteCount(e.merged.P), suffix: finiteCount(e.merged.S), crossing: e.merged.crossingP.length + e.merged.crossingS.length },
     },
     proofRef: BCDP_DOC.junction,
@@ -187,7 +224,7 @@ export function bcdpSteps(e) {
       kind: 'variant',
       phase: 'channels',
       focus: { channel: c },
-      note: { key: `lab.note.bcdp.channel.${key}`, params: { text: v.text, form, left: v.op?.left?.form ?? '' } },
+      note: { key: CHANNEL_NOTES[/** @type {keyof typeof CHANNEL_NOTES} */ (key)], params: { text: v.text, form, left: v.op?.left?.form ?? '' } },
       proofRef: v.op ? BCDP_DOC.variants : BCDP_DOC.walk,
     })
   })
@@ -197,7 +234,7 @@ export function bcdpSteps(e) {
       phase: 'channels',
       focus: { channel: c },
       note: {
-        key: 'lab.note.bcdp.walk',
+        key: msg('通道「{text}」：與普通搜尋共用一次詞圖走訪，走訪 {visited} 個節點、剪掉 {pruned} 個；走到詞尾時與後綴耦合，{found} 個詞在上限內。'),
         params: { text: e.variants[c].text, visited: walk.length, pruned: walk.filter((ev) => ev.pruned).length, found: e.candidates[c].length },
       },
       proofRef: BCDP_DOC.walk,
@@ -209,10 +246,10 @@ export function bcdpSteps(e) {
     focus: null,
     note:
       e.term === null
-        ? { key: 'lab.note.bcdp.hits', params: { count: e.hits.length, cutoff: e.cutoff } }
+        ? { key: msg('找到 {count} 個詞根，只保留成本在 {cutoff} 以內的。'), params: { count: e.hits.length, cutoff: e.cutoff } }
         : e.hit
-          ? { key: 'lab.note.bcdp.hit', params: { term: e.term, distance: e.hit.distance, steps: e.hit.steps.length } }
-          : { key: `lab.note.bcdp.miss.${e.reason}`, params: { term: e.term, maxDistance: e.params.maxDistance, cutoff: e.cutoff } },
+          ? { key: msg('「{term}」的最佳分析，成本 {distance}（{steps} 個構詞步驟）。下面逐步列出整個詞的對齊。'), params: { term: e.term, distance: e.hit.distance, steps: e.hit.steps.length } }
+          : { key: MISS_NOTES[/** @type {keyof typeof MISS_NOTES} */ (e.reason)], params: { term: e.term, maxDistance: e.params.maxDistance, cutoff: e.cutoff } },
     proofRef: BCDP_DOC.result,
   })
   if (e.alignment) {
@@ -222,7 +259,7 @@ export function bcdpSteps(e) {
         kind: 'align',
         phase: 'alignment',
         focus: { step: k },
-        note: { key: `lab.note.bcdp.align.${st.op}`, params: { source: st.source, target: st.target, cost: st.cost } },
+        note: { key: ALIGN_NOTES[/** @type {keyof typeof ALIGN_NOTES} */ (st.op)], params: { source: st.source, target: st.target, cost: st.cost } },
         proofRef: BCDP_DOC.alignment,
       })
     })
