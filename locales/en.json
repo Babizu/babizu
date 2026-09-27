@@ -367,5 +367,11 @@
   "這個詞條本身與查詢不相符，列出來是因為底下有相符的詞形": "This entry does not match the query itself; it is listed because forms under it do",
   "另立條目": "Separate entry",
   "再顯示 {count} 個相關項目": "Show {count} more related items",
-  "完全相符": "Exact match"
+  "完全相符": "Exact match",
+  "組合規則": "Construction",
+  "未收錄的組合": "Unattested combination",
+  "語言中沒有收錄這種組合順序，成本較高": "This combination order is not recorded for the language, so it costs more",
+  "條件不成立：{form} 要求 {when}（已含在成本裡）": "Condition not met: {form} requires {when} (included in the cost)",
+  "條件不成立：": "Condition not met: ",
+  "要求": "requires"
 }

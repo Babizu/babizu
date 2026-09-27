@@ -70,6 +70,23 @@ describe('labels', () => {
     expect(morphSummary({ stem: 'tuku', steps })).toBe('mu- + pa- + tuku + -i + -an')
   })
 
+  it('構詞文法的組合：依詞素寫出，落在前綴上的中綴插在前綴的首輔音之後', () => {
+    const p = (/** @type {string} */ type, /** @type {string} */ form) => ({ type, form })
+    // M<a>…-ay：m- 之後插入 <a>，再加 -ay
+    const irr = { type: 'circumfix', form: 'ma…ay', left: { type: 'prefix', form: 'ma' }, suffix: 'ay', parts: [p('prefix', 'm'), p('infix', 'a'), p('suffix', 'ay')] }
+    expect(formatMorphStep(irr)).toBe('m<a>-…-ay')
+    expect(morphSummary({ stem: 'usa', steps: [irr] })).toBe('m<a>- + usa + -ay')
+    // m<in>u-：只有前綴的組合規則，沒有右邊
+    const prf = { type: 'circumfix', form: 'minu', left: { type: 'prefix', form: 'minu' }, suffix: '', parts: [p('prefix', 'mu'), p('infix', 'in')] }
+    expect(formatMorphStep(prf)).toBe('m<in>u-')
+    expect(morphSummary({ stem: 'baket', steps: [prf] })).toBe('m<in>u- + baket')
+    // <in>…-an：詞根上的中綴，放在詞根旁
+    const lf = { type: 'circumfix', form: 'in…an', left: { type: 'infix', form: 'in' }, suffix: 'an', parts: [p('infix', 'in'), p('suffix', 'an')] }
+    expect(morphSummary({ stem: 'baket', steps: [lf] })).toBe('baket + <in> + -an')
+    // 未收錄的複合前綴（k<a>a-）在前綴鏈中：與其他前綴一起依位置排列
+    expect(morphSummary({ stem: 'baket', steps: [{ type: 'prefix', form: 'kaa', parts: [p('prefix', 'ka'), p('infix', 'a')] }] })).toBe('k<a>a- + baket')
+  })
+
   it('詞綴說明依介面語系', () => {
     setLocale('en')
     expect(morphGloss({ 'zh-TW': '主事焦點', en: 'AF' })).toBe('AF')

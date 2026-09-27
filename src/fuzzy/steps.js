@@ -314,5 +314,6 @@ function clamp(x, lo, hi) {
 export function circumfixLabel(step) {
   const { type, form } = step.left
   const left = type === 'prefix' ? `${form}-` : type === 'infix' ? `<${form}>` : `${form}~`
-  return `${left}…-${step.suffix}`
+  // 只有前綴的組合規則（m<in>u-）沒有右邊
+  return step.suffix ? `${left}…-${step.suffix}` : left
 }

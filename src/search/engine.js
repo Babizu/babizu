@@ -91,6 +91,8 @@ export const FUZZINESS = Object.freeze({
  * @property {number} cost 總成本：構詞步驟＋整個詞的音變（docs/bcdp.md 1.2）
  * @property {string} [variantOf] 衍生形方向以查詢的方言變體當詞根時，查詢本身
  * @property {number} [variantDistance] 查詢 → 方言變體的距離
+ * @property {number} [penalty] 不成立的同位詞素條件的懲罰（構詞文法；沒有時省略）
+ * @property {Array<{id: string, form: string, when: string, penalty: number}>} [violations] 不成立的條件（有 penalty 時才有）
  * @property {MorphNote[] | null} [notes] 整個詞的音變說明（只為前幾筆結果計算）；
  *   衍生形方向用了方言變體時，查詢 → 變體的音變也在內（where 為 stem）
  */
@@ -769,7 +771,7 @@ export class SearchEngine {
           else plans = new Map()
           plansOf.set(term, plans)
           if (plansOf.size > PLAN_CACHE_LIMIT) plansOf.delete(/** @type {string} */ (plansOf.keys().next().value))
-          /** @type {{cost: number, steps: import('../fuzzy/morph-search.js').MorphStepHit[], segments: any[]} | null} */
+          /** @type {{cost: number, steps: import('../fuzzy/morph-search.js').MorphStepHit[], segments: any[], penalty: number, violations: any[]} | null} */
           let best = null
           for (const d of morphology.derivations(term, stem)) {
             const circ = d.circumfix
@@ -785,22 +787,34 @@ export class SearchEngine {
             ]
             const sound = this.metric.jointDistance(x, segments, DERIVED_SOUND_DISTANCE, plans)
             if (sound > DERIVED_SOUND_DISTANCE + 1e-9) continue
+            /** @param {'prefix' | 'suffix'} type @param {any} a */
+            const stepOf = (type, a) => ({ type, form: a.form, gloss: a.gloss, cost: a.cost, ...(a.parts ? { parts: a.parts } : {}) })
             /** @type {import('../fuzzy/morph-search.js').MorphStepHit[]} */
             const steps = [
-              ...d.prefixes.map((a) => ({ type: /** @type {const} */ ('prefix'), form: a.form, gloss: a.gloss, cost: a.cost })),
+              ...d.prefixes.map((a) => stepOf('prefix', a)),
               ...(d.op ? [/** @type {any} */ (d.op)] : []),
               ...(circ ? [/** @type {any} */ (circ)] : []),
-              ...d.suffixes.map((a) => ({ type: /** @type {const} */ ('suffix'), form: a.form, gloss: a.gloss, cost: a.cost })),
+              ...d.suffixes.map((a) => stepOf('suffix', a)),
             ]
-            const cost = steps.reduce((sum, st) => sum + st.cost, 0) + sound
-            if (!best || cost < best.cost - 1e-9 || (Math.abs(cost - best.cost) <= 1e-9 && steps.length < best.steps.length)) best = { cost, steps, segments }
+            // 同位詞素條件的懲罰（構詞文法）：條件讀的是底層，也就是詞根 stem 與詞綴
+            const { total: penalty, violations } = search.penaltyOf(
+              {
+                prefixes: /** @type {any} */ (d.prefixes),
+                suffixes: /** @type {any} */ (d.suffixes),
+                circumfix: circ ? /** @type {any} */ ({ kind: circ.left?.type, left: circ.left?.form ?? '', suffix: circ.suffix ?? '', checks: /** @type {any} */ (d).circChecks }) : null,
+                opChecks: /** @type {any} */ (d).opChecks ?? null,
+              },
+              stem,
+            )
+            const cost = steps.reduce((sum, st) => sum + st.cost, 0) + sound + penalty
+            if (!best || cost < best.cost - 1e-9 || (Math.abs(cost - best.cost) <= 1e-9 && steps.length < best.steps.length)) best = { cost, steps, segments, penalty, violations }
           }
           if (!best) continue
           const distance = Math.round((best.cost + offset) * 1e9) / 1e9
           const prev = out.get(term)
           if (prev && prev.distance <= distance) continue
           /** @type {LemmaAnalysis} */
-          const analysis = { stem, steps: best.steps, cost: distance, ...(offset > 0 ? { variantOf: key, variantDistance: offset } : {}) }
+          const analysis = { stem, steps: best.steps, cost: distance, ...(offset > 0 ? { variantOf: key, variantDistance: offset } : {}), ...(best.penalty > 0 ? { penalty: Math.round(best.penalty * 1e9) / 1e9, violations: best.violations } : {}) }
           const segments = best.segments
           this._lazyNotes.set(analysis, () => [
             ...(offset > 0 ? this.explainNotes(key, stem).map((n) => ({ ...n, where: /** @type {const} */ ('stem') })) : []),
@@ -869,7 +883,7 @@ export class SearchEngine {
     const search = /** @type {NonNullable<typeof this.morphSearch>} */ (this.morphSearch)
     return search.finish(prepared, results, this._lemmaMax(key, level)).map((h) => {
       /** @type {LemmaAnalysis} */
-      const analysis = { stem: h.term, steps: h.steps, cost: h.distance }
+      const analysis = { stem: h.term, steps: h.steps, cost: h.distance, ...(h.penalty ? { penalty: h.penalty, violations: h.violations } : {}) }
       this._lazyNotes.set(analysis, () => search.notesOf(prepared, h))
       return { term: h.term, payloads: h.payloads, distance: h.distance, matchType: /** @type {MatchType} */ ('lemma'), analysis }
     })

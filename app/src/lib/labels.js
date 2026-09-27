@@ -156,10 +156,45 @@ export function formatStep(step) {
 }
 
 /**
+ * 由詞素構成的步驟（構詞文法的 parts，推導順序）依詞中的位置寫出來：
+ * - 前綴那側：後加的前綴在外（左）；落在前綴上的中綴寫進最外層的前綴，插在它的首輔音之後（m<a>-、m<in>u-）
+ * - 詞根上的中綴、重疊（第一個運算）另外回傳，由呼叫端放在詞根旁
+ * - 後綴那側：依推導順序由內而外（-an、-ay）
+ * @param {Array<{type: string, form: string}>} parts
+ * @param {string} vowels 元音字母（決定首輔音）
+ * @returns {{before: string, stemOp: string, after: string[]}}
+ */
+export function partsLayout(parts, vowels = site.profile?.morphology?.vowels ?? 'aeiouéə') {
+  /** @type {string[]} 前綴那側的詞素（詞中的順序），中綴已插入 */
+  const prefixes = []
+  let stemOp = ''
+  /** @type {string[]} */
+  const after = []
+  parts.forEach((p, k) => {
+    if (p.type === 'prefix') prefixes.unshift(p.form)
+    else if (p.type === 'suffix') after.push(`-${p.form}`)
+    else if (k === 0) stemOp = p.type === 'infix' ? `<${p.form}>` : `${p.form}~`
+    else if (p.type === 'infix' && prefixes.length) {
+      const outer = Array.from(prefixes[0])
+      let h = 0
+      while (h < outer.length && !vowels.includes(outer[h])) h++
+      prefixes[0] = [...outer.slice(0, h), `<${p.form}>`, ...outer.slice(h)].join('')
+    } else stemOp = p.type === 'infix' ? `<${p.form}>` : `${p.form}~`
+  })
+  return { before: prefixes.length ? `${prefixes.join('-')}-` : '', stemOp, after }
+}
+
+/**
  * 構詞步驟的寫法：前綴 `mu-`、後綴 `-an`、中綴 `<in>`、重疊 `ba-`、詞幹交替 `t→d`、環綴 `ta-…-aw`。
- * @param {{type: string, form: string, left?: {type: string, form: string}, suffix?: string}} step
+ * 構詞文法的步驟由詞素構成時依 parts 寫出：組合規則 `m<a>-…-ay`、`m<in>u-`，未收錄的組合 `k<a>a-`。
+ * @param {{type: string, form: string, left?: {type: string, form: string}, suffix?: string, parts?: Array<{type: string, form: string}>}} step
  */
 export function formatMorphStep(step) {
+  if (step.parts && step.parts.length > 1) {
+    const { before, stemOp, after } = partsLayout(step.parts)
+    const core = [before, stemOp].filter(Boolean).join('')
+    return after.length ? `${core}…${after.join('')}` : core
+  }
   if (step.type === 'prefix' || step.type === 'reduplication') return `${step.form}-`
   if (step.type === 'suffix') return `-${step.form}`
   if (step.type === 'infix') return `<${step.form}>`
@@ -176,6 +211,7 @@ export const MORPH_STEP_LABELS = {
   reduplication: msg('重疊'),
   alternation: msg('構詞音變'),
   circumfix: msg('環綴'),
+  construction: msg('組合規則'),
 }
 /** @param {string} type */
 export const morphStepLabel = (type) => labelOf(MORPH_STEP_LABELS, type)
@@ -202,11 +238,17 @@ export function morphSummary(analysis) {
   const after = outerFirst.filter((s) => s.type === 'suffix').reverse().map(formatMorphStep)
   // 環綴緊貼詞幹：左邊是最內層的前綴（或詞幹上的中綴、重疊），後綴是最內層的後綴
   const circ = /** @type {any} */ (outerFirst.find((s) => s.type === 'circumfix'))
-  if (circ?.left) {
+  if (circ?.parts?.length > 1) {
+    // 構詞文法的組合規則：依詞素寫出（m<a>- + usa + -ay）
+    const layout = partsLayout(circ.parts)
+    if (layout.before) before.push(layout.before)
+    if (layout.stemOp) (layout.stemOp.startsWith('<') ? inner.unshift(layout.stemOp) : before.push(layout.stemOp))
+    after.unshift(...layout.after)
+  } else if (circ?.left) {
     const { type, form } = circ.left
     if (type === 'infix') inner.unshift(`<${form}>`)
     else before.push(type === 'prefix' ? `${form}-` : `${form}~`)
-    after.unshift(`-${circ.suffix}`)
+    if (circ.suffix) after.unshift(`-${circ.suffix}`)
   }
   return [...before, analysis.stem, ...inner, ...after].join(' + ')
 }
