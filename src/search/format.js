@@ -16,8 +16,9 @@
  * 索引格式版本。
  * 2：方言代碼與包含關係改由站台設定提供，寫在 docs.json（`dialects`、`dialectSupersets`），
  *    並附上建索引時用的語言設定檔（`language.json`），查詢端用同一份設定。
+ * 3：docs.json 加上 `parent`（詞條家族的上層記錄，見 family.js），搜尋結果依家族分組。
  */
-export const INDEX_FORMAT_VERSION = 2
+export const INDEX_FORMAT_VERSION = 3
 
 /** 方言用 32 位元整數的位元遮罩表示，所以最多 31 種（第 32 位是正負號） */
 export const MAX_VARIETIES = 31
@@ -139,6 +140,7 @@ export function decodeDialects(mask, codes) {
  * @property {string[]} citation 出處說明
  * @property {string[]} groupTitle 所屬群組標題（例如詞條詞形），沒有則為空字串
  * @property {string[]} groupId 所屬群組 id，沒有則為空字串
+ * @property {number[]} parent 詞條家族中的上層記錄（索引），沒有則為 -1（見 family.js）
  */
 
 /**

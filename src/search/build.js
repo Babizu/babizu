@@ -13,6 +13,7 @@ import {
   encodeDialects,
   encodePosting,
 } from './format.js'
+import { computeParents } from './family.js'
 import { createTextTools } from './text.js'
 
 /**
@@ -70,6 +71,7 @@ export function buildSearchIndex({ items, groups, sourceIds, profile, varieties 
     citation: [],
     groupTitle: [],
     groupId: [],
+    parent: [],
   }
 
   /** @type {Map<string, Set<number>>} 搜尋鍵 → posting 代碼 */
@@ -111,6 +113,8 @@ export function buildSearchIndex({ items, groups, sourceIds, profile, varieties 
       for (const token of tokenize(record.text)) addPosting(token, encodePosting(k, 'token'))
     }
   })
+
+  docs.parent = computeParents(items, groups, searchKey)
 
   // 依鍵排序後加入，讓輸出穩定、方便比對兩次建置的差異
   const index = new FuzzyIndex(createSearchMetric())

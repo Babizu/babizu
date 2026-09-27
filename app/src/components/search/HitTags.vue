@@ -1,0 +1,34 @@
+<script setup>
+/**
+ * 詞條命中的說明標籤：比對身分（變體、其他寫法…）、命中方式或構詞分析、模糊命中的距離。
+ * 詞條結果列（EntryHitItem）與家族中的子項目（EntryRow）共用，兩處的標籤才會一致。
+ */
+import MatchExplanation from '@/components/common/MatchExplanation.vue'
+import MatchTypeTag from '@/components/common/MatchTypeTag.vue'
+import MetaTag from '@/components/common/MetaTag.vue'
+import MorphologyExplanation from '@/components/common/MorphologyExplanation.vue'
+import { matchKindLabel } from '@/lib/labels.js'
+
+defineProps({
+  /** search-core 的 EntryHit */
+  hit: { type: Object, required: true },
+  query: { type: String, default: '' },
+  /**
+   * 是否標出「以詞根身分命中」：家族中的子項目不需要，樹狀排列已經看得出它衍生自哪個詞根
+   */
+  showRootKind: { type: Boolean, default: true },
+})
+</script>
+
+<template>
+  <MetaTag v-if="hit.kind !== 'head' && (showRootKind || hit.kind !== 'root')" variant="soft">
+    {{ matchKindLabel(hit.kind) }} <span class="native-text font-medium">{{ hit.term }}</span>
+  </MetaTag>
+  <span v-if="hit.analysis" class="relative z-10 inline-flex min-w-0">
+    <MorphologyExplanation :analysis="hit.analysis" :match-type="hit.matchType" :query="query" :term="hit.term" />
+  </span>
+  <MatchTypeTag v-else :match-type="hit.matchType" :term="hit.term" />
+  <span v-if="hit.matchType === 'fuzzy' && hit.distance > 0" class="relative z-10 inline-flex">
+    <MatchExplanation :distance="hit.distance" :alignment="hit.alignment" :query="query" :term="hit.term" />
+  </span>
+</template>

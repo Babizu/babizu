@@ -2,25 +2,28 @@
 /**
  * 搜尋結果：詞條（詞形、變體、詞根、其他寫法命中）。
  * 整列可點擊進入詞條頁；播放鈕與說明按鈕不會觸發導覽。
+ *
+ * 也用在詞條家族的第一列（EntryGroupItem）：家族的代表記錄本身不一定命中（hit 為 null），
+ * 這時只顯示詞條內容，並標明它是底下命中項目所屬的詞條。
  */
 import { computed } from 'vue'
 import AudioButton from '@/components/common/AudioButton.vue'
 import DialectBadge from '@/components/common/DialectBadge.vue'
-import MatchExplanation from '@/components/common/MatchExplanation.vue'
-import MatchTypeTag from '@/components/common/MatchTypeTag.vue'
 import MetaTag from '@/components/common/MetaTag.vue'
-import MorphologyExplanation from '@/components/common/MorphologyExplanation.vue'
 import { t } from '@/i18n.js'
-import { matchKindLabel, recordRoute, roleLabel, unitLabel } from '@/lib/labels.js'
+import { recordRoute, roleLabel, unitLabel } from '@/lib/labels.js'
+import HitTags from './HitTags.vue'
 import ResultCitation from './ResultCitation.vue'
 
 const props = defineProps({
-  /** search-core 的 EntryHit */
-  hit: { type: Object, required: true },
+  /** search-core 的 EntryHit；null 表示這筆記錄本身沒有命中 */
+  hit: { type: Object, default: null },
+  /** 記錄摘要（DocSummary）；沒給就用 hit.doc */
+  doc: { type: Object, default: null },
   query: { type: String, default: '' },
 })
 
-const doc = computed(() => props.hit.doc)
+const doc = computed(() => props.doc ?? props.hit.doc)
 const showUnit = computed(() => doc.value.unit !== 'word')
 const contextLabel = computed(() => {
   const role = doc.value.role
@@ -42,16 +45,8 @@ const contextLabel = computed(() => {
         </h3>
         <DialectBadge v-for="d in doc.dialects" :key="d" :dialect="d" />
         <MetaTag v-if="showUnit">{{ unitLabel(doc.unit) }}</MetaTag>
-        <MetaTag v-if="hit.kind !== 'head'" variant="soft">
-          {{ matchKindLabel(hit.kind) }} <span class="native-text font-medium">{{ hit.term }}</span>
-        </MetaTag>
-        <span v-if="hit.analysis" class="relative z-10 inline-flex min-w-0">
-          <MorphologyExplanation :analysis="hit.analysis" :match-type="hit.matchType" :query="query" :term="hit.term" />
-        </span>
-        <MatchTypeTag v-else :match-type="hit.matchType" :term="hit.term" />
-        <span v-if="hit.matchType === 'fuzzy' && hit.distance > 0" class="relative z-10 inline-flex">
-          <MatchExplanation :distance="hit.distance" :alignment="hit.alignment" :query="query" :term="hit.term" />
-        </span>
+        <HitTags v-if="hit" :hit="hit" :query="query" />
+        <MetaTag v-else :title="t('這個詞條本身與查詢不相符，列出來是因為底下有相符的詞形')">{{ t('所屬詞條') }}</MetaTag>
       </div>
 
       <p v-if="doc.zh || doc.en || doc.nan" class="gloss-zh text-[15px]">

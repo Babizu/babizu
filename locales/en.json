@@ -362,5 +362,10 @@
   "外觀": "Appearance",
   "淺色": "Light",
   "深色": "Dark",
-  "跟隨系統": "System"
+  "跟隨系統": "System",
+  "所屬詞條": "Parent entry",
+  "這個詞條本身與查詢不相符，列出來是因為底下有相符的詞形": "This entry does not match the query itself; it is listed because forms under it do",
+  "另立條目": "Separate entry",
+  "再顯示 {count} 個相關項目": "Show {count} more related items",
+  "完全相符": "Exact match"
 }

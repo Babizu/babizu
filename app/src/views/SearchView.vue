@@ -6,7 +6,8 @@
  * 輸入時延遲 300ms 自動搜尋；按 Enter 立即搜尋並記入「最近搜尋」。
  *
  * 結果分三區：
- * - 詞條：詞形、變體、詞根、其他寫法與查詢相符（含跨方言相近拼寫）
+ * - 詞條：詞形、變體、詞根、其他寫法與查詢相符（含跨方言相近拼寫）；
+ *   辭典確認屬於同一個詞條的命中排在一起（詞條家族，EntryGroupItem）
  * - 例句：查詢詞出現在其中的例句與語料句
  * - 釋義：中文、英文、臺語釋義相符
  */
@@ -15,7 +16,7 @@ import { SearchXIcon } from '@lucide/vue'
 import { computed, ref, shallowRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import StateMessage from '@/components/common/StateMessage.vue'
-import EntryHitItem from '@/components/search/EntryHitItem.vue'
+import EntryGroupItem from '@/components/search/EntryGroupItem.vue'
 import FilterPanel from '@/components/search/FilterPanel.vue'
 import GlossHitItem from '@/components/search/GlossHitItem.vue'
 import OccurrenceHitItem from '@/components/search/OccurrenceHitItem.vue'
@@ -40,11 +41,11 @@ const EXAMPLES = site.examples
 
 const PAGE_SIZE = 20
 /**
- * 「全部」分頁中每區預覽的筆數。
+ * 「全部」分頁中每區預覽的筆數（詞條區以詞條家族計）。
  * 同一個詞常被多個來源收錄（精確命中會佔掉前幾筆），詞條區要留多一點空間，
- * 才看得到跨方言的相近拼寫。
+ * 才看得到跨方言的相近拼寫；家族會佔好幾列，所以比原本的 10 筆少一些。
  */
-const PREVIEW = { entries: 10, occurrences: 4, glosses: 4 }
+const PREVIEW = { entries: 8, occurrences: 4, glosses: 4 }
 
 // ---- 網址 ↔ 狀態 ----
 const list = (/** @type {unknown} */ v) => (typeof v === 'string' && v ? v.split(',') : [])
@@ -147,8 +148,9 @@ watch(
   { immediate: true },
 )
 
-const totals = computed(() => response.value?.totals ?? { entries: 0, occurrences: 0, glosses: 0 })
-const totalHits = computed(() => totals.value.entries + totals.value.occurrences + totals.value.glosses)
+const totals = computed(() => response.value?.totals ?? { entries: 0, entryGroups: 0, occurrences: 0, glosses: 0 })
+// 詞條以家族計：畫面上一個區塊算一筆，與分頁、預覽的單位一致
+const totalHits = computed(() => totals.value.entryGroups + totals.value.occurrences + totals.value.glosses)
 /** 模糊命中的相近拼寫（距離 > 0） */
 const fuzzyTerms = computed(() => (response.value?.terms ?? []).filter((t) => t.distance > 0).slice(0, 8))
 const sections = computed(() => {
@@ -156,7 +158,7 @@ const sections = computed(() => {
   if (!r) return []
   const fields = filters.value.fields
   return [
-    { key: 'entries', label: t('詞條'), items: r.entries, total: r.totals.entries, field: 'native' },
+    { key: 'entries', label: t('詞條'), items: r.entryGroups, total: r.totals.entryGroups, field: 'native' },
     { key: 'occurrences', label: t('例句'), items: r.occurrences, total: r.totals.occurrences, field: 'native' },
     { key: 'glosses', label: t('釋義'), items: r.glosses, total: r.totals.glosses, field: 'gloss' },
   ].filter(
@@ -354,8 +356,8 @@ const filterSheetOpen = ref(false)
                   </button>
                 </div>
                 <div class="divide-y">
-                  <template v-for="hit in s.items.slice(0, PREVIEW[s.key])" :key="hit.doc.id">
-                    <EntryHitItem v-if="s.key === 'entries'" :hit="hit" :query="response.query" />
+                  <template v-for="hit in s.items.slice(0, PREVIEW[s.key])" :key="hit.doc?.id ?? hit.root.doc.id">
+                    <EntryGroupItem v-if="s.key === 'entries'" :group="hit" :query="response.query" />
                     <OccurrenceHitItem v-else-if="s.key === 'occurrences'" :hit="hit" />
                     <GlossHitItem v-else :hit="hit" :query="response.query" />
                   </template>
@@ -366,8 +368,8 @@ const filterSheetOpen = ref(false)
             <!-- 各區完整列表 -->
             <TabsContent v-for="s in sections" :key="s.key" :value="s.key">
               <div class="divide-y">
-                <template v-for="hit in s.items.slice(0, limits[s.key])" :key="hit.doc.id">
-                  <EntryHitItem v-if="s.key === 'entries'" :hit="hit" :query="response.query" />
+                <template v-for="hit in s.items.slice(0, limits[s.key])" :key="hit.doc?.id ?? hit.root.doc.id">
+                  <EntryGroupItem v-if="s.key === 'entries'" :group="hit" :query="response.query" />
                   <OccurrenceHitItem v-else-if="s.key === 'occurrences'" :hit="hit" />
                   <GlossHitItem v-else :hit="hit" :query="response.query" />
                 </template>

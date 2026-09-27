@@ -176,4 +176,18 @@ export const MUTANTS = [
     replace: "        if (!prev || (prev.matchType !== 'fuzzy' && isBetterMatch(m, prev, key))) matches.set(m.term, m)",
     why: '查 parazem 時 razem 只剩模糊命中 1.2；morphology 測試「同一個詞有多種命中方式」',
   },
+  {
+    name: '詞條家族的名次取樹根的分數，而不是家族中最好的命中',
+    file: 'src/search/family.js',
+    find: '    const best = all.reduce((a, b) => (compareHits(b, a) < 0 ? b : a))',
+    replace: '    const best = root.hit ?? all[0]',
+    why: '子項目完全相同時家族不會往上排；family 測試「家族的名次取最好的命中」',
+  },
+  {
+    name: '另立條目對到多個同形詞目時接到第一個',
+    file: 'src/search/family.js',
+    find: '        if (all.length === 1) return all[0]',
+    replace: '        if (all.length >= 1) return all[0]',
+    why: '同形異義詞被接錯；family 測試「對不到唯一一個詞目時不連」',
+  },
 ]

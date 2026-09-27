@@ -68,7 +68,7 @@ data/
 | `interlinear[]` | 逐詞對譯 `{form, gloss}` |
 | `variants[]` | 變體 `{relation: = ~, text, attribution, dialects, dialectRaw}` |
 | `related[]` | 指向其他記錄 `{type, target: 記錄 id}` |
-| `group` | `{id, role, parent, seq}`：所屬群組、角色（`head`／`form`／`example`／`segment`／`item`）、原書排在哪筆底下、順序 |
+| `group` | `{id, role, parent, seq}`：所屬群組、角色（`head`／`form`／`example`／`segment`／`item`）、原書排在哪筆底下、順序。詞條群組（`type: 'entry'`）的上下層關係也決定搜尋結果的「詞條家族」（見 fuzzy-search.md） |
 | `citation` | 出處 `{label, page, pages[], row, code, file, timecode, scan}`；`label` 要讓人看得懂，其餘欄位讓人找得回原始位置 |
 | `media[]` | `{type: audio/video, src, start, end, available, label}`；`src` 相對資料集根目錄 |
 | `attribution` | 來源內部標示的原始出處 |

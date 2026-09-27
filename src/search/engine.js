@@ -16,6 +16,7 @@
  */
 
 import { createMorphSearch, FuzzyIndex } from '../fuzzy/index.js'
+import { buildEntryGroups, collectHits } from './family.js'
 import { decodePosting, docAt, INDEX_FORMAT_VERSION } from './format.js'
 import { createTextTools, detectQueryMode, glossTokens, zhNormalize } from './text.js'
 
@@ -126,10 +127,11 @@ export const FUZZINESS = Object.freeze({
  * @property {string} query
  * @property {'zh' | 'latin'} mode
  * @property {Array<{term: string, distance: number}>} terms 模糊搜尋命中的詞庫詞
- * @property {EntryHit[]} entries
+ * @property {EntryHit[]} entries 詞條命中，依分數排序
+ * @property {import('./family.js').EntryGroup[]} entryGroups 同樣的詞條命中，依詞條家族分組（畫面顯示用，見 family.js）
  * @property {OccurrenceHit[]} occurrences
  * @property {GlossHit[]} glosses
- * @property {{entries: number, occurrences: number, glosses: number}} totals 截斷前的總數
+ * @property {{entries: number, entryGroups: number, occurrences: number, glosses: number}} totals 截斷前的總數
  * @property {{elapsedMs: number, visitedNodes: number}} stats
  */
 
@@ -233,6 +235,8 @@ export class SearchEngine {
       : null
     /** @type {Map<string, number> | null} */
     this._idIndex = null
+    /** @type {Map<number, number[]> | null} 下層記錄（_childrenOf） */
+    this._children = null
     /** @type {Map<string, number[]> | null} */
     this._zhIndex = null
     /** @type {{tokens: Map<string, Array<[number, 'en' | 'nan']>>, sorted: string[]} | null} */
@@ -299,6 +303,26 @@ export class SearchEngine {
     return this.docs.count
   }
 
+  /**
+   * 資料中的下層記錄（docs.parent 的反向對照，第一次用到時建立）。
+   * @param {number} k
+   * @returns {readonly number[]}
+   */
+  _childrenOf(k) {
+    if (!this._children) {
+      /** @type {Map<number, number[]>} */
+      const map = new Map()
+      this.docs.parent.forEach((p, c) => {
+        if (p === -1) return
+        const list = map.get(p)
+        if (list) list.push(c)
+        else map.set(p, [c])
+      })
+      this._children = map
+    }
+    return this._children.get(k) ?? []
+  }
+
   /** @param {number} k */
   doc(k) {
     return docAt(this.docs, k)
@@ -339,9 +363,10 @@ export class SearchEngine {
       mode,
       terms: [],
       entries: [],
+      entryGroups: [],
       occurrences: [],
       glosses: [],
-      totals: { entries: 0, occurrences: 0, glosses: 0 },
+      totals: { entries: 0, entryGroups: 0, occurrences: 0, glosses: 0 },
       stats: { elapsedMs: 0, visitedNodes: 0 },
     }
     if (!q) return response
@@ -360,10 +385,12 @@ export class SearchEngine {
 
     response.totals = {
       entries: response.entries.length,
+      entryGroups: response.entryGroups.length,
       occurrences: response.occurrences.length,
       glosses: response.glosses.length,
     }
     response.entries = response.entries.slice(0, limit)
+    response.entryGroups = response.entryGroups.slice(0, limit)
     response.occurrences = response.occurrences.slice(0, limit)
     response.glosses = response.glosses.slice(0, limit)
     response.stats.elapsedMs = Math.round((now() - started) * 10) / 10
@@ -516,10 +543,29 @@ export class SearchEngine {
       }
     }
     response.entries = sortEntries([...entries.values()])
-    for (const hit of response.entries.slice(0, explainLimit)) {
-      if (hit.matchType === 'fuzzy' && hit.distance > 0) hit.alignment = this.explainNotes(key, hit.term)
+    // 詞條家族：辭典確認屬於同一個詞條的命中排在一起，詞根條目在最上面（family.js）
+    response.entryGroups = buildEntryGroups(response.entries, {
+      parent: this.docs.parent,
+      children: (k) => this._childrenOf(k),
+      doc: (k) => this.doc(k),
+      key: (text) => this.text.searchKey(text),
+      compareHits,
+    })
+    // 對齊與構詞說明只為前幾筆計算：分數最好的幾筆，以及畫面上依家族排列時的前幾列
+    /** @param {EntryHit} hit */
+    const explain = (hit) => {
+      if (hit.matchType === 'fuzzy' && hit.distance > 0 && hit.alignment === null) hit.alignment = this.explainNotes(key, hit.term)
       const a = hit.analysis
       if (a && a.notes === undefined) a.notes = this._lazyNotes.get(a)?.() ?? null
+    }
+    for (const hit of response.entries.slice(0, explainLimit)) explain(hit)
+    let shown = 0
+    for (const group of response.entryGroups) {
+      for (const hit of collectHits(group.root)) {
+        if (shown++ >= explainLimit) break
+        explain(hit)
+      }
+      if (shown >= explainLimit) break
     }
 
     // 例句：每個查詢詞都要在句中出現（模糊），距離相加排序。
