@@ -169,4 +169,11 @@ export const MUTANTS = [
     replace: 'void prev.visited',
     why: '回應的統計與逐次計算不同；engine 測試「重複的查詢詞只算一次，統計照樣累加」',
   },
+  {
+    name: '構詞命中遇到同一個詞的模糊命中一律捨棄（v0.2.0 起的原始寫法）',
+    file: 'src/search/engine.js',
+    find: '        if (!prev || isBetterMatch(m, prev, key)) matches.set(m.term, m)',
+    replace: "        if (!prev || (prev.matchType !== 'fuzzy' && isBetterMatch(m, prev, key))) matches.set(m.term, m)",
+    why: '查 parazem 時 razem 只剩模糊命中 1.2；morphology 測試「同一個詞有多種命中方式」',
+  },
 ]

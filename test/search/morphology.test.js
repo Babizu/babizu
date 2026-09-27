@@ -190,3 +190,37 @@ describe('explainMorphology：實驗室用的構詞說明', () => {
     expect(without.explainMorphology('mudaux', 'daux')).toBeNull()
   })
 })
+
+describe('同一個詞有多種命中方式：取排序分數較好的一種', () => {
+  // 回歸：原本構詞命中遇到同一個詞的模糊命中一律捨棄。查詢夠長時門檻變大（7 字元 1.25），
+  // 刪掉短前綴（p 1.0 ＋ 閃音規則 0.1…）就落在門檻內，最好的構詞分析反而被較差的模糊命中蓋掉
+  const multi = (() => {
+    const list = [rec('razem', 'word', 'razem', '賽跑'), rec('daux2', 'word', 'dauxi', '喝吧')]
+    const built = buildSearchIndex({
+      items: list.map((record) => ({ record, shard: 'all' })),
+      groups: [],
+      sourceIds: ['dict'],
+      profile: { ...PAZEH_PROFILE, morphology: { ...MORPHOLOGY, suffixes: [{ form: 'an' }, { form: 'i' }] } },
+    })
+    return new SearchEngine(JSON.parse(JSON.stringify(built)))
+  })()
+
+  it('詞根方向：查 parazem，razem 雖然也是模糊命中（1.2），仍以構詞命中（pa- ＋ razem）列出', () => {
+    const res = multi.search('parazem', { fields: ['native'] })
+    const hit = res.entries.find((h) => h.doc.id === 'dict:razem')
+    expect(hit).toMatchObject({ matchType: 'lemma', term: 'razem' })
+    expect(hit?.score).toBeLessThan(1.2)
+    // 模糊命中清單不再列出它（改以構詞命中呈現）
+    expect(res.terms.map((t) => t.term)).not.toContain('razem')
+  })
+
+  it('衍生形方向：查 daux，dauxi 雖然也是模糊命中（補一個字元 0.8），仍以衍生形列出', () => {
+    const hit = multi.search('daux', { fields: ['native'] }).entries.find((h) => h.doc.id === 'dict:daux2')
+    expect(hit).toMatchObject({ matchType: 'derived', term: 'dauxi' })
+  })
+
+  it('完全相同的詞不會被構詞命中取代', () => {
+    const hit = multi.search('dauxi', { fields: ['native'] }).entries.find((h) => h.doc.id === 'dict:daux2')
+    expect(hit).toMatchObject({ matchType: 'fuzzy', distance: 0 })
+  })
+})

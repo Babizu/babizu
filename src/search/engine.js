@@ -189,6 +189,21 @@ function rankScore(matchType, distance, extraLength) {
   return base + Math.min(extraLength, 12) * 0.05
 }
 
+/**
+ * 構詞命中 m 是否比同一個詞原有的命中 prev 好（見 _matchTerms）。
+ * @param {TermMatch} m 構詞命中（lemma 或 derived）
+ * @param {TermMatch} prev
+ * @param {string} key 查詢詞
+ */
+function isBetterMatch(m, prev, key) {
+  const extra = Math.max(0, m.term.length - key.length)
+  const a = rankScore(m.matchType, m.distance, extra)
+  const b = rankScore(prev.matchType, prev.distance, extra)
+  // 分數是幾個小數相加（0.4 ＋ 0.2），比較時容許浮點誤差，免得同分被當成不同分
+  if (Math.abs(a - b) > 1e-9) return a < b
+  return prev.matchType === 'prefix' || prev.matchType === 'substring'
+}
+
 /** 前綴／包含比對每個查詢詞最多取幾個詞，避免單字母查詢產生過多結果 */
 const SUBSTRING_TERM_LIMIT = 300
 
@@ -656,12 +671,13 @@ export class SearchEngine {
       const variants = [...matches.values()]
         .filter((m) => m.matchType === 'fuzzy' && m.distance > 0 && m.distance <= DIALECT_VARIANT_DISTANCE)
         .filter((m) => this.explainNotes(key, m.term).every((s) => s.op === 'rule'))
-      // 構詞命中：同一個詞若也是前綴或包含命中，構詞的說明更有用；模糊命中則保留原本的
+      // 同一個詞有多種命中方式時，取排序分數（rankScore，與詞條排序用的是同一個）較好的一種。
+      // 不能只看命中方式：詞根落在模糊門檻內時（查 parazem，razem 的模糊距離 1.2 在門檻 1.25 內），
+      // 最好的構詞分析（pa- ＋ razem，0.2）會被較差的模糊命中蓋掉。同分時模糊命中優先（直接相符），
+      // 構詞命中優先於前綴、包含（說明比較有用）
       for (const m of [...lemma, ...this._derivedTerms(key, variants)]) {
         const prev = matches.get(m.term)
-        if (!prev || prev.matchType === 'substring' || prev.matchType === 'prefix' || m.distance < prev.distance) {
-          if (prev?.matchType !== 'fuzzy') matches.set(m.term, m)
-        }
+        if (!prev || isBetterMatch(m, prev, key)) matches.set(m.term, m)
       }
     }
     return [...matches.values()]
