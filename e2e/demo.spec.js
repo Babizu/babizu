@@ -58,11 +58,25 @@ test('關於頁：站台 Markdown 與變體徽章', async ({ page }) => {
 
 test('介面語系：切換成英文並記住', async ({ page }) => {
   await page.goto('./#/about')
-  await page.getByRole('combobox', { name: '介面語言' }).selectOption('en')
+  await page.getByRole('button', { name: /^設定/ }).click()
+  await page.getByRole('dialog').locator('[lang="en"]').click()
   await expect(page.locator('html')).toHaveAttribute('lang', 'en')
   await expect(page.getByRole('heading', { name: 'Correspondences' })).toBeVisible()
   await page.reload()
   await expect(page.getByRole('heading', { level: 1, name: 'About this dictionary' })).toBeVisible()
+})
+
+test('設定：外觀可選深色並記住，也可以改回跟隨系統', async ({ page }) => {
+  await page.emulateMedia({ colorScheme: 'light' })
+  await page.goto('./#/about')
+  await page.getByRole('button', { name: /^設定/ }).click()
+  await page.getByRole('dialog').getByText('深色').click()
+  await expect(page.locator('html')).toHaveClass(/dark/)
+  await page.reload()
+  await expect(page.locator('html')).toHaveClass(/dark/)
+  await page.getByRole('button', { name: /^設定/ }).click()
+  await page.getByRole('dialog').getByText('跟隨系統').click()
+  await expect(page.locator('html')).not.toHaveClass(/dark/)
 })
 
 test('演算法實驗室：預設詞對來自站台設定', async ({ page }) => {

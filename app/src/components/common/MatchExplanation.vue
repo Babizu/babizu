@@ -4,6 +4,7 @@
  * 點擊可展開完整說明，並連到演算法實驗室看動態規劃表。
  */
 import { computed } from 'vue'
+import { Badge } from '@/components/ui/badge'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { t } from '@/i18n.js'
 import { categoryLabel, COSTS, formatDistance, formatStep, opLabel } from '@/lib/labels.js'
@@ -30,20 +31,18 @@ const allRules = computed(() => steps.value.length > 0 && steps.value.every((s) 
 <template>
   <Popover>
     <PopoverTrigger as-child>
-      <button
+      <Badge
+        as="button"
         type="button"
-        class="inline-flex h-5 max-w-full items-center gap-1 rounded px-1.5 text-[11px] leading-none whitespace-nowrap transition-colors"
-        :class="
-          allRules
-            ? 'bg-accent text-accent-foreground hover:bg-accent/80'
-            : 'text-muted-foreground border hover:bg-muted'
-        "
+        size="tag"
+        :variant="allRules ? 'soft' : 'quiet'"
+        class="max-w-full cursor-pointer"
         :aria-label="t('match.explainButton', { distance: formatDistance(distance) })"
         @click.stop.prevent
       >
-        <span>≈ {{ formatDistance(distance) }}</span>
-        <span v-if="summary" class="truncate">{{ summary }}</span>
-      </button>
+        <span class="tabular-nums">≈ {{ formatDistance(distance) }}</span>
+        <span v-if="summary" class="truncate font-normal">{{ summary }}</span>
+      </Badge>
     </PopoverTrigger>
     <PopoverContent class="w-72 text-sm" align="start" @click.stop>
       <p class="font-medium">{{ t('match.whyTitle') }}</p>

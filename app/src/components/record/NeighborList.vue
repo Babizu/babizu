@@ -26,7 +26,7 @@ const { shortTitle } = useSources()
             {{ hit.doc.text }}
           </RouterLink>
           <DialectBadge v-for="d in hit.doc.dialects" :key="d" :dialect="d" />
-          <span class="relative z-10">
+          <span class="relative z-10 inline-flex">
             <MatchExplanation
               v-if="hit.distance > 0"
               :distance="hit.distance"

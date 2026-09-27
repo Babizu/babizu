@@ -13,8 +13,22 @@ export const badgeVariants = cva(
         destructive:
           'border-transparent bg-destructive text-white [a&]:hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 dark:bg-destructive/60',
         outline: 'text-foreground [a&]:hover:bg-accent [a&]:hover:text-accent-foreground',
+        // 以下是結果列的標籤（ui-guidelines.md「標籤」）：同一個尺寸（size: tag），只差在顏色
+        /** 低調的屬性：外框、次要字色 */
+        quiet: 'text-muted-foreground [button&]:hover:bg-muted',
+        /** 說明性的標記（語音規則、構詞）：淡主色底 */
+        soft: 'border-transparent bg-accent text-accent-foreground [button&]:hover:bg-accent/70',
+        /** 中性的底色（未知的語言變體） */
+        muted: 'border-transparent bg-muted text-muted-foreground',
+        /** 語言變體：顏色由 .variety-<代碼> 提供 */
+        variety: 'border-transparent bg-[var(--variety-bg)] text-[var(--variety-fg)]',
+      },
+      size: {
+        default: '',
+        /** 結果列的標籤：與方言徽章同高 20px，同一行的標籤上下對齊 */
+        tag: 'h-5 rounded-sm px-1.5 py-0 text-[11px] leading-none',
       },
     },
-    defaultVariants: { variant: 'default' },
+    defaultVariants: { variant: 'default', size: 'default' },
   },
 )

@@ -45,11 +45,11 @@ const contextLabel = computed(() => {
         <MetaTag v-if="hit.kind !== 'head'" variant="soft">
           {{ matchKindLabel(hit.kind) }} <span class="native-text font-medium">{{ hit.term }}</span>
         </MetaTag>
-        <span v-if="hit.analysis" class="relative z-10 min-w-0">
+        <span v-if="hit.analysis" class="relative z-10 inline-flex min-w-0">
           <MorphologyExplanation :analysis="hit.analysis" :match-type="hit.matchType" :query="query" :term="hit.term" />
         </span>
         <MatchTypeTag v-else :match-type="hit.matchType" :term="hit.term" />
-        <span v-if="hit.matchType === 'fuzzy' && hit.distance > 0" class="relative z-10">
+        <span v-if="hit.matchType === 'fuzzy' && hit.distance > 0" class="relative z-10 inline-flex">
           <MatchExplanation :distance="hit.distance" :alignment="hit.alignment" :query="query" :term="hit.term" />
         </span>
       </div>

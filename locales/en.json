@@ -22,11 +22,9 @@
     "title": "About this dictionary"
   },
   "app": {
-    "darkMode": "Switch to dark mode",
     "footer": "Rights to the data belong to the original sources. Please cite them (every entry lists its source).",
     "home": "Back to search",
     "language": "Interface language",
-    "lightMode": "Switch to light mode",
     "skipToContent": "Skip to main content"
   },
   "audio": {
@@ -310,17 +308,16 @@
     "prefixHint": "This word begins with what you typed",
     "substring": "Contains",
     "substringHint": "This word contains what you typed",
-    "lemma": "Root match",
-    "lemmaHint": "What you typed, with its affixes removed, is this word",
+    "lemma": "Auto-split",
+    "lemmaHint": "An algorithm removed affixes from what you typed and got this word; it is a guess, not an analysis",
     "derived": "Derived form",
     "derivedHint": "This word is what you typed plus affixes"
   },
   "morph": {
-    "title": "Word structure",
-    "lemmaIntro": "“{query}” without its affixes is “{stem}”.",
-    "derivedIntro": "“{term}” is “{stem}” plus affixes.",
-    "note": "The affix list was compiled from the dictionary data and the analysis is an inference; check the entry itself for the meaning.",
-    "explainButton": "{label}: {summary}. Show word structure",
+    "title": "How it was split",
+    "lemmaIntro": "{query} → {stem}",
+    "derivedIntro": "{term} → {stem}",
+    "explainButton": "{label}: {summary}. Show how it was split",
     "type": {
       "prefix": "Prefix",
       "suffix": "Suffix",
@@ -329,7 +326,7 @@
       "alternation": "Morphophonological change",
       "circumfix": "Circumfix"
     },
-    "labLink": "Step through it in the Algorithm Lab →",
+    "labLink": "See how the algorithm works →",
     "soundChanges": "Sound changes (matched over the whole word)",
     "where": {
       "prefix": "prefix",
@@ -337,7 +334,8 @@
       "suffix": "suffix",
       "junction": "morpheme boundary"
     },
-    "variantOf": "The query “{query}” is a dialect spelling of “{stem}”."
+    "variantOf": "The query “{query}” is a dialect spelling of “{stem}”.",
+    "disclaimer": "This result comes from an algorithm that removes affixes automatically. It is meant to make searching easier and is not a verified analysis; please judge whether it is correct."
   },
   "nav": {
     "about": "About",
@@ -478,5 +476,12 @@
   "writingSystem": {
     "phonetic": "Phonetic notation",
     "segmented": "Segmented form"
+  },
+  "settings": {
+    "open": "Settings: appearance and language",
+    "theme": "Appearance",
+    "themeLight": "Light",
+    "themeDark": "Dark",
+    "themeAuto": "System"
   }
 }

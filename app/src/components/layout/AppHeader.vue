@@ -1,29 +1,22 @@
 <script setup>
 /**
- * 頂端列：網站名稱、主選單（桌面）、介面語系、深色模式切換。
+ * 頂端列：網站名稱、主選單（桌面）、設定（外觀與介面語言，SettingsMenu）。
  * 行動裝置的主選單在底部分頁列（MobileTabBar）。
  */
-import { LanguagesIcon, MoonIcon, SunIcon } from '@lucide/vue'
 import { useRoute } from 'vue-router'
-import { Button } from '@/components/ui/button'
-import { useTheme } from '@/composables/useTheme.js'
 import { useI18n } from '@/i18n.js'
 import { site } from '@/lib/labels.js'
 import { NAV_ITEMS } from './nav.js'
+import SettingsMenu from './SettingsMenu.vue'
 
 const route = useRoute()
-const { isDark, toggle } = useTheme()
-const { t, tr, locale, locales, localeNames, setLocale } = useI18n()
+const { t, tr } = useI18n()
 
 /** 站徽（站台 public/ 目錄中的檔案，與 index.html 的 favicon 同一個），依部署路徑組出網址 */
 const iconUrl = site.icon ? `${import.meta.env.BASE_URL}${site.icon}` : null
-const multilingual = locales.length > 1
 
 /** @param {string} name */
 const isActive = (name) => route.name === name || (name === 'sources' && route.name === 'browse')
-
-/** @param {Event} event */
-const onLocaleChange = (event) => setLocale(/** @type {HTMLSelectElement} */ (event.target).value)
 </script>
 
 <template>
@@ -62,33 +55,9 @@ const onLocaleChange = (event) => setLocale(/** @type {HTMLSelectElement} */ (ev
         </RouterLink>
       </nav>
 
-      <!-- 介面語系：原生 select，鍵盤、螢幕閱讀器與手機都不用另外處理 -->
-      <div v-if="multilingual" class="relative ml-auto shrink-0 md:ml-0">
-        <LanguagesIcon
-          class="text-muted-foreground pointer-events-none absolute top-1/2 left-2 size-4 -translate-y-1/2"
-          aria-hidden="true"
-        />
-        <select
-          :value="locale"
-          :aria-label="t('app.language')"
-          class="hover:bg-muted focus-visible:ring-ring/50 h-9 max-w-32 cursor-pointer appearance-none rounded-md bg-transparent pr-2 pl-8 text-sm outline-none focus-visible:ring-[3px]"
-          @change="onLocaleChange"
-        >
-          <option v-for="l in locales" :key="l" :value="l">{{ localeNames[l] }}</option>
-        </select>
+      <div class="ml-auto shrink-0 md:ml-0">
+        <SettingsMenu />
       </div>
-
-      <Button
-        variant="ghost"
-        size="icon"
-        class="shrink-0"
-        :class="multilingual ? '' : 'ml-auto md:ml-0'"
-        :aria-label="isDark ? t('app.lightMode') : t('app.darkMode')"
-        @click="toggle()"
-      >
-        <SunIcon v-if="isDark" />
-        <MoonIcon v-else />
-      </Button>
     </div>
   </header>
 </template>

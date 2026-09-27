@@ -22,11 +22,9 @@
     "title": "關於本辭典"
   },
   "app": {
-    "darkMode": "切換為深色模式",
     "footer": "資料版權屬各原始來源，引用時請註明出處（每筆詞條皆附「出處」資訊）。",
     "home": "回到搜尋頁",
     "language": "介面語言",
-    "lightMode": "切換為淺色模式",
     "skipToContent": "跳到主要內容"
   },
   "audio": {
@@ -310,17 +308,16 @@
     "prefixHint": "這個詞以你輸入的字串開頭",
     "substring": "包含",
     "substringHint": "這個詞裡面含有你輸入的字串",
-    "lemma": "詞根相符",
-    "lemmaHint": "你輸入的詞去掉詞綴後，就是這個詞",
+    "lemma": "自動拆解",
+    "lemmaHint": "演算法自動去掉詞綴後得到這個詞；是推定的結果，不是確定的分析",
     "derived": "衍生形",
     "derivedHint": "這個詞是你輸入的詞加上詞綴"
   },
   "morph": {
-    "title": "構詞分析",
-    "lemmaIntro": "「{query}」去掉詞綴後是「{stem}」。",
-    "derivedIntro": "「{term}」是「{stem}」加上詞綴。",
-    "note": "詞綴清單由辭典資料整理，分析是推定的；詞義請以詞條內容為準。",
-    "explainButton": "{label}：{summary}，查看構詞分析",
+    "title": "拆解說明",
+    "lemmaIntro": "{query} → {stem}",
+    "derivedIntro": "{term} → {stem}",
+    "explainButton": "{label}：{summary}，查看拆解說明",
     "type": {
       "prefix": "前綴",
       "suffix": "後綴",
@@ -329,7 +326,7 @@
       "alternation": "構詞音變",
       "circumfix": "環綴"
     },
-    "labLink": "在演算法實驗室逐步觀察 →",
+    "labLink": "查看演算法運作方式 →",
     "soundChanges": "音變（整個詞一起比對）",
     "where": {
       "prefix": "前綴",
@@ -337,7 +334,8 @@
       "suffix": "後綴",
       "junction": "詞素交界"
     },
-    "variantOf": "查詢「{query}」是「{stem}」的方言寫法。"
+    "variantOf": "查詢「{query}」是「{stem}」的方言寫法。",
+    "disclaimer": "此為演算法自動去除詞綴後所得到的結果，僅用於方便檢索，並非確定的分析標註。您需要自行判斷正確性。"
   },
   "nav": {
     "about": "關於",
@@ -478,5 +476,12 @@
   "writingSystem": {
     "phonetic": "語音標記",
     "segmented": "分詞形式"
+  },
+  "settings": {
+    "open": "設定：外觀與介面語言",
+    "theme": "外觀",
+    "themeLight": "淺色",
+    "themeDark": "深色",
+    "themeAuto": "跟隨系統"
   }
 }
