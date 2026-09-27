@@ -37,7 +37,8 @@ export async function devSite(siteDir, { port, log = console.log } = {}) {
   const site = await loadSiteConfig(siteDir)
   const { publicDir } = await prepareSiteData(site, { log })
   const { createServer } = await import('vite')
-  const server = await createServer({ ...createViteConfig(site, { publicDir }), server: { port } })
+  // 埠號交給 createViteConfig：另外覆寫整個 server 會丟掉 fs.allow，開發伺服器就讀不到框架依賴的檔案（字型等）
+  const server = await createServer(createViteConfig(site, { publicDir, port }))
   await server.listen()
   server.printUrls()
   return server

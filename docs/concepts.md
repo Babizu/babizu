@@ -67,6 +67,12 @@ flowchart LR
 
 所有 JSON 網址都帶 `?v=<manifest.version>`，資料更新後瀏覽器不會拿到舊快取。
 
+載入的穩固性：
+
+- 網路暫時中斷或伺服器暫時錯誤（408、429、5xx）時，資料檔與搜尋索引自動重試兩次（`app/src/services/fetch-retry.js`）；404 這類永久錯誤不重試，直接顯示錯誤與「重試」按鈕。
+- 搜尋 Worker 出錯時，等待中的請求一律失敗，下一次搜尋會重新啟動 Worker、重新載入索引。
+- 網站重新部署後，還開著的舊分頁要載入的程式分塊已經不存在：自動重新載入一次（30 秒內只一次，`app/src/lib/stale-build.js`）。
+
 ## 搜尋
 
 搜尋在 Web Worker 中執行（`app/src/workers/search.worker.js`），主執行緒透過 `SearchClient` 以 Promise 呼叫。

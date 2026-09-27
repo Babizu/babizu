@@ -12,6 +12,7 @@
  */
 
 import { SearchEngine } from '@babizu/search/index.js'
+import { fetchWithRetry } from '../services/fetch-retry.js'
 
 /** @type {SearchEngine | null} */
 let engine = null
@@ -25,7 +26,7 @@ async function init({ dataBase, version }) {
   if (!loading) {
     loading = (async () => {
       const fetchJson = async (/** @type {string} */ path) => {
-        const res = await fetch(`${dataBase}${path}?v=${version}`)
+        const res = await fetchWithRetry(`${dataBase}${path}?v=${version}`)
         if (!res.ok) throw new Error(`Cannot load ${path} (HTTP ${res.status})`)
         return res.json()
       }

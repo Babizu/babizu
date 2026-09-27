@@ -5,10 +5,32 @@
  * 需要在頁面載入前就生效的部分，直接寫進 index.html。
  */
 
-import { join } from 'node:path'
+import { createRequire } from 'node:module'
+import { dirname, join } from 'node:path'
 import tailwindcss from '@tailwindcss/vite'
 import vue from '@vitejs/plugin-vue'
 import { APP_DIR, FRAMEWORK_ROOT } from './paths.js'
+
+/**
+ * 前端用到的套件：開發伺服器一律預先打包（optimizeDeps.include）。
+ * 框架以 GitHub 標籤安裝時，前端原始碼在 node_modules/babizu 裡，Vite 把它當成「套件裡的程式」，
+ * 不會自動預先打包它引用的套件：reka-ui 就以數百個原始檔載入，與預先打包的 vue 混用，
+ * 元件之間的 provide／inject 對不上（對話框、彈出選單全部失效）。明列出來，開發與建置才一致。
+ */
+const FRONTEND_DEPS = ['vue', 'vue-router', 'reka-ui', '@lucide/vue', '@vueuse/core', 'class-variance-authority', 'clsx', 'tailwind-merge', 'vue-sonner']
+
+/**
+ * 框架的依賴實際安裝的 node_modules 目錄（以 GitHub 標籤安裝時通常被提升到站台的 node_modules，
+ * 以本機連結開發時在框架自己的 node_modules）。開發伺服器要能讀到它們（例如字型檔）。
+ */
+function dependencyDir() {
+  try {
+    const vuePackage = createRequire(join(FRAMEWORK_ROOT, 'package.json')).resolve('vue/package.json')
+    return dirname(dirname(vuePackage))
+  } catch {
+    return join(FRAMEWORK_ROOT, 'node_modules')
+  }
+}
 
 const SITE_MODULE = 'virtual:babizu/site'
 const RESOLVED_SITE_MODULE = `\0${SITE_MODULE}`
@@ -69,10 +91,10 @@ function babizuSitePlugin(site) {
 /**
  * 產生 Vite 設定。
  * @param {import('./config.js').ResolvedSite} site
- * @param {{publicDir: string}} options
+ * @param {{publicDir: string, port?: number}} options port：開發伺服器的埠號（其他 server 設定不變）
  * @returns {import('vite').InlineConfig}
  */
-export function createViteConfig(site, { publicDir }) {
+export function createViteConfig(site, { publicDir, port }) {
   return {
     configFile: false,
     root: APP_DIR,
@@ -85,7 +107,10 @@ export function createViteConfig(site, { publicDir }) {
         '@babizu': join(FRAMEWORK_ROOT, 'src'),
         '@': join(APP_DIR, 'src'),
       },
+      // 同一個套件只能有一份（Vue 的 provide／inject、reka-ui 的元件 context 都靠模組實體相同）
+      dedupe: ['vue', 'vue-router', 'reka-ui'],
     },
+    optimizeDeps: { include: FRONTEND_DEPS },
     worker: { format: 'es' },
     build: {
       outDir: join(site.root, 'dist'),
@@ -93,7 +118,7 @@ export function createViteConfig(site, { publicDir }) {
       target: 'es2022',
       chunkSizeWarningLimit: 800,
     },
-    server: { fs: { allow: [FRAMEWORK_ROOT, site.root] } },
+    server: { ...(port ? { port } : {}), fs: { allow: [FRAMEWORK_ROOT, site.root, dependencyDir()] } },
     preview: { port: 4173, strictPort: true },
   }
 }

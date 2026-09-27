@@ -13,5 +13,17 @@ import './assets/main.css'
 import { createApp } from 'vue'
 import App from './App.vue'
 import { router } from './router.js'
+import { reloadOnce } from './lib/stale-build.js'
+
+// 網站重新部署之後，還開著的舊分頁要載入的程式分塊（檔名帶雜湊）已經不存在：重新載入一次就拿到新版
+window.addEventListener('vite:preloadError', (event) => {
+  if (reloadOnce()) event.preventDefault()
+})
+router.onError((error, to) => {
+  if (/dynamically imported module|Importing a module script failed|error loading dynamically imported module/i.test(String(error?.message))) {
+    if (reloadOnce(to.fullPath)) return
+  }
+  console.error(error)
+})
 
 createApp(App).use(router).mount('#app')

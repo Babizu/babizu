@@ -3,7 +3,10 @@
  *
  * 所有 JSON 都在網站的 data/ 目錄（由 `babizu build` 從資料集產生），以 fetch 讀取並快取在記憶體。
  * 網址會加上 manifest 的版本號（?v=…），資料更新後瀏覽器不會拿到舊快取。
+ * 網路暫時中斷時自動重試（fetch-retry.js）；失敗的請求不留在快取裡，之後可以再試。
  */
+
+import { fetchWithRetry } from './fetch-retry.js'
 
 /** 資料根目錄（相對於網站 base，部署在子路徑也正確） */
 const DATA_BASE = `${import.meta.env.BASE_URL}data/`
@@ -51,7 +54,7 @@ export function absoluteDataBase() {
  */
 export function loadManifest() {
   if (!manifestPromise) {
-    manifestPromise = fetch(`${DATA_BASE}manifest.json`, { cache: 'no-cache' }).then((res) => {
+    manifestPromise = fetchWithRetry(`${DATA_BASE}manifest.json`, { cache: 'no-cache' }).then((res) => {
       if (!res.ok) throw new DataError('data/manifest.json not found — build the site with `babizu build`', res.status)
       return res.json()
     })
@@ -69,7 +72,7 @@ export async function fetchJson(path) {
   const key = `${path}?v=${manifest.version}`
   let promise = cache.get(key)
   if (!promise) {
-    promise = fetch(`${dataUrl(path)}?v=${manifest.version}`).then((res) => {
+    promise = fetchWithRetry(`${dataUrl(path)}?v=${manifest.version}`).then((res) => {
       if (!res.ok) throw new DataError(`Cannot load ${path} (HTTP ${res.status})`, res.status)
       return res.json()
     })

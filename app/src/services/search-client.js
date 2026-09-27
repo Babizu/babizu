@@ -13,11 +13,24 @@ import { absoluteDataBase, loadManifest } from './data.js'
 
 export class SearchClient {
   constructor() {
-    this.worker = new Worker(new URL('../workers/search.worker.js', import.meta.url), { type: 'module' })
     this._nextId = 1
     /** @type {Map<number, {resolve: (v: any) => void, reject: (e: Error) => void}>} */
     this._pending = new Map()
-    this.worker.addEventListener('message', (event) => {
+    /** @type {Promise<{records: number, terms: number}> | null} */
+    this._ready = null
+    /** @type {Worker | null} */
+    this.worker = null
+    this._start()
+  }
+
+  /**
+   * 啟動 Worker。Worker 出錯（載入失敗、記憶體不足而中止）時，等待中的請求一律失敗，
+   * Worker 丟掉、索引狀態重設：下一次呼叫會重新啟動並重新載入索引，而不是永遠等不到回應。
+   * @private
+   */
+  _start() {
+    const worker = new Worker(new URL('../workers/search.worker.js', import.meta.url), { type: 'module' })
+    worker.addEventListener('message', (event) => {
       const { id, result, error } = event.data
       const pending = this._pending.get(id)
       if (!pending) return
@@ -25,13 +38,18 @@ export class SearchClient {
       if (error) pending.reject(new Error(error))
       else pending.resolve(result)
     })
-    this.worker.addEventListener('error', (event) => {
+    worker.addEventListener('error', (event) => {
+      event.preventDefault?.()
       const err = new Error(event.message || 'Search worker error')
       for (const p of this._pending.values()) p.reject(err)
       this._pending.clear()
+      worker.terminate()
+      if (this.worker === worker) {
+        this.worker = null
+        this._ready = null
+      }
     })
-    /** @type {Promise<{records: number, terms: number}> | null} */
-    this._ready = null
+    this.worker = worker
   }
 
   /**
@@ -106,9 +124,11 @@ export class SearchClient {
    */
   _call(method, params) {
     const id = this._nextId++
+    if (!this.worker) this._start()
+    const worker = /** @type {Worker} */ (this.worker)
     return new Promise((resolve, reject) => {
       this._pending.set(id, { resolve, reject })
-      this.worker.postMessage({ id, method, params })
+      worker.postMessage({ id, method, params })
     })
   }
 }
