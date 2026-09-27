@@ -1010,12 +1010,13 @@ export function createMorphSearch({ analyzer, metric, index }) {
   }
 
   /**
-   * 任意一組詞素的音變說明（衍生形方向用）：整個詞的聯合對齊，標出每一步落在哪裡。
+   * 任意一組詞素的音變說明（衍生形方向，以及類 pika 剖析器的命中）：整個詞的聯合對齊，標出每一步落在哪裡。
    * @param {string[]} x 查詢（衍生形方向是衍生詞本身）
    * @param {Array<{chars: string[], lock: boolean, type: 'prefix' | 'stem' | 'suffix'}>} segments
+   * @param {Parameters<typeof metric.explainSegments>[2]} [options] 還原變體的固定交界（chart 命中的 trace.options）
    */
-  function notesFor(x, segments) {
-    return notesFrom(x, segments, metric.explainSegments(x, segments))
+  function notesFor(x, segments, options) {
+    return notesFrom(x, segments, metric.explainSegments(x, segments, options))
   }
 
   /**

@@ -9,5 +9,5 @@
 export * from './format.js'
 export * from './text.js'
 export { buildSearchIndex } from './build.js'
-export { SearchEngine, FUZZINESS } from './engine.js'
+export { SearchEngine, FUZZINESS, MORPH_METHODS } from './engine.js'
 export { buildEntryGroups, collectHits, computeParents } from './family.js'

@@ -15,7 +15,7 @@
  * 除了詞圖之外，其餘索引都在第一次用到時才建立（lazy）。
  */
 
-import { createMorphSearch, FuzzyIndex } from '../fuzzy/index.js'
+import { createChartSearch, createMorphSearch, FuzzyIndex } from '../fuzzy/index.js'
 import { buildEntryGroups, collectHits } from './family.js'
 import { decodePosting, docAt, INDEX_FORMAT_VERSION } from './format.js'
 import { createTextTools, detectQueryMode, glossTokens, zhNormalize } from './text.js'
@@ -55,7 +55,18 @@ export const FUZZINESS = Object.freeze({
  * @property {string[]} [fields] 要搜尋的部分：'native' 族語、'gloss' 釋義；預設兩者都搜
  * @property {number} [limit=500] 每個區塊最多回傳筆數
  * @property {number} [explainLimit=40] 為前幾筆模糊詞條附上對齊說明
+ * @property {MorphMethod} [morphMethod='bcdp'] 構詞搜尋（詞根方向）的實作；兩者的成本相同，結果只在同分時的說明可能不同
  */
+
+/**
+ * 構詞搜尋的實作（babizu docs/morph-grammar.md 第 5 節）：
+ * - bcdp：編譯後的邊界耦合 DP，與模糊搜尋共用一次詞圖走訪（預設，較快）
+ * - chart：類 pika 的加權剖析器，由文法直接計算（另外走訪詞圖；做為對照與 benchmark）
+ * @typedef {'bcdp' | 'chart'} MorphMethod
+ */
+
+/** @type {readonly MorphMethod[]} */
+export const MORPH_METHODS = Object.freeze(['bcdp', 'chart'])
 
 /**
  * @typedef {object} AlignmentNote 模糊命中時，非相同字元的對齊步驟
@@ -134,7 +145,7 @@ export const FUZZINESS = Object.freeze({
  * @property {OccurrenceHit[]} occurrences
  * @property {GlossHit[]} glosses
  * @property {{entries: number, entryGroups: number, occurrences: number, glosses: number}} totals 截斷前的總數
- * @property {{elapsedMs: number, visitedNodes: number}} stats
+ * @property {{elapsedMs: number, visitedNodes: number, morphMethod: MorphMethod | null}} stats morphMethod：這次構詞搜尋用的實作（沒有構詞規格時為 null）
  */
 
 const KIND_RANK = { head: 0, alt: 1, variant: 2, root: 3, token: 4 }
@@ -235,6 +246,8 @@ export class SearchEngine {
     this.morphSearch = this.text.morphology
       ? createMorphSearch({ analyzer: this.text.morphology, metric: this.metric, index: this.index })
       : null
+    /** @type {ReturnType<typeof createChartSearch> | null} 類 pika 剖析器（第一次用 morphMethod: 'chart' 時才建立） */
+    this._chart = null
     /** @type {Map<string, number> | null} */
     this._idIndex = null
     /** @type {Map<number, number[]> | null} 下層記錄（_childrenOf） */
@@ -354,7 +367,9 @@ export class SearchEngine {
       fields = ['native', 'gloss'],
       limit = 500,
       explainLimit = 40,
+      morphMethod = 'bcdp',
     } = options
+    if (!MORPH_METHODS.includes(morphMethod)) throw new RangeError(`未知的構詞搜尋方法「${morphMethod}」（${MORPH_METHODS.join('、')}）`)
     const searchNative = fields.includes('native')
     const searchGloss = fields.includes('gloss')
     const q = String(query ?? '').trim()
@@ -369,7 +384,7 @@ export class SearchEngine {
       occurrences: [],
       glosses: [],
       totals: { entries: 0, entryGroups: 0, occurrences: 0, glosses: 0 },
-      stats: { elapsedMs: 0, visitedNodes: 0 },
+      stats: { elapsedMs: 0, visitedNodes: 0, morphMethod: this.morphSearch ? morphMethod : null },
     }
     if (!q) return response
 
@@ -379,6 +394,7 @@ export class SearchEngine {
       // 但加權編輯距離對中文沒有意義
       this._searchNative(q, FUZZINESS[fuzziness] ?? FUZZINESS.normal, accept, response, explainLimit, {
         fuzzy: mode === 'latin',
+        morphMethod,
       })
     }
     if (searchGloss) {
@@ -506,15 +522,15 @@ export class SearchEngine {
    * @param {(k: number) => boolean} accept
    * @param {SearchResponse} response
    * @param {number} explainLimit
-   * @param {{fuzzy?: boolean}} [mode] fuzzy=false 時只做前綴／包含比對
+   * @param {{fuzzy?: boolean, morphMethod?: MorphMethod}} [mode] fuzzy=false 時只做前綴／包含比對
    * @private
    */
-  _searchNative(q, level, accept, response, explainLimit, { fuzzy = true } = {}) {
+  _searchNative(q, level, accept, response, explainLimit, { fuzzy = true, morphMethod = 'bcdp' } = {}) {
     const key = this.text.searchKey(q)
     if (!key) return
     const words = this.text.splitWords(q)
 
-    const fullTerms = this._matchTerms(key, level, response, fuzzy)
+    const fullTerms = this._matchTerms(key, level, response, fuzzy, morphMethod)
     response.terms = fullTerms
       .filter((t) => t.matchType === 'fuzzy')
       .slice(0, 30)
@@ -582,7 +598,7 @@ export class SearchEngine {
         return prev.terms
       }
       const before = response.stats.visitedNodes
-      const terms = this._matchTerms(word, level, response, fuzzy)
+      const terms = this._matchTerms(word, level, response, fuzzy, morphMethod)
       seen.set(word, { terms, visited: response.stats.visitedNodes - before })
       return terms
     }
@@ -683,20 +699,23 @@ export class SearchEngine {
    * @param {typeof FUZZINESS[Fuzziness]} level
    * @param {SearchResponse} response 累加走訪統計
    * @param {boolean} fuzzy 是否做模糊比對（中文查詢時關閉）
+   * @param {MorphMethod} [morphMethod] 構詞搜尋（詞根方向）的實作
    * @returns {TermMatch[]}
    * @private
    */
-  _matchTerms(key, level, response, fuzzy = true) {
+  _matchTerms(key, level, response, fuzzy = true, morphMethod = 'bcdp') {
     /** @type {Map<string, TermMatch>} */
     const matches = new Map()
     const morphology = fuzzy && this.morphSearch !== null && level.maxDistance(Array.from(key).length) > 0
     /** @type {TermMatch[]} */
     let lemma = []
     if (fuzzy) {
-      const ms = morphology ? /** @type {NonNullable<typeof this.morphSearch>} */ (this.morphSearch) : null
+      // BCDP 與模糊搜尋共用一次詞圖走訪；類 pika 剖析器另外算（morphMethod: 'chart'）
+      const ms = morphology && morphMethod === 'bcdp' ? /** @type {NonNullable<typeof this.morphSearch>} */ (this.morphSearch) : null
       const prepared = ms ? ms.seed(ms.prepare(key, this._lemmaMax(key, level)) ?? null, this.index) : null
       const { results, morph } = this._fuzzyTerms(key, level, response, prepared)
       if (prepared) lemma = this._lemmaTerms(key, level, prepared, morph)
+      else if (morphology && morphMethod === 'chart') lemma = this._chartLemmaTerms(key, level, response)
       for (const r of results) {
         matches.set(r.term, {
           term: r.term,
@@ -885,6 +904,30 @@ export class SearchEngine {
       /** @type {LemmaAnalysis} */
       const analysis = { stem: h.term, steps: h.steps, cost: h.distance, ...(h.penalty ? { penalty: h.penalty, violations: h.violations } : {}) }
       this._lazyNotes.set(analysis, () => search.notesOf(prepared, h))
+      return { term: h.term, payloads: h.payloads, distance: h.distance, matchType: /** @type {MatchType} */ ('lemma'), analysis }
+    })
+  }
+
+  /**
+   * 詞根相符（類 pika 剖析器，morphMethod: 'chart'）：與 _lemmaTerms 相同的格式與成本（兩種實作互相仲裁，
+   * babizu test/fuzzy/grammar/chart.test.js）。音變說明由命中的 trace 以整個詞的聯合對齊重建（需要時才算）。
+   * @param {string} key
+   * @param {typeof FUZZINESS[Fuzziness]} level
+   * @param {SearchResponse} response 累加走訪統計
+   * @returns {TermMatch[]}
+   * @private
+   */
+  _chartLemmaTerms(key, level, response) {
+    const search = /** @type {NonNullable<typeof this.morphSearch>} */ (this.morphSearch)
+    const analyzer = /** @type {import('../fuzzy/morphology.js').Analyzer} */ (this.text.morphology)
+    this._chart ??= createChartSearch({ grammar: analyzer.grammar, metric: this.metric, index: this.index })
+    const stats = { visitedNodes: 0, columns: 0 }
+    const hits = this._chart.search(key, { maxDistance: this._lemmaMax(key, level), stats })
+    response.stats.visitedNodes += stats.visitedNodes
+    return hits.map((h) => {
+      /** @type {LemmaAnalysis} */
+      const analysis = { stem: h.term, steps: /** @type {any} */ (h.steps), cost: h.distance, ...(h.penalty ? { penalty: h.penalty, violations: h.violations } : {}) }
+      this._lazyNotes.set(analysis, () => search.notesFor(h.trace.query, h.trace.segments, h.trace.options))
       return { term: h.term, payloads: h.payloads, distance: h.distance, matchType: /** @type {MatchType} */ ('lemma'), analysis }
     })
   }

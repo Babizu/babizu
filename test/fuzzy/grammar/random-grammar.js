@@ -109,6 +109,8 @@ export function randomQuery(random, { grammar, roots }) {
   }
   const d = derive(grammar, root, ops)
   let q = d.valid ? d.surface : root + 'an'
+  // 交界上相同的元音合併（ka ＋ asa → kasa）：規則 a ↔ aa 要跨越交界才對得上（類 pika 剖析器的跨界走訪）
+  if (random() < 0.3) q = q.replace(/aa/g, 'a').replace(/uu/g, 'u')
   if (random() < 0.2) {
     const at = Math.floor(random() * q.length)
     q = q.slice(0, at) + pick(random, ALPHABET) + q.slice(at + 1)

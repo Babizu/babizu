@@ -58,7 +58,7 @@ npx babizu dev        # 在有 babizu.config.js 的目錄
 | 子路徑 | 內容 |
 |---|---|
 | `babizu` | `defineSite`、`defineAdapter` |
-| `babizu/fuzzy` | `WeightedEditDistance`、`FuzzyIndex`、`RuleSet`、`createMetricFromProfile`、`createAnalyzer`、`createMorphSearch`… |
+| `babizu/fuzzy` | `WeightedEditDistance`、`FuzzyIndex`、`RuleSet`、`createMetricFromProfile`、`createAnalyzer`、`createMorphSearch`、`createChartSearch`… |
 | `babizu/fst` | 實驗性：通用 WFST 參考後端（惰性組合、最短路徑），評估用 |
 | `babizu/search` | `buildSearchIndex`、`SearchEngine`、`createTextTools` |
 | `babizu/schema` | JSON Schema 驗證器、`createRecord` 等輔助函式、代碼表 |

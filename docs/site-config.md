@@ -71,6 +71,8 @@ export default defineSite({
 | `lab.morph.examples` | `[string, string][]` | `[]` | 構詞（BCDP）分頁的例子：[查詢, 詞根]，第一組是預設值。只有語言設定檔有 `morphology` 時才能設定 |
 | `lab.morph.failures` | `[string, string][]` | `[]` | 找不到的例子（例如需要框架不支援的構詞），分頁會說明原因 |
 | `messages` | string | `locales` | 介面字串目錄 |
+| `search.morphology.methods` | string[] | `['bcdp']` | 開放給讀者選擇的構詞搜尋實作：`bcdp`（編譯後的邊界耦合 DP，快）、`chart`（類 pika 的加權剖析器）。兩者的成本相同（互相仲裁，見 [morph-grammar.md](morph-grammar.md) 第 5 節）；不只一種時，設定選單顯示「構詞搜尋方法」，讀者的選擇記在瀏覽器，結果數旁標出用的是哪一種，方便比較速度。只有語言設定檔有 `morphology` 時才能設定 |
+| `search.morphology.default` | string | `methods[0]` | 預設的構詞搜尋實作，必須在 `methods` 中 |
 
 ## 語言變體 `varieties`
 
