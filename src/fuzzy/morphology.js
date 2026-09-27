@@ -99,7 +99,7 @@ export const REDUPLICATION_PATTERNS = Object.freeze(['Ca', 'CV', 'CVV', 'CVCV', 
  * @typedef {object} MorphologySpec 語言設定檔的 `morphology` 區段
  * @property {number} [cost=0.3] 每個構詞步驟的預設成本
  * @property {number} [minStem=3] 詞根（詞庫詞）最短長度（code point）；查詢至少要多一個字元
- * @property {number} [maxSteps=3] 前綴、後綴各自最多幾個（另加至多一個中綴或重疊；見 docs/bcdp.md 1.6）
+ * @property {number} [maxSteps=3] 前綴、後綴各自最多幾個（另加至多一個包覆單位：中綴、重疊或環綴；見 docs/bcdp.md 1.6）
  * @property {number} [lemmaSpread=0.6] 構詞命中只保留成本在「最佳 ＋ lemmaSpread」之內的詞，控制候選數
  * @property {string} [vowels='aeiouéə'] 元音字母（決定「首輔音」「首元音」與中綴位置）
  * @property {AffixSpec[]} [prefixes]

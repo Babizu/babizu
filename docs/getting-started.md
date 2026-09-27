@@ -10,7 +10,7 @@
 mkdir my-dictionary && cd my-dictionary
 npm init -y
 npm pkg set type=module
-npm install github:Babizu/babizu#v0.1.0
+npm install github:Babizu/babizu#v0.5.0
 ```
 
 ## 2. 語言設定檔 `language.json`

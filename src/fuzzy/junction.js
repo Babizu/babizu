@@ -45,14 +45,70 @@ export function mergeInto(into, state, add, tag, before) {
     if (!target) {
       target = { node: p.node, row: new Float64Array(n).fill(Infinity) }
       into.pending.push(target)
-      into.tags.pending.set(p.node, new Array(n).fill(null))
     }
-    const tags = /** @type {unknown[]} */ (into.tags.pending.get(p.node))
+    // into 原本就有、但還沒有 tag 的跨界狀態（例如 shifted 的複本）：補上空的 tag
+    let tags = into.tags.pending.get(p.node)
+    if (!tags) into.tags.pending.set(p.node, (tags = new Array(n).fill(null)))
     for (let x = 0; x < n; x++) {
       const v = p.row[x] + add
       if (v < target.row[x] || (v === target.row[x] && v < Infinity && before?.(tag, tags[x]))) {
         target.row[x] = v
         tags[x] = tag
+      }
+    }
+  }
+  return into
+}
+
+/**
+ * 帶 tag 的複本（之後再合併進別的狀態，原本的不受影響）。
+ * @template {JunctionState & {tags?: {row: unknown[], pending: Map<number, unknown[]>}}} T
+ * @param {T} state
+ * @returns {T}
+ */
+export function copyTagged(state) {
+  return /** @type {T} */ ({
+    row: Float64Array.from(state.row),
+    pending: state.pending.map((p) => ({ node: p.node, row: Float64Array.from(p.row) })),
+    tags: {
+      row: state.tags ? [...state.tags.row] : new Array(state.row.length).fill(null),
+      pending: new Map(state.pending.map((p) => [p.node, state.tags?.pending.get(p.node)?.slice() ?? new Array(p.row.length).fill(null)])),
+    },
+  })
+}
+
+/**
+ * 把一個已經記著來源的狀態逐項取 min 合併進 into：每一格的 tag 沿用 state 那一格的 tag（mergeInto 是整個
+ * state 同一個 tag）。同分時 before(state 的 tag, into 的 tag, x, node) 為真就換成 state 的（node：跨界狀態，列是 null）。
+ * @param {JunctionState & {tags?: {row: unknown[], pending: Map<number, unknown[]>}}} into
+ * @param {JunctionState & {tags?: {row: unknown[], pending: Map<number, unknown[]>}}} state
+ * @param {(tag: any, current: any, x: number, node: number | null) => boolean} before
+ */
+export function mergeTagged(into, state, before) {
+  into.tags ??= { row: new Array(into.row.length).fill(null), pending: new Map() }
+  const n = into.row.length
+  for (let x = 0; x < n; x++) {
+    const v = state.row[x]
+    const tag = state.tags?.row[x] ?? null
+    if (v < into.row[x] || (v === into.row[x] && v < Infinity && before(tag, into.tags.row[x], x, null))) {
+      into.row[x] = v
+      into.tags.row[x] = tag
+    }
+  }
+  for (const p of state.pending) {
+    let target = into.pending.find((q) => q.node === p.node)
+    if (!target) {
+      target = { node: p.node, row: new Float64Array(n).fill(Infinity) }
+      into.pending.push(target)
+    }
+    let tags = into.tags.pending.get(p.node)
+    if (!tags) into.tags.pending.set(p.node, (tags = new Array(n).fill(null)))
+    const from = state.tags?.pending.get(p.node)
+    for (let x = 0; x < n; x++) {
+      const v = p.row[x]
+      if (v < target.row[x] || (v === target.row[x] && v < Infinity && before(from?.[x] ?? null, tags[x], x, p.node))) {
+        target.row[x] = v
+        tags[x] = from?.[x] ?? null
       }
     }
   }

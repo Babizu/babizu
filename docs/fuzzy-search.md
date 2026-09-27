@@ -196,7 +196,7 @@ CPU 剖析顯示，時間的 43% 花在 `fillRow`，而其中大部分是這些�
 查詢 → ┬─ 詞圖 + 加權編輯距離 ──→ 模糊命中（含距離與規則說明）
        └─ 字元反向索引 ─────────→ 前綴命中、包含命中
                                     ↓
-                        合併、去重，依「模糊 → 前綴 → 包含」分組排序
+                        合併、去重，依等效距離（rankScore）排序
 ```
 
 實作在 `src/search/engine.js` 的 `_matchTerms()`：
@@ -379,7 +379,7 @@ const data = index.serialize() // FuzzyIndex.deserialize(data, metric)
 | `createAnalyzer(spec, normalize)` | 構詞分析器：`analyze`（去詞綴）、`generate`（還原詞綴）、`coreForms`；文法寫法的規格先展開 |
 | `expandGrammar(spec, normalize)`、`validateGrammar`、`isGrammarSpec` | 構詞文法（[morph-grammar.md](morph-grammar.md)）：展開成平面清單（每項帶 `parts`、`rank`）、驗證、判斷寫法 |
 | `createMorphSearch({ analyzer, metric, index })` | 構詞搜尋 BCDP（[bcdp.md](bcdp.md)）：`search`、`prepare`／`seed`／`finish`（搭配多通道走訪）、`explain`（演算法實驗室）、`notesOf` |
-| `FuzzyIndex.searchChannels(channels)` | 多通道走訪；每個通道可帶交界狀態 `from`（起點）、`to`（詞尾耦合）、`onJunction`（回報詞尾的交界狀態）、`lockBoundary`、`cutoff`（共用的相對上限）、`initials`（只走以這些字元開頭的詞）；`start`／`end` 是沒有跨界表的簡寫 |
+| `FuzzyIndex.searchChannels(channels)` | 多通道走訪；每個通道可帶交界狀態 `from`（起點）、`to`（詞尾耦合）、`onJunction`（回報詞尾的交界狀態）、`lockBoundary`、`cutoff`（共用的相對上限）、`initialFrom`（以某些字元開頭的詞改由另一個交界狀態出發）；`start`／`end` 是沒有跨界表的簡寫 |
 | `babizu/fst`（實驗性） | 通用 WFST：`compose`、`shortestDistance`、`editTransducer`、`surfaceLexicon`、`fstLemmaSearch` |
 
 搜尋引擎（`babizu/search`）在此之上處理記錄、斷詞、釋義搜尋與結果排序：

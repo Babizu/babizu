@@ -109,8 +109,11 @@ const CHANNEL_LABELS = {
   infix: msg('拿掉中綴 <{form}>'),
   reduplication: msg('拿掉重疊部分 {form}'),
 }
-/** 通道的說明 @param {any} v */
-const channelLabel = (v) => {
+/** 通道的說明：通道本身，加上併進來、要求詞根元音開頭的環綴 @param {any} v */
+const channelLabel = (v) =>
+  [...(v.noBase ? [] : [baseLabel(v)]), ...(v.alt ? [t('元音開頭的詞根接 {form}', { form: v.alt.options.map(formatMorphStep).join('、') })] : [])].join('；')
+/** @param {any} v */
+const baseLabel = (v) => {
   // 前綴式環綴的通道由後綴相同的幾個環綴共用：列出它們
   if (v.kind === 'circumfix') return t('環綴 {form}', { form: (v.options ?? []).map(formatMorphStep).join('、') })
   // 還原變體：同一種拿法的步驟（單獨的中綴、重疊，與用它當左邊的環綴）共用一個通道，逐一列出

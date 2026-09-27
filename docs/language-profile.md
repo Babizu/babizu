@@ -237,17 +237,22 @@
   "cost": 0.2,
   "morphemes": [
     { "id": "AF", "type": "prefix", "forms": ["m", "mu", "mi", "me"], "gloss": { "zh-TW": "主事焦點", "en": "AF" } },
+    { "id": "AF.m", "type": "prefix", "form": "m", "free": false, "gloss": { "zh-TW": "主事焦點", "en": "AF" } },
     { "id": "PROG", "type": "infix", "form": "a", "gloss": { "zh-TW": "非完成貌", "en": "PROG" } },
+    { "id": "PRF", "type": "infix", "form": "in", "gloss": { "zh-TW": "完成貌", "en": "PFV" } },
     { "id": "IRR", "type": "suffix", "form": "ay", "gloss": { "zh-TW": "非實現", "en": "IRR" } },
     { "id": "HORT", "type": "prefix", "form": "ta", "free": false },
-    { "id": "HORT.aw", "type": "suffix", "form": "aw" }
+    { "id": "HORT.aw", "type": "suffix", "form": "aw", "free": false }
   ],
   "constructions": [
-    { "id": "AF.IRR", "sequence": ["AF", "PROG", "IRR"], "gloss": { "zh-TW": "主事焦點・非實現", "en": "AV.IRR" } },
+    { "id": "AF.PFV", "sequence": ["AF", "PRF"], "gloss": { "zh-TW": "主事焦點・完成", "en": "AV.PFV" } },
+    { "id": "AF.IRR", "sequence": ["AF.m", "PROG", "IRR"], "gloss": { "zh-TW": "主事焦點・非實現", "en": "AV.IRR" } },
     { "id": "HORT.UVP", "sequence": ["HORT", "HORT.aw"], "gloss": { "zh-TW": "勸說・受事焦點", "en": "HORT.UVP" } }
   ]
 }
 ```
+
+AF.PFV 的四個形式都有證據（m<in>-、m<in>u-、m<in>i-、m<in>e-），所以引用 AF；AF.IRR 只有 m<a>-…-ay，所以引用只有 m 的 AF.m（見[編寫技巧](#編寫技巧依-bcdp-的運作原理)）。
 
 文法寫法與平面清單寫法（`prefixes`…`circumfixes`）二選一；`cost`、`minStem`、`maxSteps`、`lemmaSpread`、`vowels`、`alternations` 兩種共用。
 
@@ -255,7 +260,7 @@
 
 1. **一個詞素的幾個形式寫在 `forms`**。不寫分布條件：資料中常有例外（噶哈巫語 `mu-aping`），搜尋不檢查，用了哪一個由查詢本身決定。分布寫在 `note` 裡供查證。
 2. **語法描述為一個構式的組合寫成組合規則**（焦點・時貌表中的一格），`sequence` 依**推導順序**：先加上去的在前。`["AF", "PRF"]` 是 m<in>u-（minubaket），`["PRF", "AF"]` 是 mu- ＋ b<in>aket（mubinaket）。
-3. **只在構式裡出現的詞素**設 `free: false`：勸說的 ta- 只與 -i、-aw 一起出現，單獨的 ta- 是另一個詞素（主事者）。
+3. **只在構式裡出現的詞素**設 `free: false`：勸說的 ta- 只與 -i、-aw 一起出現，單獨的 ta- 是另一個詞素（主事者）；-aw 只在 ta-…-aw 中出現。
 4. 自由詞素單獨出現時的成本是詞素的 `cost`；組合規則整個算一個步驟，成本是組合規則的 `cost`。
 
 **展開成什麼**：
@@ -264,8 +269,8 @@
 |---|---|
 | AF（mu）＋ PRF（in） | 前綴 minu（中綴插在前綴的首輔音之後） |
 | AF（m）＋ PRF（in） | 包覆單位 (m, <in>, ∅)，加上元音開頭詞根的前綴 min |
-| AF（m）＋ PROG（a）＋ IRR（ay） | 包覆單位 (m, <a>, ay)，加上元音開頭詞根的 ma-…-ay |
-| AF（mu）＋ PROG（a）＋ IRR（ay） | 前綴式環綴 mau-…-ay |
+| AF.m（m）＋ PROG（a）＋ IRR（ay） | 包覆單位 (m, <a>, ay)，加上元音開頭詞根的 ma-…-ay |
+| AF（mu）＋ PROG（a）＋ IRR（ay） | 前綴式環綴 mau-…-ay（引用 AF 時才會有；巴宰語的設定檔不要它） |
 | RED.CV ＋ LF（an） | 重疊式環綴 CV~…-an |
 | HORT（ta）＋ HORT.aw（aw） | 前綴式環綴 ta-…-aw |
 
@@ -291,7 +296,84 @@ console.table(flat.circumfixes)
 **注意**：
 
 - **規格中的順序有意義**：成本相同時，說明選步驟少的，再選自由詞素，最後依規格順序。
-- **組合規則的每一種形式選擇都會展開**：AF.IRR 的 m、mu、mi、me 各一項，不論資料中有沒有出現。巴宰語的文法比原本的平面清單多了幾個包覆單位，構詞搜尋慢約 5–7%。
+- **組合規則的每一種形式選擇都會展開**，不論資料中有沒有出現：只要構式實際用到的形式，另寫一個 `free: false` 的詞素（下一節第 1 項）。
+
+### 編寫技巧：依 BCDP 的運作原理
+
+搜尋時，設定檔的每一項都是一個「到處都要試一次」的假設。多一個假設，搜尋就多一點工作；假設錯了，還會在同分或成本相近時贏過正確的分析。所以設定檔要**寫得剛好**：語言中有的都寫進去，沒有證據的不要寫。這一節說明每一項在 BCDP 中做什麼（演算法見 [bcdp.md](bcdp.md)），以及據此整理出的技巧。
+
+**每一項在搜尋時做什麼**：
+
+| 設定檔的項目 | BCDP 中的工作 | 代價 |
+|---|---|---|
+| 前綴、後綴 | 詞綴 trie 上的節點；前綴、後綴各一層一層走，至多 `maxSteps` 層（bcdp.md 第 5 節） | 詞綴本身很便宜；但越短、越常見的詞綴，讓越多查詢位置成為詞幹的起點 |
+| 單獨的中綴、重疊 | 在每個詞幹起點試著拿掉，成立的成為一個還原變體，多一個通道（第 6 節） | 每個成立的變體多走一次詞圖（起點固定，剪枝很強） |
+| 前綴式環綴 | 後綴相同的合併成一個通道（第 7 節） | 每多一種後綴，最多多一個通道 |
+| 要求詞根元音開頭的環綴（`stemInitial`） | 併進後綴相同的通道，只換元音開頭的詞的起點 | 幾乎沒有 |
+| 外側有前綴的包覆單位（m<a>-） | 還原變體，起點在「前綴鏈 · 前綴」之後 | 同單獨的中綴 |
+| 組合規則 | 每一種同位詞素選擇展開成上面的一項 | 形式選擇越多，項目越多 |
+| `free: false` 的詞素 | 不展開成單獨的一項 | 省掉一個到處都要試的假設 |
+
+**技巧**：
+
+1. **組合規則只展開有證據的形式**。組合規則引用一個詞素時，它的每一個形式都會展開。構式只用其中幾個時，另寫一個 `free: false` 的詞素，只列那幾個形式，組合規則引用它。
+   - 巴宰語：主事焦點的非完成貌只有 m<a>-（元音開頭的詞根），所以 AF.PROG、AF.IRR 引用只有 m 的 AF.m。原本引用 AF 時會展開出 mau-、mai-、mae-：資料中沒有這些形式，mausay 的第一名卻因此變成 mau- ＋ say。
+2. **同一個構式在不同詞根上形式不同時，寫成兩條規則**，各引用各的形式。巴宰語的主事焦點・非實現：元音開頭的詞根是 m<a>-…-ay（AF.IRR，引用 AF.m），其他的是 mu-、mi-、me-…-ay（AF.IRR2，引用只有這三個形式的 AF.C）。m-…-ay 在資料中沒有出現，卻會把 maudalay 拆成 m- ＋ audal ＋ -ay。
+3. **只在構式中出現的詞素設 `free: false`**。自由的詞綴在每個交界都會被試。巴宰語的 -aw 只在 ta-…-aw 中出現；它原本是自由的後綴，於是 masuhaw、mataw 被拆成 masu-aw、mata-aw。
+4. **不要為了「以防萬一」加詞綴**。從資料學出的單一字母詞綴、重疊的殘片，讓召回多一點，雜訊與耗時卻明顯增加。單一字母的詞綴（a-、i-、m-）代價最高，因為能剝的位置最多；文法來源確實列出、資料也用得到時才收。
+5. **交界現象寫成規則，不寫成異體**（見[方言規則](#方言規則)與[構詞音變](#構詞音變)）。喉塞音增生、元音合併一條規則就涵蓋所有詞綴；列成異體則每個都要多試一次。
+6. **後綴的種類決定通道數**。前綴式環綴依後綴合併成通道，所以同一個語法意義盡量用同一個後綴形式；真的有異體（-en、-un）時照實列出。
+7. **規格的順序決定同分時的說明**：步驟少的優先，再依規格順序，自由詞素在組合規則之前。常用的形式放前面。
+8. **`maxSteps`、`lemmaSpread` 用預設**。巴宰語 2,141 組詞對中，用到三個前綴或三個後綴的只有 12 組；降低 `maxSteps` 省下的工作很少，卻會漏掉這些詞。
+
+**怎麼檢查**：
+
+- **展開結果**：`expandGrammar`（上一節）。每一項都應該能在文法來源或資料中找到例子。
+- **每一項用了幾次**：拿資料中標註的「衍生詞 < 詞根」，查每個衍生詞，看標註的詞根的分析用到哪些項目，以及排第一的錯誤詞根用到哪些項目：
+
+  ```js
+  import { buildSearchIndex, SearchEngine } from 'babizu/search'
+  const engine = new SearchEngine(buildSearchIndex({ items, groups, sourceIds, profile, varieties }))
+  const unit = (s) => (s.parts?.length ? s.parts.map((p) => `${p.id}=${p.form}`).join('+') : `${s.type}:${s.form}`)
+  for (const { derived, root } of pairs) {
+    const hits = engine.morphSearch.search(engine.text.searchKey(derived), { maxDistance: 1 })
+    const right = hits.find((h) => h.term === root) // 正確的分析用到的：hits 裡這一筆的 steps
+    const wrong = hits[0]?.term !== root ? hits[0] : null // 排第一的錯誤分析用到的
+    // 依 unit(step) 分別計數
+  }
+  ```
+
+  從來沒有用在正確分析、卻常出現在排第一的錯誤分析的項目，就是要限縮或設 `free: false` 的對象。
+  - 例外：錯誤的第一名若是詞庫中另一個本身就是衍生詞的詞，而且成本與正確的分析相同，例如 maatabilih 分析成 <a> ＋ matabilih，而不是 maa- ＋ tabilih，那不是設定檔的問題，而是兩種分析深度同分。
+- **工作量**：計數，而不是計時。計數與機器負載無關，比較兩份設定檔時差 1% 也看得出來：
+
+  ```js
+  const ms = engine.morphSearch
+  const stats = { visitedNodes: 0, prunedNodes: 0, computedRows: 0 }
+  let channels = 0
+  for (const q of queries) {
+    const p = ms.seed(ms.prepare(engine.text.searchKey(q), 1))
+    if (!p) continue
+    channels += p.channels.length
+    engine.index.searchChannels(p.channels, stats)
+  }
+  // channels：通道數；stats.computedRows：DP 算了幾列（詞圖走訪的主要工作）
+  ```
+
+- **效果**：改動前後都量找詞根的召回與第 1 名比例，以及拆解正確率。規格若是由這批詞對調整的，要另外保留一部分詞對只用來評估（見上面的[怎麼檢查](#怎麼檢查)）。
+
+**巴宰語的例子**：上面第 1–3 項的改動，前後比較如下。「平面清單」是改寫成文法之前的設定檔。
+
+| | 文法，未整理 | 整理後 | 平面清單 |
+|---|---|---|---|
+| 展開後的前綴／後綴／包覆單位 | 69／7／27 | 66／6／23 | 65／7／15 |
+| 每個查詢 DP 算的列（821 個查詢） | 5,802 | 5,687 | 5,622 |
+| 找詞根第 1 名：S1／S2／S3／S3b | 81.1／67.6／71.2／72.7% | 81.4／68.2／71.8／73.7% | 81.1／67.6／—／72.7% |
+| 其他詞幹（S1，每個查詢） | 6.31 | 6.08 | — |
+| mausay 的第一名 | say（mau- ＋ say） | usa（m<a>-…-ay） | usa（ma-…-ay，標註錯） |
+
+- S1 是查詢衍生詞本身，S2 是套上一條方言規則，S3 是 S2 而且衍生詞不在詞庫中，S3b 是音變落在詞綴或跨越交界的；每 2 組取 1 組。
+- 召回沒有變，拆解正確率（潘德興詞彙表 179 筆）都是 53.1%。
 
 ### 構詞音變
 

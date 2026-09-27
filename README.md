@@ -7,7 +7,7 @@
 
 - **跨方言模糊搜尋**：多字元加權編輯距離，方言間系統性的語音對應（`r↔l`、詞尾 `l↔n`、`er↔ee`…）只算極小的距離；
   規則寫在語言設定檔（JSON），不用寫程式。另有前綴與包含比對，補足短查詢。
-- **構詞**：在語言設定檔宣告詞綴、中綴、重疊與構詞音變。查衍生詞就能找到詞根，查詞根也能找到衍生形（包括例句中的），並說明構詞。
+- **構詞**：在語言設定檔宣告詞綴、中綴、重疊、環綴與構詞音變，或寫成構詞文法（詞素與組合規則，載入時展開成詞綴清單）。查衍生詞就能找到詞根，查詞根也能找到衍生形（包括例句中的），並說明由哪些詞素構成。
   音變與構詞聯合搜尋 BCDP（邊界耦合 DP）：音變以整個詞計算，可以跨越詞素交界（`minudox` → `daux`、`takitaw` → `kita`、`tau'alawan` → `alaw`）；詞綴鏈在交界上合併成一個狀態，與詞幹一次詞圖走訪耦合（[docs/bcdp.md](docs/bcdp.md)）。
 - **快**：詞庫存成 DAWG 詞圖（同時合併共同前綴與後綴），搜尋時動態規劃逐層剪枝，剪枝的正確性有證明與性質測試；
   1 萬多個詞只佔約 0.25 MB 記憶體，查詢數毫秒，在 Web Worker 中執行。
@@ -21,7 +21,7 @@
 需要 Node.js 20.19 以上。
 
 ```bash
-npm install github:Babizu/babizu#v0.1.0
+npm install github:Babizu/babizu#v0.5.0
 npx babizu dev        # 在有 babizu.config.js 的目錄
 ```
 
@@ -35,7 +35,7 @@ npx babizu dev        # 在有 babizu.config.js 的目錄
 | [getting-started.md](docs/getting-started.md) | 建立一個辭典網站 |
 | [concepts.md](docs/concepts.md) | 概念、架構、資料流、模組 |
 | [site-config.md](docs/site-config.md) | 站台設定 `babizu.config.js` 的所有欄位與指令 |
-| [language-profile.md](docs/language-profile.md) | 語言設定檔：正規化、成本、方言語音對應規則 |
+| [language-profile.md](docs/language-profile.md) | 語言設定檔：正規化、成本、方言語音對應規則、構詞，以及依 BCDP 的運作原理的編寫技巧 |
 | [data-format.md](docs/data-format.md) | 標準資料格式（資料集）規格 |
 | [adapters.md](docs/adapters.md) | 寫轉接器，把原始資料轉成資料集 |
 | [i18n.md](docs/i18n.md) | 多語言介面：語系、覆寫字串、新增語系 |
@@ -43,6 +43,7 @@ npx babizu dev        # 在有 babizu.config.js 的目錄
 | [bcdp.md](docs/bcdp.md) | 音變與構詞聯合搜尋 BCDP：模型、推導、正確性證明、實測 |
 | [morph-grammar.md](docs/morph-grammar.md) | 構詞文法：詞素、組合規則與包覆單位，展開成詞綴清單的編譯原理 |
 | [ui-guidelines.md](docs/ui-guidelines.md) | 介面設計規範 |
+| [lab-design.md](docs/lab-design.md) | 演算法實驗室的設計規格 |
 | [deployment.md](docs/deployment.md) | 部署到 GitHub Pages 或其他靜態主機 |
 
 ## 指令
@@ -60,7 +61,7 @@ npx babizu dev        # 在有 babizu.config.js 的目錄
 | 子路徑 | 內容 |
 |---|---|
 | `babizu` | `defineSite`、`defineAdapter` |
-| `babizu/fuzzy` | `WeightedEditDistance`、`FuzzyIndex`、`RuleSet`、`createMetricFromProfile`、`createAnalyzer`、`createMorphSearch`… |
+| `babizu/fuzzy` | `WeightedEditDistance`、`FuzzyIndex`、`RuleSet`、`createMetricFromProfile`、`createAnalyzer`、`createMorphSearch`、`expandGrammar`… |
 | `babizu/fst` | 實驗性：通用 WFST 參考後端（惰性組合、最短路徑），評估用 |
 | `babizu/search` | `buildSearchIndex`、`SearchEngine`、`createTextTools` |
 | `babizu/schema` | JSON Schema 驗證器、`createRecord` 等輔助函式、代碼表 |
@@ -77,6 +78,7 @@ npm run test:e2e          # 建置示範站台並跑端對端測試（需要 npx
                           #   或 PLAYWRIGHT_CHANNEL=msedge 使用本機的 Edge）
 npm run example:dev       # 示範站台的開發伺服器
 npm run bench             # 模糊搜尋效能基準
+npm run zoo               # 錯誤解法動物園：每個具名突變都必須被某個測試殺掉（test/zoo/）
 ```
 
 ```

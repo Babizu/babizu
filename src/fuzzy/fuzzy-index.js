@@ -42,6 +42,8 @@
  * - `to`：走到詞尾時與後一段的交界狀態（由反方向算好）耦合，得到整個詞的成本
  * 交界狀態的值都 ≥ 0，所以上面的下界照樣成立；普通搜尋沒有交界。
  * `start`、`end` 兩個向量是沒有跨界狀態的特例。
+ * `initialFrom`：以某些字元開頭的詞改用另一個起點。第 0 列只由起點決定，所以在根節點算好兩套第 0 列，
+ * 走進每條邊之前依邊的字元換上其中一套；之後的列都由第 0 列算出，照常計算。
  *
  * ## 實作上的最佳化（結果與最佳化前逐位元相同）
  * - 詞圖的邊標籤預先轉成字元編號（`_edgeCodes`，每個索引、每組規則只算一次），
@@ -96,7 +98,9 @@ import { resolveNormalization } from './normalization.js'
  * @property {(term: string, state: JunctionState, payloads: unknown[]) => void} [onJunction]
  *   每走到一個詞尾就回呼一次，附上這一段結束時的交界狀態（複本）
  * @property {boolean} [lockBoundary=false] 查詢的邊界字元（空白）完全不能被消耗（詞綴不含空白）
- * @property {Set<string>} [initials] 只走以這些字元開頭的詞（構詞：要求詞幹元音開頭的環綴，docs/morph-grammar.md 第 2 節）
+ * @property {{initials: Set<string>, from: JunctionState}} [initialFrom] 第一個字元在 initials 中的詞改由 initialFrom.from 出發，
+ *   其他詞照常由 from 出發（沒有 from 時不走）。只有第 0 列依根節點的邊切換，之後的列照常計算
+ *   （構詞：要求詞根元音開頭的環綴併進後綴相同的通道，docs/bcdp.md 第 7 節）
  * @property {SpreadCutoff} [cutoff] 相對上限（可由多個通道共用）：只需要「最佳 ＋ spread」之內的結果時，
  *   上限隨目前找到的最佳結果收緊。最後的最佳一定不大於途中的最佳，所以最佳 ＋ spread 之內的詞一個也不會少
  * @property {(term: string, row: Float64Array, payloads: unknown[]) => void} [onTerminal]
@@ -408,10 +412,21 @@ export class FuzzyIndex {
     const channels = specs.map(({ query, options }) => {
       const x = Array.isArray(query) ? query : this.metric.prepare(query)
       const n = x.length
-      // start／end 是沒有跨界狀態的 from／to
-      const from = options.from ?? (options.start ? { row: Float64Array.from(options.start), pending: [] } : null)
+      // start／end 是沒有跨界狀態的 from／to；只有 initialFrom 時，其他詞沒有起點（全部是 Infinity）
+      const initialFrom = options.initialFrom ?? null
+      const from =
+        options.from ??
+        (options.start ? { row: Float64Array.from(options.start), pending: [] } : initialFrom ? { row: new Float64Array(n + 1).fill(Infinity), pending: [] } : null)
       const to = options.to ?? (options.end ? { row: Float64Array.from(options.end), pending: [], word: null } : null)
-      const vectors = [from?.row, ...(from?.pending ?? []).map((p) => p.row), to?.row, to?.word, ...(to?.pending ?? []).map((p) => p.row)]
+      const vectors = [
+        from?.row,
+        ...(from?.pending ?? []).map((p) => p.row),
+        initialFrom?.from.row,
+        ...(initialFrom?.from.pending ?? []).map((p) => p.row),
+        to?.row,
+        to?.word,
+        ...(to?.pending ?? []).map((p) => p.row),
+      ]
       for (const vec of vectors) {
         if (vec && vec.length !== n + 1) throw new RangeError(`start／end（交界狀態）的長度必須是查詢長度 + 1（${n + 1}）`)
         // 剪枝的下界依賴「交界成本不小於 0」（docs/bcdp.md 第 7 節）
@@ -432,16 +447,8 @@ export class FuzzyIndex {
       }
       /** @type {import('./dp.js').Crossing[]} 第 j 層的跨界狀態（來自 from.pending，只在淺層） */
       const cross = []
-      if (from && from.pending.length) {
-        const c0 = createCrossing(from.pending.length)
-        from.pending.forEach((p, k) => {
-          c0.nodes[k] = p.node
-          c0.rows[k] = p.row
-          c0.mins[k] = Math.min(...p.row)
-        })
-        c0.count = from.pending.length
-        cross[0] = c0
-      }
+      const c0 = from ? crossingOf(from.pending) : null
+      if (c0) cross[0] = c0
       /**
        * rowsN[j]、rowsF[j]：路徑上第 j 層的兩種列；minN[j]、minF[j] 為各列最小值。
        * 同一深度的兄弟節點依序走訪，前一個兄弟的子樹走完才會覆寫，所以每層各配置一次即可重複使用。
@@ -457,6 +464,7 @@ export class FuzzyIndex {
       /** @type {number[]} */
       const minF = []
       const junctions = Boolean(from || to || options.onJunction)
+      const lockBoundary = options.lockBoundary ?? false
       return {
         n,
         from,
@@ -475,8 +483,27 @@ export class FuzzyIndex {
         onNode: options.onNode,
         onTerminal: options.onTerminal,
         onJunction: options.onJunction,
-        initials: options.initials ?? null,
-        plan: planFor(x, from?.row ?? null, junctions, options.lockBoundary ?? false),
+        /**
+         * 以 initials 開頭的詞的第 0 列（根節點算好，走進每條邊之前換上），與原本那一套（base0，根節點算完時記下）。
+         * lowerBound 是由那一套出發的子樹下界
+         */
+        initial: initialFrom
+          ? {
+              initials: initialFrom.initials,
+              plan: planFor(x, initialFrom.from.row, junctions, lockBoundary),
+              cross: crossingOf(initialFrom.from.pending),
+              rowN: new Float64Array(n + 1),
+              rowF: new Float64Array(n + 1),
+              useF: false,
+              minN: Infinity,
+              minF: Infinity,
+              lowerBound: Infinity,
+            }
+          : null,
+        /** @type {{rowN: Float64Array, rowF: Float64Array, minN: number, minF: number, cross: import('./dp.js').Crossing | null, lowerBound: number} | null} */
+        base0: null,
+        bound0: Infinity,
+        plan: planFor(x, from?.row ?? null, junctions, lockBoundary),
         rowsN,
         rowsF,
         bufF,
@@ -611,6 +638,27 @@ export class FuzzyIndex {
         // 跨列：第 r 列經由一條更長的規則跳過第 j 列（狀態由 PathMatcher 提供，見 dp.js）；
         // 跨界狀態同理，來源列在前一段
         lowerBound = Math.min(lowerBound, jumpBound(compiled, matcher, j, ch.minAt, crossing))
+        // 以 initials 開頭的詞另有一套第 0 列：在根節點一起算好，子樹的下界取兩套中較小的
+        if (j === 0 && ch.initial) {
+          const a = ch.initial
+          const col = prepareColumn(a.plan, compiled, matcher, 0, ch.rowAt, ch.startEdge, null)
+          a.minN = fillRow(a.plan, compiled, col, false, a.rowN)
+          if (ch.pot) a.minN = minWithPotential(a.rowN, ch.pot)
+          a.useF = a.plan.hasFinal && (isTerminal || hasBoundaryChild)
+          a.minF = a.minN
+          if (a.useF) {
+            a.minF = fillRow(a.plan, compiled, col, true, a.rowF)
+            if (ch.pot) a.minF = minWithPotential(a.rowF, ch.pot)
+          }
+          stats.computedRows += a.useF ? 2 : 1
+          let lb = Infinity
+          if (hasOtherChild) lb = a.minN
+          if (hasBoundaryChild) lb = Math.min(lb, a.minF)
+          a.lowerBound = Math.min(lb, jumpBound(compiled, matcher, 0, () => Math.min(a.minN, a.minF), a.cross))
+          ch.base0 = { rowN, rowF, minN: minN[0], minF: minF[0], cross: ch.cross[0] ?? null, lowerBound }
+          ch.bound0 = bound
+          lowerBound = Math.min(lowerBound, a.lowerBound)
+        }
         const pruned = endEdge > firstEdge && lowerBound > bound + EPSILON
 
         if (ch.onNode) {
@@ -634,13 +682,34 @@ export class FuzzyIndex {
         return
       }
       aliveCount[j + 1] = nextCount
-      // 詞的第一個字元有限制的通道（initials）：在根節點的每條邊上各自篩選，其他深度照常共用
-      const all = j === 0 && hasInitials ? next.slice(0, nextCount) : null
+      // 依第一個字元換起點的通道（initialFrom）：在根節點的每條邊上換上對應的第 0 列，那一套的下界超過上限就不走
+      const all = j === 0 && hasInitial ? next.slice(0, nextCount) : null
       for (let e = firstEdge; e < endEdge; e++) {
         path[j] = dawg.label(e)
         if (all) {
           let count = 0
-          for (const c of all) if (!channels[c].initials || channels[c].initials.has(path[j])) next[count++] = c
+          for (const c of all) {
+            const ch = channels[c]
+            if (ch.initial) {
+              const a = ch.initial
+              const base = /** @type {NonNullable<typeof ch.base0>} */ (ch.base0)
+              const alt = a.initials.has(path[j])
+              // 上限：根節點算的，再依途中收緊的相對上限（只會更緊）
+              const bound = ch.cutoff ? Math.min(ch.bound0, ch.cutoff.best + ch.cutoff.spread) : ch.bound0
+              if ((alt ? a.lowerBound : base.lowerBound) > bound + EPSILON) continue
+              ch.rowsN[0] = alt ? a.rowN : base.rowN
+              ch.rowsF[0] = alt ? (a.useF ? a.rowF : a.rowN) : base.rowF
+              ch.minN[0] = alt ? a.minN : base.minN
+              ch.minF[0] = alt ? a.minF : base.minF
+              const cross = alt ? a.cross : base.cross
+              if ((ch.cross[0] ?? null) !== cross) {
+                // 更深層的跨界狀態由第 0 層推出、容量也依它配置，換了就重新配置
+                ch.cross.length = 0
+                if (cross) ch.cross[0] = cross
+              }
+            }
+            next[count++] = c
+          }
           if (count === 0) continue
           aliveCount[j + 1] = count
         }
@@ -650,7 +719,7 @@ export class FuzzyIndex {
       // path 超過 j 的部分留著不清：只以 path.slice(0, j) 讀取，下一個兄弟會覆寫 path[j]
     }
 
-    const hasInitials = channels.some((ch) => ch.initials)
+    const hasInitial = channels.some((ch) => ch.initial)
     const root = aliveAt(0)
     for (let c = 0; c < channels.length; c++) root[c] = c
     aliveCount[0] = channels.length
@@ -808,6 +877,22 @@ export class FuzzyIndex {
   }
 }
 
+/**
+ * 交界狀態的跨界表 → 第 0 層的跨界狀態（沒有時是 null）。
+ * @param {JunctionState['pending']} pending
+ * @returns {import('./dp.js').Crossing | null}
+ */
+function crossingOf(pending) {
+  if (!pending.length) return null
+  const c0 = createCrossing(pending.length)
+  pending.forEach((p, k) => {
+    c0.nodes[k] = p.node
+    c0.rows[k] = p.row
+    c0.mins[k] = Math.min(...p.row)
+  })
+  c0.count = pending.length
+  return c0
+}
 
 /**
  * 加上位能的列最小值：min_x（row[x] ＋ pot[x]）。

@@ -186,6 +186,40 @@ describe('固定案例', () => {
     }
   })
 
+  it('要求詞根元音開頭的環綴併進後綴相同的通道：以元音開頭的詞換起點，其他詞照舊；沒有自由前綴時另建通道', () => {
+    const circumfixes = [{ prefix: 'ma', stemInitial: 'V' }, { prefix: 'ta', suffix: 'aw' }, { prefix: 'mi', suffix: 'aw', stemInitial: 'V' }]
+    const lexicon = ['usa', 'baket', 'ubak']
+    const cases = /** @type {Array<[string, string, boolean]>} */ ([
+      ['mausa', 'usa', true],
+      ['mabaket', 'baket', false],
+      ['miusaaw', 'usa', true],
+      ['mibaketaw', 'baket', false],
+      ['tabaketaw', 'baket', true],
+      ['taubakaw', 'ubak', true],
+    ])
+    // 有自由前綴 mu-（ma- 併進「接在前綴之後」的通道），與沒有自由前綴（另建一個只給元音開頭的詞的通道）
+    for (const prefixes of [[{ form: 'mu' }], []]) {
+      const setup = fixed({ prefixes, circumfixes })
+      for (const [query, term, found] of cases) {
+        const { got, want, hits } = compare(setup, lexicon, query)
+        expect(got.has(term), `${query}（前綴 ${prefixes.length}）`).toBe(found)
+        expect(got).toEqual(want)
+        const hit = hits.find((h) => h.term === term)
+        if (found) expect(hit?.steps.some((s) => s.type === 'circumfix'), query).toBe(true)
+      }
+    }
+  })
+
+  it('併進來的起點只有跨界狀態時，元音開頭的詞根可能只由原本的起點到得了：說明只用到得了的那一個', () => {
+    // ma- 的 a 與詞根開頭的 b 合起來是規則 ab ↔ x。上限 0.7：ma 對查詢的 m 要插入 a（0.8），超過上限，
+    // 所以 ma- 的狀態只剩跨界表（ab 還沒走完）。iku 以元音開頭，卻接不上那條規則，只能是 mx- ＋ iku
+    const setup = fixed({ prefixes: [{ form: 'mx' }], circumfixes: [{ prefix: 'ma', stemInitial: 'V' }] }, new RuleSet().add('x', 'ab', 0.1))
+    const { got, want, hits } = compare(setup, ['iku', 'biku'], 'mxiku', 0.7)
+    expect(got.has('iku')).toBe(true)
+    expect(got).toEqual(want)
+    expect(hits.find((h) => h.term === 'iku')?.steps.map((s) => s.form)).toEqual(['mx'])
+  })
+
   describe('使用者回報的例子：音變跨越詞素交界（docs/bcdp.md 1.3）', () => {
     // 與網站的規格同樣的形狀：方言規則「元音」aa → a、「喉塞音」' ↔ ∅（詞首），構詞音變 t → d（詞素末）
     const rules = new RuleSet().add('aa', 'a', 0.1).add('uu', 'u', 0.1).add("'", '', 0.1, { position: 'initial' }).add('l', 'n', 0.1, { position: 'final' })

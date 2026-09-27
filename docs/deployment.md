@@ -71,7 +71,7 @@ jobs:
 
 ```json
 {
-  "dependencies": { "babizu": "github:Babizu/babizu#v0.1.0" }
+  "dependencies": { "babizu": "github:Babizu/babizu#v0.5.0" }
 }
 ```
 

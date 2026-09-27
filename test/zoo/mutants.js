@@ -130,8 +130,8 @@ export const MUTANTS = [
   {
     name: '前綴式環綴的通道可以不接後綴就結束',
     file: 'src/fuzzy/morph-search.js',
-    find: 'to: { row: end.row, pending: end.pending, word: suffix ? null : word } },',
-    replace: 'to: { row: end.row, pending: end.pending, word } },',
+    find: 'to: { row: end.row, pending: end.pending, word: null } } })',
+    replace: 'to: { row: end.row, pending: end.pending, word } } })',
     why: 'ta-kita 被當成 ta-…-aw；bcdp-reference 的固定案例「環綴一定要接它的後綴」與隨機仲裁（環綴）',
   },
   {
@@ -144,8 +144,8 @@ export const MUTANTS = [
   {
     name: '環綴的成本沒有算進起點',
     file: 'src/fuzzy/morph-search.js',
-    find: 'mergeInto(group.start, Pc, c.cost, c, byRank)',
-    replace: 'mergeInto(group.start, Pc, 0, c, byRank)',
+    find: 'mergeInto((group.start ??= emptyJunction(n)), Pc, c.cost, c, byRank)',
+    replace: 'mergeInto((group.start ??= emptyJunction(n)), Pc, 0, c, byRank)',
     why: '環綴免費；bcdp-reference 的隨機仲裁與 search/morphology 的環綴測試',
   },
   {
@@ -212,11 +212,39 @@ export const MUTANTS = [
     why: 'm<a>- 的 m 不用付對齊的成本；bcdp-reference 的窮舉比對（wrap:outer）',
   },
   {
-    name: '要求詞幹元音開頭的環綴沒有限制詞幹',
+    name: '要求詞幹元音開頭的環綴沒有限制詞幹（併進通道時，所有詞都由合併後的起點出發）',
     file: 'src/fuzzy/morph-search.js',
-    find: '...(vowelStem ? { initials: vowelSet } : {})',
-    replace: '...{}',
+    find: '      options.initialFrom = { initials: vowelSet, from: start }',
+    replace: '      options.from = start',
     why: 'mabaket 被說成 m<a>- ＋ baket；grammar.test 的固定案例與 bcdp-reference 的窮舉比對',
+  },
+  {
+    name: '說明時元音開頭的詞仍由原本的起點追溯（沒有用合併後的起點）',
+    file: 'src/fuzzy/morph-search.js',
+    find: '    const start = v.alt && vowelSet.has(Array.from(result.term)[0]) ? v.alt.start : /** @type {Level | undefined} */ (options.from)',
+    replace: '    const start = /** @type {Level | undefined} */ (options.from)',
+    why: '由元音開頭環綴得到的命中說明不出環綴（或追溯出錯）；grammar.test 的 mausay 與 bcdp-reference 的固定案例',
+  },
+  {
+    name: '元音開頭環綴併進前綴鏈的起點時，同分改成環綴優先（不看步驟數與規格順序）',
+    file: 'src/fuzzy/morph-search.js',
+    find: '  if (current > 1) return true\n',
+    replace: '  return true\n',
+    why: 'mausa 被說成 m<a>-（自由詞素 ma- 應該優先）；grammar.test 的固定案例',
+  },
+  {
+    name: 'initialFrom：以 initials 開頭的詞沒有換上另一個起點的跨界表',
+    file: 'src/fuzzy/fuzzy-index.js',
+    find: '              const cross = alt ? a.cross : base.cross',
+    replace: '              const cross = base.cross',
+    why: '跨越交界的規則在另一個起點上失效；junction.test 的 initialFrom 性質測試',
+  },
+  {
+    name: 'initialFrom：根節點的每條邊用錯了哪一套起點的下界剪枝',
+    file: 'src/fuzzy/fuzzy-index.js',
+    find: '              if ((alt ? a.lowerBound : base.lowerBound) > bound + EPSILON) continue',
+    replace: '              if ((alt ? base.lowerBound : a.lowerBound) > bound + EPSILON) continue',
+    why: '該走的子樹被剪掉；junction.test 的 initialFrom 性質測試',
   },
   {
     name: '同分時的說明選規格中較後的',

@@ -307,6 +307,52 @@ describe('交界狀態：一段一段走 ＝ 整個詞的聯合對齊', () => {
       expect(pruned.map((r) => `${r.term}@${r.distance}`).sort()).toEqual(expected)
     }
   })
+
+  it('initialFrom：以 initials 開頭的詞由另一個交界狀態出發 ＝ 分成兩個通道各自走訪（含跨界表、剪枝、沒有 from）', () => {
+    const random = createRandom(7717)
+    let both = 0
+    // 另一個起點的跨界表確實影響結果的回合數：拿掉它，結果就不同（確認測試碰得到跨界表的切換）
+    let crossingMatters = 0
+    for (let round = 0; round < 300; round++) {
+      const metric = randomMetric(random)
+      const mirror = metric.mirror()
+      let [p1, p2] = [randomString(random, letters, 1, 3), randomString(random, letters, 1, 3)]
+      const s = randomString(random, letters, 1, 3)
+      const words = [...new Set(Array.from({ length: 30 }, () => randomString(random, letters, 1, 5)))]
+      let stem = pick(random, words)
+      let x = queryFrom(random, pick(random, [p1, p2]) + stem + s)
+      // 一半刻意在 p2 與詞幹的交界上放一條規則：p2 的狀態帶著跨界表，只有由它出發才接得上這個詞幹
+      const plant = random() < 0.5 ? planted(random, metric, p2, stem + s) : null
+      if (plant) {
+        ;[p2, stem] = [plant[0], plant[1].slice(0, plant[1].length - s.length)]
+        x = plant[2]
+        if (stem && !words.includes(stem)) words.push(stem)
+      }
+      const front = random() < 0.8 ? walk(metric, p1, x, undefined) : null
+      const other = walk(metric, p2, x, undefined)
+      const back = walk(mirror, Array.from(s).reverse().join(''), [...x].reverse(), undefined)
+      if (!other || !back) continue
+      const to = toForwardEnd(back, mirror.compiled)
+      const first = (/** @type {string} */ t) => Array.from(t)[0]
+      const initials = new Set(letters.filter((c) => (stem && c === first(stem) ? random() < 0.8 : random() < 0.5)))
+      const index = new FuzzyIndex(metric).addAll(words.map((w) => [w, w]))
+      const maxDistance = pick(random, [0.3, 0.6, 1])
+      const search = (/** @type {any} */ options) => index.searchChannels([{ query: x, options: { maxDistance, to, ...options } }])[0]
+      const got = search({ ...(front ? { from: front } : {}), initialFrom: { initials, from: other } })
+      const a = front ? search({ from: front }) : []
+      const b = search({ from: other })
+      const want = [...a.filter((r) => !initials.has(first(r.term))), ...b.filter((r) => initials.has(first(r.term)))]
+      const show = (/** @type {any[]} */ rs) => rs.map((r) => `${r.term}@${r.distance}`).sort()
+      expect(show(got), `x=${x.join('')} p1=${p1} p2=${p2} initials=${[...initials].join('')}`).toEqual(show(want))
+      if (front && other.pending.length + front.pending.length > 0 && got.length) both++
+      if (other.pending.length) {
+        const without = search({ ...(front ? { from: front } : {}), initialFrom: { initials, from: { row: other.row, pending: [] } } })
+        if (show(without).join() !== show(want).join()) crossingMatters++
+      }
+    }
+    expect(both).toBeGreaterThan(5)
+    expect(crossingMatters).toBeGreaterThan(3)
+  })
 })
 
 describe('jointDistance（衍生形方向的驗證）', () => {

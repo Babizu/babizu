@@ -32,6 +32,7 @@ export const CHANNEL_NOTES = {
   infix: msg('拿掉中綴 <{form}>，得到還原變體「{text}」：詞幹的起點固定在查詢上。'),
   reduplication: msg('拿掉重疊部分「{form}」，得到還原變體「{text}」：詞幹的起點與長度由重疊模板決定。'),
   circumfixInner: msg('拿掉環綴 {form} 的左邊「{left}」，得到還原變體「{text}」：詞幹的起點固定在查詢上，詞尾一定接它的後綴。'),
+  vowelStart: msg('以元音開頭的詞根另外可以接在 {form} 之後（這些環綴要求詞根元音開頭）：走訪到第一個字元時換起點，之後與這個通道共用同一次計算。'),
 }
 
 /** 構詞搜尋：找不到指定詞根的原因 */
@@ -227,6 +228,15 @@ export function bcdpSteps(e) {
       note: { key: CHANNEL_NOTES[/** @type {keyof typeof CHANNEL_NOTES} */ (key)], params: { text: v.text, form, left: v.op?.left?.form ?? '' } },
       proofRef: v.op ? BCDP_DOC.variants : BCDP_DOC.walk,
     })
+    if (v.alt) {
+      steps.push({
+        kind: 'variant',
+        phase: 'channels',
+        focus: { channel: c },
+        note: { key: CHANNEL_NOTES.vowelStart, params: { form: v.alt.options.map(circumfixLabel).join('、') } },
+        proofRef: BCDP_DOC.walk,
+      })
+    }
   })
   e.walks.forEach((/** @type {NodeEvent[]} */ walk, /** @type {number} */ c) => {
     steps.push({
