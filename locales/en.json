@@ -368,15 +368,5 @@
   "另立條目": "Separate entry",
   "再顯示 {count} 個相關項目": "Show {count} more related items",
   "完全相符": "Exact match",
-  "組合規則": "Construction",
-  "未收錄的組合": "Unattested combination",
-  "語言中沒有收錄這種組合順序，成本較高": "This combination order is not recorded for the language, so it costs more",
-  "條件不成立：{form} 要求 {when}（已含在成本裡）": "Condition not met: {form} requires {when} (included in the cost)",
-  "條件不成立：": "Condition not met: ",
-  "要求": "requires",
-  "BCDP": "BCDP",
-  "類 pika 剖析器": "Pika-style parser",
-  "設定：外觀、介面語言與構詞搜尋方法": "Settings: appearance, language and morphology search method",
-  "構詞搜尋方法": "Morphology search method",
-  "兩種實作找到的結果相同，可以比較速度（顯示在結果數旁）。": "Both implementations find the same results; compare their speed (shown next to the result count)."
+  "組合規則": "Construction"
 }

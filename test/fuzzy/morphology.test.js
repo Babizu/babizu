@@ -339,15 +339,31 @@ describe('規格檢查', () => {
     ['已移除的 before', { alternations: [{ underlying: 't', surface: 'd', before: ['an'] }] }, /morphology\.alternations\[0\]\.before 已移除/],
     ['交替含空白', { alternations: [{ underlying: 't ', surface: 'd' }] }, /morphology\.alternations\[0\].*空白/],
     ['元音含空白', { vowels: 'a e' }, /morphology\.vowels/],
-    ['環綴沒有左邊', { circumfixes: [{ suffix: 'aw' }] }, /morphology\.circumfixes\[0\].*恰好一個/],
-    ['環綴有兩個左邊', { circumfixes: [{ prefix: 'ta', infix: 'in', suffix: 'aw' }] }, /morphology\.circumfixes\[0\].*恰好一個/],
+    ['環綴只有後綴', { circumfixes: [{ suffix: 'aw' }] }, /morphology\.circumfixes\[0\].*至少要有兩個部分/],
+    ['環綴的中綴與重疊都有', { circumfixes: [{ infix: 'in', reduplication: 'Ca', suffix: 'aw' }] }, /morphology\.circumfixes\[0\].*至多一個/],
+    ['stemInitial 用在中綴式的環綴', { circumfixes: [{ prefix: 'm', infix: 'a', stemInitial: 'V' }] }, /morphology\.circumfixes\[0\]\.stemInitial/],
+    ['stemInitial 不是 V', { circumfixes: [{ prefix: 'ma', stemInitial: 'C' }] }, /morphology\.circumfixes\[0\]\.stemInitial/],
     ['環綴的重疊型式拼錯', { circumfixes: [{ reduplication: 'CA', suffix: 'ay' }] }, /morphology\.circumfixes\[0\]\.reduplication/],
-    ['環綴沒有後綴', { circumfixes: [{ prefix: 'ta' }] }, /morphology\.circumfixes\[0\]\.suffix/],
+    ['環綴只有前綴', { circumfixes: [{ prefix: 'ta' }] }, /morphology\.circumfixes\[0\].*至少要有兩個部分/],
     ['環綴含空白', { circumfixes: [{ prefix: 'ta ', suffix: 'aw' }] }, /morphology\.circumfixes\[0\]\.prefix.*空白/],
     ['環綴的未知欄位', { circumfixes: [{ prefix: 'ta', suffix: 'aw', form: 'x' }] }, /morphology\.circumfixes\[0\]\.form.*未知/],
   ]))('拒絕非法輸入：%s', (_name, spec, message) => {
     const errors = validateMorphology(spec)
     expect(errors.some((e) => message.test(e)), errors.join('；')).toBe(true)
+  })
+
+  it('環綴（包覆單位）的各種形狀：前綴＋中綴、前綴＋重疊、三個部分都有、只有前綴但要求詞幹元音開頭', () => {
+    expect(
+      validateMorphology({
+        circumfixes: [
+          { prefix: 'm', infix: 'a' },
+          { prefix: 'sa', reduplication: 'CV' },
+          { prefix: 'm', infix: 'a', suffix: 'ay' },
+          { prefix: 'ma', stemInitial: 'V' },
+          { prefix: 'ma', suffix: 'ay', stemInitial: 'V' },
+        ],
+      }),
+    ).toEqual([])
   })
 
   it('合法的邊界值通過', () => {

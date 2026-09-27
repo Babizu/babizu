@@ -25,7 +25,6 @@ import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { useMorphMethod } from '@/composables/useMorphMethod.js'
 import { useRecentSearches } from '@/composables/useRecentSearches.js'
 import { useSearchIndex } from '@/composables/useSearchIndex.js'
 import { useI18n } from '@/i18n.js'
@@ -36,9 +35,6 @@ const router = useRouter()
 const { client, status: indexStatus, error: indexError, load, stats } = useSearchIndex()
 const { recent, remember, clear: clearRecent } = useRecentSearches()
 const { t, tr } = useI18n()
-const { method: morphMethod, choosable: morphChoosable } = useMorphMethod()
-/** 結果數旁標出這次的構詞搜尋實作（讀者可以切換時才標，方便比較速度） @type {Record<string, string>} */
-const MORPH_METHOD_NAMES = { bcdp: 'BCDP', chart: 'pika' }
 
 /** 空狀態的範例查詢（站台設定 examples）：展示跨方言、跨書寫系統與跨語言的查法 */
 const EXAMPLES = site.examples
@@ -123,7 +119,7 @@ const limits = ref({ entries: PAGE_SIZE, occurrences: PAGE_SIZE, glosses: PAGE_S
 let requestSeq = 0
 
 watch(
-  () => [route.query.q, route.query.fz, route.query.src, route.query.dia, route.query.unit, route.query.f, morphMethod.value],
+  () => [route.query.q, route.query.fz, route.query.src, route.query.dia, route.query.unit, route.query.f],
   async () => {
     const q = String(route.query.q ?? '').trim()
     limits.value = { entries: PAGE_SIZE, occurrences: PAGE_SIZE, glosses: PAGE_SIZE }
@@ -141,7 +137,6 @@ watch(
         fuzziness: f.fuzziness,
         fields: f.fields,
         filters: { sources: f.sources, dialects: f.dialects, units: f.units },
-        morphMethod: morphMethod.value,
       })
       if (seq === requestSeq) response.value = result
     } catch (e) {
@@ -304,11 +299,7 @@ const filterSheetOpen = ref(false)
                 >{{ t('」共 {count} 筆', { count: formatCount(totalHits) }) }}
               </template>
               <template v-else>{{ t('「{query}」沒有結果', { query: response.query }) }}</template>
-              <span class="ml-2 text-xs tabular-nums opacity-70" data-testid="elapsed"
-                >{{ response.stats.elapsedMs }} ms<template v-if="morphChoosable && response.stats.morphMethod">
-                  · {{ MORPH_METHOD_NAMES[response.stats.morphMethod] ?? response.stats.morphMethod }}</template
-                ></span
-              >
+              <span class="ml-2 text-xs tabular-nums opacity-70">{{ response.stats.elapsedMs }} ms</span>
             </p>
             <div v-if="fuzzyTerms.length" class="text-muted-foreground flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-xs">
               <span>{{ t('含相近拼寫：') }}</span>

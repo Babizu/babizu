@@ -13,10 +13,6 @@
  * - 規則的展開與成本表（refJointContext 取自 metric.ruleSet.expand、metric.costs）
  * 比對的粒度是「每個詞根的成本」，不比較說明中選了哪一條詞綴鏈（同分時的選擇另有固定案例）。
  *
- * 同位詞素的條件（構詞文法，docs/morph-grammar.md 2.2、2.7）：每個項目的 checks 直接在具體的字串上讀——
- * 前綴讀它之後的前綴、環綴的左邊與詞根（不含後綴），後綴讀它之前的後綴、環綴的右邊與詞根（倒著讀），
- * 環綴與詞根上的中綴、重疊讀詞根；讀到吸收態就停，仍未接受就付懲罰。不用分類、不用交界狀態。
- *
  * 只適合小輸入：成本是指數級的。
  */
 
@@ -61,19 +57,6 @@ export function refMorph(ctx, { query, lexicon, spec, maxDistance, why }) {
   const prefixChains = chainsOf(spec.prefixes)
   const suffixChains = chainsOf(spec.suffixes) // 由內而外（詞中的順序）
   const sum = (/** @type {Array<{cost: number}>} */ list) => list.reduce((a, b) => a + b.cost, 0)
-  /** 條件在具體字串上的懲罰 @param {Array<{cond: any, state: number, penalty: number}> | undefined} checks @param {string[]} chars */
-  const pen = (checks, chars) => {
-    let total = 0
-    for (const { cond, state, penalty } of checks ?? []) {
-      let st = state
-      for (const ch of chars) {
-        if (cond.status(st) !== 0) break
-        st = cond.step(st, ch)
-      }
-      if (cond.status(st) !== 1) total += penalty
-    }
-    return total
-  }
   const text = (/** @type {Array<{form: string}>} */ list) => list.map((a) => a.form).join('')
 
   /**
@@ -90,14 +73,18 @@ export function refMorph(ctx, { query, lexicon, spec, maxDistance, why }) {
   }
 
   const terms = lexicon.filter((t) => t !== query && Array.from(t).length >= spec.minStem)
-  /** 環綴：null 表示沒有環綴；前綴式的左邊是最內層的前綴，後綴是最內層的後綴 */
+  /**
+   * 環綴（包覆單位）：null 表示沒有環綴。緊貼詞幹的前綴（前綴式的左邊，或中綴、重疊式外側的 outer）是最內層的前綴，
+   * 後綴（可以沒有）是最內層的後綴；vowelStem 的環綴只接元音開頭的詞幹
+   */
   const circumfixes = [null, ...(spec.circumfixes ?? [])]
   for (const t of terms) {
     const tc = Array.from(t)
     for (const pre of prefixChains) {
       for (const suf of suffixChains) {
         for (const c of circumfixes) {
-          const left = c?.kind === 'prefix' ? Array.from(c.left) : []
+          if (c?.vowelStem && !vowels.has(tc[0])) continue
+          const left = c ? Array.from(c.kind === 'prefix' ? c.left : (c.outer ?? '')) : []
           const right = c ? Array.from(c.suffix) : []
           const p = [...Array.from(text(pre)), ...left]
           const J1 = p.length
@@ -118,15 +105,10 @@ export function refMorph(ctx, { query, lexicon, spec, maxDistance, why }) {
             at += Array.from(a.form).length
           }
           const u = [...p, ...tc, ...right, ...Array.from(text(suf))]
-          // 條件：前綴讀它之後的前綴、環綴左邊、詞根；後綴倒著讀它之前的後綴、環綴右邊、詞根；環綴讀詞根
-          let penalty = 0
-          pre.forEach((a, j) => (penalty += pen(/** @type {any} */ (a).checks?.start, [...Array.from(text(pre.slice(j + 1))), ...left, ...tc])))
-          suf.forEach((a, j) => (penalty += pen(/** @type {any} */ (a).checks?.end, [...tc, ...right, ...Array.from(text(suf.slice(0, j)))].reverse())))
-          if (c) penalty += pen(c.checks?.start, tc) + pen(c.checks?.end, [...tc].reverse())
-          const steps = sum(pre) + sum(suf) + (c?.cost ?? 0) + penalty
+          const steps = sum(pre) + sum(suf) + (c?.cost ?? 0)
           // 音變的成本不小於 0：光是步驟就超過上限的分析不必算（只是省時間，結果不變）
           if (steps > maxDistance + EPS) continue
-          const label = `${text(pre)}-${c ? `[${c.left}…${c.suffix}]` : ''}${t}-${text(suf)}`
+          const label = `${text(pre)}-${c ? `[${c.outer ?? ''}+${c.left}…${c.suffix}]` : ''}${t}-${text(suf)}`
 
           // 串接：至少一個詞綴（前綴式的環綴本身就是一個步驟）
           if ((c === null && pre.length + suf.length > 0) || c?.kind === 'prefix') {
@@ -138,17 +120,16 @@ export function refMorph(ctx, { query, lexicon, spec, maxDistance, why }) {
           // 環綴的中綴、重疊式只用它自己的左邊（成本已經算在 steps 裡），詞尾一定接它的後綴
           const infixes = c === null ? spec.infixes : c.kind === 'infix' ? [{ form: c.left, cost: 0 }] : []
           const reds = c === null ? spec.reduplication : c.kind === 'reduplication' ? [{ pattern: c.left, cost: 0 }] : []
-          const hasSuffix = suf.length > 0 || c !== null
+          const hasSuffix = suf.length > 0 || right.length > 0
           for (let i = 0; i < n; i++) {
-            if (pre.length === 0 && i > 0) break
+            if (p.length === 0 && i > 0) break
             // 中綴：詞幹首輔音之後、首元音之前；首輔音不含空白；拿掉後首輔音不變、剩下的至少 minStem 個字元
             let h = i
             while (h < n && !vowels.has(q[h])) h++
             const head = q.slice(i, h)
             if (!head.some(isB)) {
               for (const x of infixes) {
-                const xp = pen(/** @type {any} */ (x).checks?.start, tc)
-                if (steps + x.cost + xp > maxDistance + EPS) continue
+                if (steps + x.cost > maxDistance + EPS) continue
                 const xs = Array.from(x.form)
                 if (q.slice(h, h + xs.length).join('') !== x.form) continue
                 const reduced = [...q.slice(0, h), ...q.slice(h + xs.length)]
@@ -163,13 +144,12 @@ export function refMorph(ctx, { query, lexicon, spec, maxDistance, why }) {
                   pinIn: { b: J1, a: i },
                   pinOut: { b: J2, allowed: hasSuffix ? allowed : new Set(allowed.has(reduced.length) ? [reduced.length] : []) },
                 })
-                put(t, steps + x.cost + xp + d, `${text(pre)}-<${x.form}>${t}-${c ? c.suffix : ''}${text(suf)}：${steps + x.cost + xp} + ${d}`)
+                put(t, steps + x.cost + d, `${text(pre)}-<${x.form}>${t}-${c ? c.suffix : ''}${text(suf)}：${steps + x.cost} + ${d}`)
               }
             }
             // 重疊：q[i..i+len) 是重疊部分（不含空白），詞幹的表面形式由 s（略過交界上的增生）開始
             for (const r of reds) {
-              const rp = pen(/** @type {any} */ (r).checks?.start, tc)
-              if (steps + r.cost + rp > maxDistance + EPS) continue
+              if (steps + r.cost > maxDistance + EPS) continue
               for (let len = 1; i + len < n; len++) {
                 if (n - i - len < spec.minStem) break
                 const red = q.slice(i, i + len)
@@ -191,7 +171,7 @@ export function refMorph(ctx, { query, lexicon, spec, maxDistance, why }) {
                     pinIn: { b: J1, a: i },
                     pinOut: { b: J2, allowed: hasSuffix ? allowed : new Set(allowed.has(reduced.length) ? [reduced.length] : []) },
                   })
-                  put(t, steps + r.cost + rp + d, `${text(pre)}-${red.join('')}~${t}-${c ? c.suffix : ''}${text(suf)}：${steps + r.cost + rp} + ${d}`)
+                  put(t, steps + r.cost + d, `${text(pre)}-${red.join('')}~${t}-${c ? c.suffix : ''}${text(suf)}：${steps + r.cost} + ${d}`)
                 }
               }
             }

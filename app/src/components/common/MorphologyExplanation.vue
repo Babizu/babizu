@@ -2,9 +2,7 @@
 /**
  * 構詞命中的說明：自動拆解（查 mudaux → daux）或衍生形（查 baket → binaket）。
  * 按鈕顯示詞綴結構的摘要（「mu- + daux」），點開列出：
- * - 每個構詞步驟與語法說明、步驟本身的成本。構詞文法的組合規則（m<a>-…-ay）另外列出由哪些詞素構成；
- *   沒有收錄的順序敏感組合標「未收錄的組合」
- * - 不成立的同位詞素條件與懲罰（例如 mi- 要求詞根的第一個元音是 i）
+ * - 每個構詞步驟與語法說明、步驟本身的成本。構詞文法的組合規則（m<a>-…-ay）另外列出由哪些詞素構成
  * - 整個詞一起比對的音變（docs/bcdp.md 1.2）：每一個標出落在前綴、詞幹、後綴，或詞素交界
  *   （例如 takitaw 的 aa → a 跨越詞幹與後綴的交界）
  */
@@ -44,13 +42,9 @@ const intro = computed(() =>
 /** 整個詞的音變（只為前幾筆結果計算，其餘為 null） */
 const notes = computed(() => /** @type {Array<{op: string, source: string, target: string, cost: number, category: string | null, where: string}>} */ (props.analysis.notes ?? []))
 const soundCost = computed(() => notes.value.reduce((sum, n) => sum + n.cost, 0))
-/** 不成立的條件：搜尋時才決定的（analysis.violations），以及編譯時就決定、懲罰已含在步驟成本裡的（step.violations） */
-const violations = computed(() => /** @type {Array<{id: string, form: string, when: string, penalty: number}>} */ (props.analysis.violations ?? []))
-const hasSoundChange = computed(
-  () => notes.value.length > 0 || props.analysis.cost > props.analysis.steps.reduce((sum, s) => sum + s.cost, 0) + (props.analysis.penalty ?? 0) + 1e-9,
-)
-/** 步驟的名稱：組合規則顯示「組合規則」，其他依類型 @param {any} step */
-const stepLabel = (step) => morphStepLabel(step.construction ? 'construction' : step.type)
+const hasSoundChange = computed(() => notes.value.length > 0 || props.analysis.cost > props.analysis.steps.reduce((sum, s) => sum + s.cost, 0) + 1e-9)
+/** 步驟的名稱：由幾個詞素構成的（構詞文法的組合規則）顯示「組合規則」，其他依類型 @param {any} step */
+const stepLabel = (step) => morphStepLabel(step.parts?.length > 1 ? 'construction' : step.type)
 /** 詞素的寫法（組合規則展開的每一個詞素） @param {{type: string, form: string}} part @param {number} k */
 const partLabel = (part, k) => (part.type === 'prefix' ? `${part.form}-` : part.type === 'suffix' ? `-${part.form}` : part.type === 'infix' ? `<${part.form}>` : k === 0 ? `${part.form}~` : part.form)
 </script>
@@ -85,7 +79,6 @@ const partLabel = (part, k) => (part.type === 'prefix' ? `${part.form}-` : part.
               <span class="text-muted-foreground text-xs">
                 {{ stepLabel(step) }}<template v-if="morphGloss(step.gloss)"> · {{ morphGloss(step.gloss) }}</template>
               </span>
-              <span v-if="step.unattested" class="text-muted-foreground text-xs" :title="t('語言中沒有收錄這種組合順序，成本較高')">{{ t('未收錄的組合') }}</span>
             </span>
             <span class="text-muted-foreground font-mono text-xs tabular-nums">+{{ formatDistance(step.cost) }}</span>
           </div>
@@ -96,15 +89,6 @@ const partLabel = (part, k) => (part.type === 'prefix' ? `${part.form}-` : part.
               <span class="text-muted-foreground">{{ morphStepLabel(part.type) }}<template v-if="morphGloss(part.gloss)"> · {{ morphGloss(part.gloss) }}</template></span>
             </li>
           </ul>
-          <p v-for="(v, j) in step.violations ?? []" :key="`sv${j}`" class="text-muted-foreground mt-0.5 ml-1 text-xs">
-            {{ t('條件不成立：{form} 要求 {when}（已含在成本裡）', { form: v.form, when: v.when }) }}
-          </p>
-        </li>
-        <li v-for="(v, j) in violations" :key="`v${j}`" class="flex items-baseline justify-between gap-3">
-          <span class="text-muted-foreground text-xs">
-            {{ t('條件不成立：') }}<code class="native-text">{{ v.form }}</code> {{ t('要求') }} <code>{{ v.when }}</code>
-          </span>
-          <span class="text-muted-foreground font-mono text-xs tabular-nums">+{{ formatDistance(v.penalty) }}</span>
         </li>
         <li v-if="notes.length" class="flex items-baseline justify-between gap-3">
           <span class="flex min-w-0 flex-col gap-0.5">

@@ -43,16 +43,6 @@
  * 交界狀態的值都 ≥ 0，所以上面的下界照樣成立；普通搜尋沒有交界。
  * `start`、`end` 兩個向量是沒有跨界狀態的特例。
  *
- * ## 條件檢查（構詞文法的同位詞素條件，docs/morph-grammar.md 2.2、5.1）
- * - `checks`：這一段的路徑（底層的字元）要讀過的條件 DFA。每走一層，每個還沒決定的檢查讀一個字元；
- *   變成死狀態時，它的懲罰加到這條路徑之後的所有成本上（位移 offset，沿路徑累加）。
- *   懲罰都 ≥ 0，所以把 offset 加進下界仍是下界，剪枝照樣正確。
- * - 走到詞尾時：`onJunction` 收到還沒決定的檢查（接下去的詞素繼續讀）；結果的距離則把還沒決定的
- *   檢查當作不成立（條件讀到詞根結尾為止，docs/morph-grammar.md 2.7）。
- * - `to` 可以是多個詞尾耦合對象，各自帶 `checks`：由這一段的結尾往前讀（後綴那側的條件讀詞根結尾），
- *   整個詞的成本取各對象（耦合成本 ＋ 懲罰）的最小值。
- * 沒有任何檢查、只有一個 `to` 時，每一步都與沒有這些功能時相同。
- *
  * ## 實作上的最佳化（結果與最佳化前逐位元相同）
  * - 詞圖的邊標籤預先轉成字元編號（`_edgeCodes`，每個索引、每組規則只算一次），
  *   並預先標出哪些邊是邊界字元，走訪時不再做字串比較。
@@ -79,7 +69,6 @@ import { resolveNormalization } from './normalization.js'
  *   （tail）與它之後那一列：規則 target ＝ 這一段的尾巴 · tail
  * @property {Float64Array | null} [word] 也接受「這一段就是詞尾」：這一段在查詢位置 x 結束時，
  *   詞尾（F 列）之後還要付的成本（通常只有 word[n] ＝ 0；固定交界的變體另有限制）
- * @property {import('./grammar/compile.js').Check[]} [checks] 耦合到這個對象時，由這一段的結尾往前讀的條件檢查
  */
 
 /**
@@ -103,13 +92,11 @@ import { resolveNormalization } from './normalization.js'
  * @property {ArrayLike<number>} [end] 詞尾在查詢各位置結束的附加成本（長度同上）：沒有跨界狀態的 to
  * @property {JunctionState} [from] 起點：前一段留下的交界狀態（位置 0 是詞素交界）
  * @property {number} [startEdge] 位置 0 的種類（dp.js 的 EDGE_*）；預設有 from 時是交界，否則是詞首
- * @property {JunctionEnd | JunctionEnd[]} [to] 詞尾：與後一段的交界狀態耦合；結果的 distance 是整個詞的成本。
- *   可以有多個對象（各自帶條件檢查），取最小值；結果的 exit.to 記著是哪一個（只有一個對象時沒有這個欄位）
- * @property {import('./grammar/compile.js').Check[]} [checks] 沿這一段的路徑讀的條件檢查（見檔頭「條件檢查」）
- * @property {(term: string, state: JunctionState, payloads: unknown[], pending: import('./grammar/compile.js').Check[]) => void} [onJunction]
- *   每走到一個詞尾就回呼一次，附上這一段結束時的交界狀態（複本；已加上路徑上不成立的條件的懲罰），
- *   以及還沒決定的條件檢查（接下去的詞素繼續讀）
+ * @property {JunctionEnd} [to] 詞尾：與後一段的交界狀態耦合；結果的 distance 是整個詞的成本
+ * @property {(term: string, state: JunctionState, payloads: unknown[]) => void} [onJunction]
+ *   每走到一個詞尾就回呼一次，附上這一段結束時的交界狀態（複本）
  * @property {boolean} [lockBoundary=false] 查詢的邊界字元（空白）完全不能被消耗（詞綴不含空白）
+ * @property {Set<string>} [initials] 只走以這些字元開頭的詞（構詞：要求詞幹元音開頭的環綴，docs/morph-grammar.md 第 2 節）
  * @property {SpreadCutoff} [cutoff] 相對上限（可由多個通道共用）：只需要「最佳 ＋ spread」之內的結果時，
  *   上限隨目前找到的最佳結果收緊。最後的最佳一定不大於途中的最佳，所以最佳 ＋ spread 之內的詞一個也不會少
  * @property {(term: string, row: Float64Array, payloads: unknown[]) => void} [onTerminal]
@@ -144,7 +131,7 @@ import { resolveNormalization } from './normalization.js'
  * @property {unknown[]} payloads 加入詞庫時附帶的資料
  * @property {string} [via] 若經由查詢展開找到，記錄展開說明
  * @property {number} [endAt] 有 to 時，詞在查詢中結束的位置（達到最小值的 x）
- * @property {{kind: 'word' | 'row' | 'pending', x: number, tail: number, to?: number}} [exit] 有 to 時，最小值來自哪裡：
+ * @property {{kind: 'word' | 'row' | 'pending', x: number, tail: number}} [exit] 有 to 時，最小值來自哪裡：
  *   詞尾（word）、交界列（row）、跨界規則（pending，tail 是 to.pending 的序號，x 是後一段開始的位置）
  */
 
@@ -423,9 +410,8 @@ export class FuzzyIndex {
       const n = x.length
       // start／end 是沒有跨界狀態的 from／to
       const from = options.from ?? (options.start ? { row: Float64Array.from(options.start), pending: [] } : null)
-      /** @type {JunctionEnd[] | null} 詞尾耦合的對象（可以有多個，各自帶條件檢查） */
-      const to = options.to ? (Array.isArray(options.to) ? options.to : [options.to]) : options.end ? [{ row: Float64Array.from(options.end), pending: [], word: null }] : null
-      const vectors = [from?.row, ...(from?.pending ?? []).map((p) => p.row), ...(to ?? []).flatMap((t) => [t.row, t.word, ...t.pending.map((p) => p.row)])]
+      const to = options.to ?? (options.end ? { row: Float64Array.from(options.end), pending: [], word: null } : null)
+      const vectors = [from?.row, ...(from?.pending ?? []).map((p) => p.row), to?.row, to?.word, ...(to?.pending ?? []).map((p) => p.row)]
       for (const vec of vectors) {
         if (vec && vec.length !== n + 1) throw new RangeError(`start／end（交界狀態）的長度必須是查詢長度 + 1（${n + 1}）`)
         // 剪枝的下界依賴「交界成本不小於 0」（docs/bcdp.md 第 7 節）
@@ -438,8 +424,7 @@ export class FuzzyIndex {
       let pot = null
       if (to) {
         const e = new Float64Array(n + 1).fill(Infinity)
-        // 條件檢查的懲罰 ≥ 0，所以各對象的最小值仍是下界
-        for (const vec of to.flatMap((t) => [t.row, t.word, ...t.pending.map((p) => p.row)])) {
+        for (const vec of [to.row, to.word, ...to.pending.map((p) => p.row)]) {
           if (vec) for (let x = 0; x <= n; x++) if (vec[x] < e[x]) e[x] = vec[x]
         }
         for (let x = n - 1; x >= 0; x--) if (e[x + 1] < e[x]) e[x] = e[x + 1]
@@ -481,14 +466,8 @@ export class FuzzyIndex {
         pot,
         /** 詞尾的交界列（算完立刻使用，所以每個通道一個緩衝就夠） */
         rowJ: junctions ? new Float64Array(n + 1) : null,
-        /** 跨界耦合：各對象一個（這一段尾巴的 trie 節點, to.pending 的序號）→ 規則 target 編號（-1 表示沒有） */
-        coupleTarget: (to ?? []).map(() => new Map()),
-        /** 沿路徑讀的條件檢查；ckStates[j]、ckOffset[j]：第 j 層各檢查的 DFA 狀態與累加的懲罰 */
-        checks: options.checks?.length ? options.checks : null,
-        /** @type {Int32Array[]} */
-        ckStates: [],
-        /** @type {number[]} */
-        ckOffset: [],
+        /** 跨界耦合：（這一段尾巴的 trie 節點, to.pending 的序號）→ 規則 target 編號（-1 表示沒有） */
+        coupleTarget: new Map(),
         maxDistance: options.maxDistance ?? 1,
         cutoff: options.cutoff ?? null,
         maxNormalized: options.maxNormalized ?? Infinity,
@@ -496,6 +475,7 @@ export class FuzzyIndex {
         onNode: options.onNode,
         onTerminal: options.onTerminal,
         onJunction: options.onJunction,
+        initials: options.initials ?? null,
         plan: planFor(x, from?.row ?? null, junctions, options.lockBoundary ?? false),
         rowsN,
         rowsF,
@@ -559,9 +539,6 @@ export class FuzzyIndex {
           }
         }
         const column = prepareColumn(plan, compiled, matcher, j, ch.rowAt, ch.startEdge, j > 0 ? crossing : null)
-        // 條件檢查：第 j 層由第 j − 1 層讀路徑上第 j 個字元（path[j − 1]），死掉的檢查把懲罰加進 offset
-        let offset = 0
-        if (ch.checks) offset = this._advanceChecks(ch, j, path)
 
         // N_j：子節點不是邊界字元時使用（fillRow 同時回傳這一列的最小值）
         const rowN = (rowsN[j] ??= new Float64Array(n + 1))
@@ -595,26 +572,20 @@ export class FuzzyIndex {
           let endAt = n
           // 交界列：這一段在這裡結束、後面接另一個詞素（詞尾與交界兩種規則都適用，X 的切點不在空白旁）
           const rowJ = ch.rowJ
-          if (rowJ && (ch.onJunction || ch.to?.some((/** @type {JunctionEnd} */ t) => t.row || t.pending.length))) {
+          if (rowJ && (ch.onJunction || ch.to?.row || ch.to?.pending.length)) {
             fillRow(plan, compiled, column, EDGE_JUNCTION, rowJ)
             stats.computedRows++
           }
-          if (ch.onJunction) {
-            const state = this._junctionState(ch, matcher, j, /** @type {Float64Array} */ (rowJ))
-            if (offset > 0) shiftInPlace(state, offset)
-            ch.onJunction(path.slice(0, j).join(''), state, payloads[base] ?? [], ch.checks ? this._pendingChecks(ch, j) : [])
-          }
-          // 結果：還沒決定的條件檢查讀到詞根結尾了，當作不成立（docs/morph-grammar.md 2.7）
-          const extra = ch.checks ? offset + this._undecidedPenalty(ch, j) : 0
+          if (ch.onJunction) ch.onJunction(path.slice(0, j).join(''), this._junctionState(ch, matcher, j, /** @type {Float64Array} */ (rowJ)), payloads[base] ?? [])
           /** @type {SearchResult['exit'] | undefined} */
           let exit
           if (ch.to) {
-            const coupled = this._couple(ch, matcher, j, rowF, /** @type {Float64Array} */ (rowJ), path)
-            distance = roundCost(coupled.cost + extra)
+            const coupled = this._couple(ch, matcher, j, rowF, /** @type {Float64Array} */ (rowJ))
+            distance = roundCost(coupled.cost)
             endAt = coupled.exit.x
             exit = coupled.exit
           } else {
-            distance = roundCost(rowF[n] + extra)
+            distance = roundCost(rowF[n])
           }
           if (ch.onTerminal) ch.onTerminal(path.slice(0, j).join(''), rowF, payloads[base] ?? [])
           if (distance <= ch.maxDistance + EPSILON) {
@@ -640,8 +611,6 @@ export class FuzzyIndex {
         // 跨列：第 r 列經由一條更長的規則跳過第 j 列（狀態由 PathMatcher 提供，見 dp.js）；
         // 跨界狀態同理，來源列在前一段
         lowerBound = Math.min(lowerBound, jumpBound(compiled, matcher, j, ch.minAt, crossing))
-        // 路徑上已經不成立的條件，懲罰之後一定要付
-        if (offset > 0) lowerBound += offset
         const pruned = endEdge > firstEdge && lowerBound > bound + EPSILON
 
         if (ch.onNode) {
@@ -665,14 +634,23 @@ export class FuzzyIndex {
         return
       }
       aliveCount[j + 1] = nextCount
+      // 詞的第一個字元有限制的通道（initials）：在根節點的每條邊上各自篩選，其他深度照常共用
+      const all = j === 0 && hasInitials ? next.slice(0, nextCount) : null
       for (let e = firstEdge; e < endEdge; e++) {
         path[j] = dawg.label(e)
+        if (all) {
+          let count = 0
+          for (const c of all) if (!channels[c].initials || channels[c].initials.has(path[j])) next[count++] = c
+          if (count === 0) continue
+          aliveCount[j + 1] = count
+        }
         matcher.set(j + 1, codes[e])
         visit(dawg.target(e), j + 1, base + dawg.wordsBefore(e))
       }
       // path 超過 j 的部分留著不清：只以 path.slice(0, j) 讀取，下一個兄弟會覆寫 path[j]
     }
 
+    const hasInitials = channels.some((ch) => ch.initials)
     const root = aliveAt(0)
     for (let c = 0; c < channels.length; c++) root[c] = c
     aliveCount[0] = channels.length
@@ -718,40 +696,12 @@ export class FuzzyIndex {
    * @param {number} j
    * @param {Float64Array} rowF
    * @param {Float64Array} rowJ
-   * @param {string[]} path 目前的路徑（讀耦合對象的條件檢查用）
-   * @returns {{cost: number, exit: {kind: 'word' | 'row' | 'pending', x: number, tail: number, to?: number}}}
-   * @private
-   */
-  _couple(ch, matcher, j, rowF, rowJ, path) {
-    const targets = /** @type {JunctionEnd[]} */ (ch.to)
-    if (targets.length === 1 && !targets[0].checks?.length) return this._coupleOne(ch, matcher, j, rowF, rowJ, targets[0], 0)
-    /** @type {{cost: number, exit: {kind: 'word' | 'row' | 'pending', x: number, tail: number, to?: number}}} */
-    let best = { cost: Infinity, exit: { kind: 'word', x: -1, tail: -1 } }
-    for (let t = 0; t < targets.length; t++) {
-      const r = this._coupleOne(ch, matcher, j, rowF, rowJ, targets[t], t)
-      if (!(r.cost < best.cost)) continue
-      // 由這一段的結尾往前讀的條件檢查（後綴那側的條件讀詞根結尾）：耦合成本已經不比目前的最小值小時不必讀
-      const checks = targets[t].checks
-      const cost = checks?.length ? r.cost + endPenalty(checks, path, j) : r.cost
-      if (cost < best.cost) best = { cost, exit: { ...r.exit, ...(targets.length > 1 ? { to: t } : {}) } }
-    }
-    return best
-  }
-
-  /**
-   * 與一個對象的耦合（_couple 的本體）。
-   * @param {any} ch
-   * @param {PathMatcher} matcher
-   * @param {number} j
-   * @param {Float64Array} rowF
-   * @param {Float64Array} rowJ
-   * @param {JunctionEnd} to
-   * @param {number} t 對象的序號（跨界 target 的快取各對象一份）
    * @returns {{cost: number, exit: {kind: 'word' | 'row' | 'pending', x: number, tail: number}}}
    * @private
    */
-  _coupleOne(ch, matcher, j, rowF, rowJ, to, t) {
+  _couple(ch, matcher, j, rowF, rowJ) {
     const { n, plan } = ch
+    const to = /** @type {JunctionEnd} */ (ch.to)
     const compiled = matcher.compiled
     let cost = Infinity
     /** @type {{kind: 'word' | 'row' | 'pending', x: number, tail: number}} */
@@ -784,12 +734,11 @@ export class FuzzyIndex {
         const fromRow = ch.rowAt(j - compiled.trieDepth[s])
         for (let b = 0; b < tails.length; b++) {
           const key = s * tails.length + b
-          const cache = ch.coupleTarget[t]
-          let T = cache.get(key)
+          let T = ch.coupleTarget.get(key)
           if (T === undefined) {
             const node = compiled.trieWalk(s, tails[b].tail)
             T = node === -1 ? -1 : compiled.trieTarget[node]
-            cache.set(key, T)
+            ch.coupleTarget.set(key, T)
           }
           if (T === -1) continue
           const after = tails[b].row
@@ -808,71 +757,6 @@ export class FuzzyIndex {
       }
     }
     return { cost, exit }
-  }
-
-  /**
-   * 條件檢查讀到第 j 層：由第 j − 1 層的狀態讀 path[j − 1]，回傳累加的懲罰（offset）。
-   * 已經決定（接受或死狀態）的檢查不再讀；變成死狀態的那一刻加上它的懲罰。
-   * @param {any} ch
-   * @param {number} j
-   * @param {string[]} path
-   * @returns {number}
-   * @private
-   */
-  _advanceChecks(ch, j, path) {
-    const checks = ch.checks
-    const cur = (ch.ckStates[j] ??= new Int32Array(checks.length))
-    if (j === 0) {
-      for (let k = 0; k < checks.length; k++) cur[k] = checks[k].state
-      ch.ckOffset[0] = 0
-      return 0
-    }
-    const prev = ch.ckStates[j - 1]
-    let offset = ch.ckOffset[j - 1]
-    const c = path[j - 1]
-    for (let k = 0; k < checks.length; k++) {
-      const { cond, penalty } = checks[k]
-      const s = prev[k]
-      if (cond.status(s) !== 0) {
-        cur[k] = s
-        continue
-      }
-      const next = cond.step(s, c)
-      cur[k] = next
-      if (cond.status(next) < 0) offset += penalty
-    }
-    ch.ckOffset[j] = offset
-    return offset
-  }
-
-  /**
-   * 第 j 層還沒決定的條件檢查（複本；接下去的詞素繼續讀）。
-   * @param {any} ch
-   * @param {number} j
-   * @returns {import('./grammar/compile.js').Check[]}
-   * @private
-   */
-  _pendingChecks(ch, j) {
-    const out = []
-    const states = ch.ckStates[j]
-    for (let k = 0; k < ch.checks.length; k++) {
-      const { cond, penalty } = ch.checks[k]
-      if (cond.status(states[k]) === 0) out.push({ cond, state: states[k], penalty })
-    }
-    return out
-  }
-
-  /**
-   * 第 j 層還沒決定的條件檢查的懲罰總和（讀到詞根結尾仍未決定＝不成立）。
-   * @param {any} ch
-   * @param {number} j
-   * @private
-   */
-  _undecidedPenalty(ch, j) {
-    let sum = 0
-    const states = ch.ckStates[j]
-    for (let k = 0; k < ch.checks.length; k++) if (ch.checks[k].cond.status(states[k]) === 0) sum += ch.checks[k].penalty
-    return sum
   }
 
   /**
@@ -937,31 +821,4 @@ function minWithPotential(row, pot) {
     if (v < min) min = v
   }
   return min
-}
-
-/**
- * 交界狀態的每個值加上 c（in place；_junctionState 回傳的是複本）。
- * @param {JunctionState} state
- * @param {number} c
- */
-function shiftInPlace(state, c) {
-  for (let x = 0; x < state.row.length; x++) state.row[x] += c
-  for (const p of state.pending) for (let x = 0; x < p.row.length; x++) p.row[x] += c
-}
-
-/**
- * 由這一段的結尾往前讀的條件檢查的懲罰：路徑 path[0..j) 由 j − 1 讀到 0（讀到吸收態就停），
- * 仍未接受的檢查付它的懲罰（死狀態或讀完仍未決定都算不成立）。
- * @param {import('./grammar/compile.js').Check[]} checks
- * @param {string[]} path
- * @param {number} j
- */
-function endPenalty(checks, path, j) {
-  let sum = 0
-  for (const { cond, state, penalty } of checks) {
-    let s = state
-    for (let k = j - 1; k >= 0 && cond.status(s) === 0; k--) s = cond.step(s, path[k])
-    if (cond.status(s) <= 0) sum += penalty
-  }
-  return sum
 }

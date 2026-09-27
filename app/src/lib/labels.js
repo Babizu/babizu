@@ -186,7 +186,7 @@ export function partsLayout(parts, vowels = site.profile?.morphology?.vowels ?? 
 
 /**
  * 構詞步驟的寫法：前綴 `mu-`、後綴 `-an`、中綴 `<in>`、重疊 `ba-`、詞幹交替 `t→d`、環綴 `ta-…-aw`。
- * 構詞文法的步驟由詞素構成時依 parts 寫出：組合規則 `m<a>-…-ay`、`m<in>u-`，未收錄的組合 `k<a>a-`。
+ * 構詞文法的步驟由詞素構成時依 parts 寫出：組合規則 `m<a>-…-ay`、`m<in>u-`。
  * @param {{type: string, form: string, left?: {type: string, form: string}, suffix?: string, parts?: Array<{type: string, form: string}>}} step
  */
 export function formatMorphStep(step) {
@@ -246,6 +246,8 @@ export function morphSummary(analysis) {
     after.unshift(...layout.after)
   } else if (circ?.left) {
     const { type, form } = circ.left
+    // 中綴、重疊式環綴外側緊貼詞幹的前綴（m-<a>）
+    if (circ.outer) before.push(`${circ.outer}-`)
     if (type === 'infix') inner.unshift(`<${form}>`)
     else before.push(type === 'prefix' ? `${form}-` : `${form}~`)
     if (circ.suffix) after.unshift(`-${circ.suffix}`)

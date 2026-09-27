@@ -22,18 +22,20 @@ export function emptyJunction(n) {
 
 /**
  * 把 state 逐項取 min 合併進 into（in place）。每一格記下是哪一個來源（tag）取得最小值，
- * 讓說明時能找回是哪一條詞綴鏈；同分時保留先合併的（strict <）。
+ * 讓說明時能找回是哪一條詞綴鏈；同分時保留先合併的（strict <），除非給了 before：
+ * 同分時 before(新的 tag, 原來的 tag) 為真就換成新的（說明依規格的順序選，成本不受影響）。
  * @param {JunctionState & {tags?: {row: unknown[], pending: Map<number, unknown[]>}}} into
  * @param {JunctionState} state
  * @param {number} add 合併前加在所有值上的成本（例如詞綴本身的成本）
  * @param {unknown} tag
+ * @param {(tag: any, current: any) => boolean} [before]
  */
-export function mergeInto(into, state, add, tag) {
+export function mergeInto(into, state, add, tag, before) {
   into.tags ??= { row: new Array(into.row.length).fill(null), pending: new Map() }
   const n = into.row.length
   for (let x = 0; x < n; x++) {
     const v = state.row[x] + add
-    if (v < into.row[x]) {
+    if (v < into.row[x] || (v === into.row[x] && v < Infinity && before?.(tag, into.tags.row[x]))) {
       into.row[x] = v
       into.tags.row[x] = tag
     }
@@ -48,7 +50,7 @@ export function mergeInto(into, state, add, tag) {
     const tags = /** @type {unknown[]} */ (into.tags.pending.get(p.node))
     for (let x = 0; x < n; x++) {
       const v = p.row[x] + add
-      if (v < target.row[x]) {
+      if (v < target.row[x] || (v === target.row[x] && v < Infinity && before?.(tag, tags[x]))) {
         target.row[x] = v
         tags[x] = tag
       }

@@ -24,7 +24,6 @@ import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { marked } from 'marked'
 import { validateProfile } from '../fuzzy/index.js'
-import { MORPH_METHODS } from '../search/engine.js'
 import { extractMessages } from './extract-messages.js'
 import { BUILTIN_LOCALE_NAMES, BUILTIN_LOCALES, FRAMEWORK_ROOT, SOURCE_LOCALE, loadBuiltinMessages } from './paths.js'
 
@@ -67,9 +66,6 @@ import { BUILTIN_LOCALE_NAMES, BUILTIN_LOCALES, FRAMEWORK_ROOT, SOURCE_LOCALE, l
  *   `morph` 是構詞（BCDP）分頁的例子：`examples` 是 [查詢, 詞根]（第一組是預設值），`failures` 是找不到的例子
  *   （分頁會說明原因）。只有語言設定檔有 `morphology` 時才能設定
  * @property {string} [messages] 介面字串覆寫與額外語系的目錄，預設 `locales`
- * @property {{morphology?: {methods?: string[], default?: string}}} [search]
- *   搜尋的選項。`morphology.methods` 是開放給讀者選擇的構詞搜尋實作（`bcdp`、`chart`，見 docs/morph-grammar.md 第 5 節），
- *   不只一種時設定選單顯示切換；`morphology.default` 是預設的實作。只有語言設定檔有 `morphology` 時才能設定
  */
 
 /**
@@ -198,18 +194,6 @@ export async function loadSiteConfig(siteDir) {
     }
   }
 
-  // 構詞搜尋的實作：開放給讀者選擇的，與預設的
-  const morphInput = input.search?.morphology
-  const morphMethods = morphInput?.methods ?? ['bcdp']
-  const morphDefault = morphInput?.default ?? morphMethods[0]
-  if (morphInput !== undefined) {
-    if (profile && !profile.morphology) errors.push('search.morphology 只能在語言設定檔有 morphology 時設定')
-    const ok = Array.isArray(morphMethods) && morphMethods.length > 0 && morphMethods.every((m) => MORPH_METHODS.includes(/** @type {any} */ (m)))
-    if (!ok) errors.push(`search.morphology.methods 必須是非空陣列，每一項是 ${MORPH_METHODS.join('、')} 之一`)
-    else if (new Set(morphMethods).size !== morphMethods.length) errors.push('search.morphology.methods 有重複的項目')
-    if (ok && !morphMethods.includes(morphDefault)) errors.push(`search.morphology.default「${morphDefault}」不在 methods 中`)
-  }
-
   // 語言變體
   const varietyInput = input.varieties ?? []
   const codes = new Set()
@@ -306,7 +290,6 @@ export async function loadSiteConfig(siteDir) {
         words: input.lab?.words ?? null,
         morph: { examples: input.lab?.morph?.examples ?? [], failures: input.lab?.morph?.failures ?? [] },
       },
-      search: { morphology: { methods: morphMethods, default: morphDefault } },
       messages,
       profile,
     },

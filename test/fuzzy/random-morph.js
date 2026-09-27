@@ -1,10 +1,10 @@
 /**
- * @file 隨機的平面清單構詞規格、詞庫與衍生形（BCDP 與類 pika 剖析器的仲裁測試共用）。
+ * @file 隨機的平面清單構詞規格、詞庫與衍生形（BCDP 與窮舉參考實作的比對測試用）。
  */
 
 import { createAnalyzer, REDUPLICATION_PATTERNS, RuleSet, WeightedEditDistance } from '../../src/fuzzy/index.js'
 import { alternationRules } from '../../src/fuzzy/morphology.js'
-import { pick, randomString } from './helpers.js'
+import { createRandom, pick, randomString } from './helpers.js'
 
 /** 空白的增刪只算 0.1（與網站相同），讓含空白的查詢有機會對到詞根 */
 export const SPACE = { overrides: { ' ': { substitute: 0.1, delete: 0.1, insert: 0.1 } } }
@@ -56,7 +56,7 @@ export function randomMorphSetup(random) {
     // 一至兩種重疊型式（可能相同，createAnalyzer 照單全收；重複的型式也要與窮舉一致）
     reduplication: random() < 0.8 ? Array.from({ length: 1 + Math.floor(random() * 2) }, () => ({ pattern: pick(random, [...REDUPLICATION_PATTERNS]) })) : [],
     alternations: random() < 0.7 ? [{ underlying: 't', surface: 'd', cost: 0.05 }] : [],
-    // 環綴（三種左邊各有機會出現）：成本比兩個詞綴分開算便宜
+    // 環綴（包覆單位，各種形狀都有機會出現）：成本比幾個詞綴分開算便宜
     circumfixes: [
       ...(random() < 0.6 ? [{ prefix: pick(random, ['ta', 'ka']), suffix: pick(random, ['aw', 'i', 'an']), cost: 0.3 }] : []),
       ...(random() < 0.4 ? [{ infix: 'in', suffix: pick(random, ['an', 'i']), cost: 0.3 }] : []),
@@ -65,8 +65,6 @@ export function randomMorphSetup(random) {
   }
   // 規則 aa → '' 權重 0 只是為了讓 RuleSet 的組合多樣；拿掉以免成本為 0 的刪除讓一切都便宜
   const cleaned = RuleSet.fromTable(rules.toJSON().filter((r) => !(r.target === '' && r.weight === 0)))
-  const metric = metricFor(cleaned, spec)
-  const analyzer = createAnalyzer(spec)
   // 詞根多半是 CV(C)CV(C) 形狀，讓兩音節的重疊型式（CVCV、CVCVC）有機會適用；也有元音開頭的
   const syllable = () => pick(random, consonants) + pick(random, vowels) + (random() < 0.4 ? pick(random, consonants) : '')
   const roots = [
@@ -79,6 +77,21 @@ export function randomMorphSetup(random) {
       }),
     ),
   ]
+  // 包覆單位的新形狀用另一個亂數產生器（種子取自已經抽好的詞根），主要的亂數序列與加入前相同：
+  // 外側緊貼前綴的中綴（m<a>-、m<a>-…-ay）與它在元音開頭的詞幹上的串接形式（ma-，詞幹要元音開頭），
+  // 以及外側緊貼前綴的重疊（sa-RED）
+  let h = 7
+  for (const ch of roots.join('|')) h = (Math.imul(h, 31) + /** @type {number} */ (ch.codePointAt(0))) >>> 0
+  const extra = createRandom(h)
+  if (extra() < 0.5) {
+    const infix = pick(extra, ['a', 'in'])
+    const suffix = extra() < 0.5 ? { suffix: pick(extra, ['ay', 'an']) } : {}
+    // 與構詞文法展開的順序相同：串接的形式在前（同分時說明選它）
+    spec.circumfixes.push({ prefix: `m${infix}`, stemInitial: 'V', ...suffix, cost: 0.3 }, { prefix: 'm', infix, ...suffix, cost: 0.3 })
+  }
+  if (extra() < 0.3) spec.circumfixes.push({ prefix: 'sa', reduplication: 'CV', cost: 0.3 })
+  const metric = metricFor(cleaned, spec)
+  const analyzer = createAnalyzer(spec)
   return { metric, spec: analyzer.spec, analyzer, roots, alphabet, glottal, merge }
 }
 
@@ -99,6 +112,8 @@ export function randomDerived(random, { spec, analyzer, roots, alphabet, glottal
       const head = analyzer.onset(w)
       core = head + c.left + w.slice(head.length)
     } else core = (analyzer.reduplicant(c.left, w) ?? '') + w
+    // 中綴、重疊式外側緊貼詞幹的前綴
+    if (c.kind !== 'prefix') core = (c.outer ?? '') + core
     let right = c.suffix
     // 環綴的後綴前也是交界：構詞音變 t → d、元音合併照樣發生
     if (spec.alternations.length && core.endsWith('t') && random() < 0.7) core = `${core.slice(0, -1)}d`

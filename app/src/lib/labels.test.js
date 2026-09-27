@@ -83,8 +83,17 @@ describe('labels', () => {
     // <in>…-an：詞根上的中綴，放在詞根旁
     const lf = { type: 'circumfix', form: 'in…an', left: { type: 'infix', form: 'in' }, suffix: 'an', parts: [p('infix', 'in'), p('suffix', 'an')] }
     expect(morphSummary({ stem: 'baket', steps: [lf] })).toBe('baket + <in> + -an')
-    // 未收錄的複合前綴（k<a>a-）在前綴鏈中：與其他前綴一起依位置排列
+    // 只有一側的組合規則展開成的前綴（k<a>a-）在前綴鏈中：與其他前綴一起依位置排列
     expect(morphSummary({ stem: 'baket', steps: [{ type: 'prefix', form: 'kaa', parts: [p('prefix', 'ka'), p('infix', 'a')] }] })).toBe('k<a>a- + baket')
+  })
+
+  it('平面清單的包覆單位（沒有 parts）：外側的前綴在詞幹前、中綴在詞幹旁；沒有後綴時不寫「…」', () => {
+    const wrap = { type: 'circumfix', form: 'm+a…ay', left: { type: 'infix', form: 'a' }, outer: 'm', suffix: 'ay' }
+    expect(formatMorphStep(wrap)).toBe('m-<a>…-ay')
+    expect(morphSummary({ stem: 'baket', steps: [wrap] })).toBe('m- + baket + <a> + -ay')
+    const vowelStem = { type: 'circumfix', form: 'ma', left: { type: 'prefix', form: 'ma' }, suffix: '' }
+    expect(formatMorphStep(vowelStem)).toBe('ma-')
+    expect(morphSummary({ stem: 'usa', steps: [vowelStem] })).toBe('ma- + usa')
   })
 
   it('詞綴說明依介面語系', () => {

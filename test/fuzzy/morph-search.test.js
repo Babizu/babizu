@@ -68,10 +68,8 @@ describe('構詞搜尋：詞綴一層一層合併', () => {
       const prepared = /** @type {NonNullable<ReturnType<typeof search.prepare>>} */ (search.prepare(query, bound))
       const clip = (/** @type {number} */ v) => (v > bound + EPSILON ? Infinity : v)
       for (let s = 1; s <= spec.maxSteps; s++) {
-        // 規格沒有條件：每一層只有一類（鍵是空字串）
-        const prefixLevel = prepared.prefixLevels[s - 1]?.get('')
-        const suffixLevel = prepared.suffixLevels[s - 1]?.get('')
-        if (prepared.prefixLevels[s - 1]) expect([...prepared.prefixLevels[s - 1].keys()]).toEqual([''])
+        const prefixLevel = prepared.prefixLevels[s - 1]
+        const suffixLevel = prepared.suffixLevels[s - 1]
         const suffixRow = suffixLevel ? toForwardEnd(suffixLevel, metric.mirror().compiled).row : null
         for (let x = 0; x <= n; x++) {
           // 前綴鏈：q[0..x) 對到整條鏈，最後一個交界在鏈的尾端（交界上的 X 位置不能在空白旁）

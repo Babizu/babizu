@@ -376,11 +376,10 @@ const data = index.serialize() // FuzzyIndex.deserialize(data, metric)
 | `FuzzyIndex` | `add`、`addAll`、`lookup`、`search`、`searchWithStats`、`freeze`、`terms`、`payloads`、`dawg`、`serialize`／`deserialize` |
 | `createNormalizer(options)` | 建立正規化函式；`DEFAULT_CHAR_MAP` 是預設字元對應 |
 | `createMetricFromProfile`、`createRulesFromProfile`、`validateProfile` | 由語言設定檔建立 |
-| `createAnalyzer(spec, normalize)` | 構詞分析器：`analyze`（去詞綴）、`generate`（還原詞綴）、`coreForms` |
-| `createMorphSearch({ analyzer, metric, index })` | 構詞搜尋 BCDP（[bcdp.md](bcdp.md)）：`search`、`prepare`／`seed`／`finish`（搭配多通道走訪）、`explain`（演算法實驗室）、`notesOf`、`notesFor` |
-| `createChartSearch({ grammar, metric, index })` | 構詞搜尋的第二種實作：類 pika 的加權剖析器（[morph-grammar.md](morph-grammar.md) 5.2），成本與 BCDP 相同；`search(query, { maxDistance })` 的命中帶 `trace`（重建對齊用）。`grammar` 取自 `analyzer.grammar` |
-| `normalizeGrammar(spec)`、`derive(grammar, root, ops)` | 構詞文法：正規化（平面清單寫法也轉成文法）、推導產生器（詞根 ＋ 依序套用的詞素 → 表面形式與條件的結果） |
-| `FuzzyIndex.searchChannels(channels)` | 多通道走訪；每個通道可帶交界狀態 `from`（起點）、`to`（詞尾耦合）、`onJunction`（回報詞尾的交界狀態）、`lockBoundary`、`cutoff`（共用的相對上限）；`start`／`end` 是沒有跨界表的簡寫 |
+| `createAnalyzer(spec, normalize)` | 構詞分析器：`analyze`（去詞綴）、`generate`（還原詞綴）、`coreForms`；文法寫法的規格先展開 |
+| `expandGrammar(spec, normalize)`、`validateGrammar`、`isGrammarSpec` | 構詞文法（[morph-grammar.md](morph-grammar.md)）：展開成平面清單（每項帶 `parts`、`rank`）、驗證、判斷寫法 |
+| `createMorphSearch({ analyzer, metric, index })` | 構詞搜尋 BCDP（[bcdp.md](bcdp.md)）：`search`、`prepare`／`seed`／`finish`（搭配多通道走訪）、`explain`（演算法實驗室）、`notesOf` |
+| `FuzzyIndex.searchChannels(channels)` | 多通道走訪；每個通道可帶交界狀態 `from`（起點）、`to`（詞尾耦合）、`onJunction`（回報詞尾的交界狀態）、`lockBoundary`、`cutoff`（共用的相對上限）、`initials`（只走以這些字元開頭的詞）；`start`／`end` 是沒有跨界表的簡寫 |
 | `babizu/fst`（實驗性） | 通用 WFST：`compose`、`shortestDistance`、`editTransducer`、`surfaceLexicon`、`fstLemmaSearch` |
 
 搜尋引擎（`babizu/search`）在此之上處理記錄、斷詞、釋義搜尋與結果排序：
@@ -391,10 +390,7 @@ import { buildSearchIndex, SearchEngine } from 'babizu/search'
 const { docs, lexicon } = buildSearchIndex({ items, groups, sourceIds, profile, varieties }) // 建置端
 const engine = new SearchEngine({ docs, lexicon, profile }) // 瀏覽器（Web Worker）
 engine.search('bintul', { fuzziness: 'normal', filters: { dialects: ['pazeh'] } })
-engine.search('minudox', { morphMethod: 'chart' }) // 構詞搜尋改用類 pika 剖析器（預設 'bcdp'；兩者的結果相同）
 ```
-
-`response.stats` 記下耗時（`elapsedMs`）與這次用的構詞搜尋實作（`morphMethod`）。站台可以讓讀者在設定選單切換（站台設定 `search.morphology`，見 [site-config.md](site-config.md)）。
 
 ## 12. 效能工程：剖析、最佳化與驗證
 

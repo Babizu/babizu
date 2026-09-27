@@ -40,6 +40,8 @@ npx babizu dev        # 在有 babizu.config.js 的目錄
 | [adapters.md](docs/adapters.md) | 寫轉接器，把原始資料轉成資料集 |
 | [i18n.md](docs/i18n.md) | 多語言介面：語系、覆寫字串、新增語系 |
 | [fuzzy-search.md](docs/fuzzy-search.md) | 模糊搜尋演算法：遞推式、剪枝正確性、DAWG、複雜度、API |
+| [bcdp.md](docs/bcdp.md) | 音變與構詞聯合搜尋 BCDP：模型、推導、正確性證明、實測 |
+| [morph-grammar.md](docs/morph-grammar.md) | 構詞文法：詞素、組合規則與包覆單位，展開成詞綴清單的編譯原理 |
 | [ui-guidelines.md](docs/ui-guidelines.md) | 介面設計規範 |
 | [deployment.md](docs/deployment.md) | 部署到 GitHub Pages 或其他靜態主機 |
 
@@ -58,7 +60,7 @@ npx babizu dev        # 在有 babizu.config.js 的目錄
 | 子路徑 | 內容 |
 |---|---|
 | `babizu` | `defineSite`、`defineAdapter` |
-| `babizu/fuzzy` | `WeightedEditDistance`、`FuzzyIndex`、`RuleSet`、`createMetricFromProfile`、`createAnalyzer`、`createMorphSearch`、`createChartSearch`… |
+| `babizu/fuzzy` | `WeightedEditDistance`、`FuzzyIndex`、`RuleSet`、`createMetricFromProfile`、`createAnalyzer`、`createMorphSearch`… |
 | `babizu/fst` | 實驗性：通用 WFST 參考後端（惰性組合、最短路徑），評估用 |
 | `babizu/search` | `buildSearchIndex`、`SearchEngine`、`createTextTools` |
 | `babizu/schema` | JSON Schema 驗證器、`createRecord` 等輔助函式、代碼表 |

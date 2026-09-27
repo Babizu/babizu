@@ -308,12 +308,12 @@ function clamp(x, lo, hi) {
 }
 
 /**
- * 環綴的寫法：前綴式 `ta-…-aw`、中綴式 `<in>…-an`、重疊式 `da~…-ay`。
- * @param {{left: {type: string, form: string}, suffix: string}} step
+ * 環綴（包覆單位）的寫法：前綴式 `ta-…-aw`、中綴式 `<in>…-an`、重疊式 `da~…-ay`；
+ * 外側緊貼前綴的 `m-<a>…-ay`、沒有後綴的 `m-<a>`。
+ * @param {{left: {type: string, form: string}, outer?: string, suffix?: string}} step
  */
 export function circumfixLabel(step) {
   const { type, form } = step.left
   const left = type === 'prefix' ? `${form}-` : type === 'infix' ? `<${form}>` : `${form}~`
-  // 只有前綴的組合規則（m<in>u-）沒有右邊
-  return step.suffix ? `${left}…-${step.suffix}` : left
+  return `${step.outer ? `${step.outer}-` : ''}${left}${step.suffix ? `…-${step.suffix}` : ''}`
 }

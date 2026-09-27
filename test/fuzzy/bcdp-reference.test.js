@@ -58,7 +58,7 @@ describe('參考實作：BCDP 模型', () => {
   /** reaching check（preparing-tests）：每種非串接步驟、跨界規則、構詞音變、交界上的增生都要真的出現在命中裡 @type {Map<string, number>} */
   const reached = new Map()
   const reach = (/** @type {string} */ kind) => reached.set(kind, (reached.get(kind) ?? 0) + 1)
-  it.each([1, 2, 3, 4, 5, 6])('種子 %i：每個命中與成本都等於窮舉；說明的對齊加上步驟成本等於命中的成本', { timeout: 60_000 }, (seed) => {
+  it.each([1, 2, 3, 4, 5, 6, 7, 8, 9])('種子 %i：每個命中與成本都等於窮舉；說明的對齊加上步驟成本等於命中的成本', { timeout: 60_000 }, (seed) => {
     const random = createRandom(seed * 104729)
     let compared = 0
     for (let round = 0; round < 8; round++) {
@@ -81,6 +81,11 @@ describe('參考實作：BCDP 模型', () => {
           const steps = h.steps.reduce((a, s) => a + s.cost, 0)
           expect(roundCost(e.distance + steps), `${query} → ${h.term}：${JSON.stringify(h.steps.map((s) => s.form))}`).toBeCloseTo(h.distance, 7)
           for (const s of h.steps) if (s.type !== 'prefix' && s.type !== 'suffix') reach(s.type === 'circumfix' ? `circumfix:${s.left?.type}` : (s.pattern ?? s.type))
+          // 包覆單位的新形狀：外側緊貼前綴（m<a>-）、沒有後綴、要求詞幹元音開頭（ma-）
+          const circ = h.analysis.circumfix
+          if (circ?.outer) reach('wrap:outer')
+          if (circ && !circ.suffix) reach('wrap:no-suffix')
+          if (circ?.vowelStem) reach('wrap:vowel-stem')
           for (const note of search.notesOf(p, h)) {
             if (note.category === '構詞音變') reach('alternation')
             if (note.where === 'junction' && note.target === '' && note.source === "'") reach('glottal')
@@ -103,7 +108,7 @@ describe('參考實作：BCDP 模型', () => {
   })
 
   it('reaching check：上面的隨機測試涵蓋每種重疊型式、中綴、構詞音變、跨界規則與交界上的增生', () => {
-    for (const kind of [...REDUPLICATION_PATTERNS, 'infix', 'alternation', 'crossing', 'glottal', 'circumfix:prefix', 'circumfix:infix', 'circumfix:reduplication']) {
+    for (const kind of [...REDUPLICATION_PATTERNS, 'infix', 'alternation', 'crossing', 'glottal', 'circumfix:prefix', 'circumfix:infix', 'circumfix:reduplication', 'wrap:outer', 'wrap:no-suffix', 'wrap:vowel-stem']) {
       expect(reached.get(kind) ?? 0, `${kind}：${JSON.stringify([...reached])}`).toBeGreaterThanOrEqual(3)
     }
   })
@@ -165,6 +170,21 @@ describe('固定案例', () => {
     const want = refMorph(refJointContext(metric), { query, lexicon, spec, maxDistance })
     return { got, want, hits }
   }
+
+  it('環綴一定要接它的後綴：只有環綴 ka-…-aw、<in>…-aw 時，ka-kitaaw 的詞根是 kita 而不是 kitaaw（ka- 不接後綴）', () => {
+    const circ = fixed({ circumfixes: [{ prefix: 'ka', suffix: 'aw' }, { infix: 'in', suffix: 'aw' }] })
+    // 詞庫同時有 kita 與 kitaaw：查詢的結尾正好是後綴，詞根卻可以把後綴吞進去——這時只有接了後綴的分析成立
+    const lexicon = ['kita', 'kitaaw', 'baket', 'baketaw']
+    for (const [query, yes, no] of [
+      ['kakitaaw', 'kita', 'kitaaw'],
+      ['binaketaw', 'baket', 'baketaw'],
+    ]) {
+      const { got, want } = compare(circ, lexicon, query)
+      expect(got.has(yes), query).toBe(true)
+      expect(got.has(no), query).toBe(false)
+      expect(got).toEqual(want)
+    }
+  })
 
   describe('使用者回報的例子：音變跨越詞素交界（docs/bcdp.md 1.3）', () => {
     // 與網站的規格同樣的形狀：方言規則「元音」aa → a、「喉塞音」' ↔ ∅（詞首），構詞音變 t → d（詞素末）

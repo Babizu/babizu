@@ -224,34 +224,3 @@ describe('同一個詞有多種命中方式：取排序分數較好的一種', (
     expect(hit).toMatchObject({ matchType: 'fuzzy', distance: 0 })
   })
 })
-
-describe('morphMethod：兩種構詞搜尋實作（BCDP、類 pika 剖析器）', () => {
-  const circumfixed = engineWith({ ...PAZEH_PROFILE, morphology: { ...MORPHOLOGY, suffixes: [{ form: 'an' }, { form: 'aw' }], circumfixes: [{ prefix: 'ta', suffix: 'aw', cost: 0.3 }] } })
-  /** @param {SearchEngine} engine @param {string} q @param {'bcdp' | 'chart'} morphMethod */
-  const entriesOf = (engine, q, morphMethod) =>
-    engine
-      .search(q, { fields: ['native'], morphMethod })
-      .entries.map((h) => `${h.doc.id} ${h.matchType} ${h.score.toFixed(6)} ${h.analysis?.cost ?? ''}`)
-      .sort()
-
-  it('每個查詢的詞條命中、命中方式與分數都相同', () => {
-    for (const engine of [withMorphology, circumfixed]) {
-      for (const q of ['mudaux', 'patukuan', 'minudox', 'minedaux', 'binaket', 'mubinaketan', 'mukawas', 'takitaaw', 'pakawasan', 'yaku ka mudaux']) {
-        expect(entriesOf(engine, q, 'chart'), q).toEqual(entriesOf(engine, q, 'bcdp'))
-      }
-    }
-  })
-
-  it('類 pika 剖析器的命中也有音變說明；回應記下用了哪一種實作', () => {
-    const r = withMorphology.search('minudox', { fields: ['native'], morphMethod: 'chart' })
-    const hit = r.entries.find((h) => h.doc.id === 'dict:daux')
-    expect(hit?.analysis?.notes?.map((n) => `${n.source}→${n.target}@${n.where}`)).toEqual(['o→au@stem'])
-    expect(r.stats.morphMethod).toBe('chart')
-    expect(withMorphology.search('minudox').stats.morphMethod).toBe('bcdp')
-    expect(without.search('minudox', { morphMethod: 'chart' }).stats.morphMethod).toBeNull()
-  })
-
-  it('未知的方法：清楚的錯誤', () => {
-    expect(() => withMorphology.search('minudox', { morphMethod: /** @type {any} */ ('pika') })).toThrow(/未知的構詞搜尋方法「pika」/)
-  })
-})
