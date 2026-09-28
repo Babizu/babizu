@@ -152,7 +152,7 @@ const POSITIONS = new Set(['final', 'initial', 'any'])
 /** 同一個詞最多回傳幾個分析，避免規格過寬時列舉爆量 */
 const MAX_ANALYSES = 64
 
-/** analyze 的備忘最多記幾個詞（最久沒用的先丟）。衍生形方向對同一批候選詞反覆分析 */
+/** analyze 的備忘最多記幾個詞（最久沒用的先丟）。同一批詞常被反覆分析（多詞查詢、實驗室） */
 const ANALYZE_MEMO_LIMIT = 4096
 
 /** 規格頂層允許的欄位（拼錯的欄位會被默默忽略，所以列為錯誤） */

@@ -235,7 +235,7 @@ describe('以文法搜尋（原本的 BCDP，只多了包覆單位）', () => {
     expect(partsOf(analysisOf('kitaanay', 'dict:kita'))).toEqual(['LF=an+IRR=ay'])
   })
 
-  it('衍生形方向：查 usa 找到 mausay（辭典沒有標註，由構詞分析連起來），說明是 AF.IRR', () => {
+  it('自動派生：查 usa 找到 mausay（辭典沒有標註，由構詞分析連起來），說明是 AF.IRR', () => {
     const recs = ['usa', 'mausay'].map((w) => rec(w, w))
     const b = buildSearchIndex({ items: recs.map((record) => ({ record, shard: 'all' })), groups: [], sourceIds: ['dict'], profile: { ...PAZEH_PROFILE, morphology: GRAMMAR } })
     const data = JSON.parse(JSON.stringify(b))

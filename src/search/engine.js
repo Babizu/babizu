@@ -19,6 +19,7 @@ import { createMorphSearch, FuzzyIndex } from '../fuzzy/index.js'
 import { DerivationGraph } from './derivations.js'
 import { buildEntryGroups, collectHits, mergeSpellings } from './family.js'
 import { decodePosting, docAt, INDEX_FORMAT_VERSION } from './format.js'
+import { compareHits, compareOccurrences, MATCH_TYPE_RANK, MATCH_TYPES, mergeMorphMatch, recordScore, ROLE_RANK, termScore } from './scoring.js'
 import { createTextTools, detectQueryMode, glossTokens, zhNormalize } from './text.js'
 
 /**
@@ -28,7 +29,7 @@ import { createTextTools, detectQueryMode, glossTokens, zhNormalize } from './te
 export const FUZZINESS = Object.freeze({
   exact: { label: '精確', maxDistance: () => 0, maxNormalized: Infinity, derivedFromAll: false },
   normal: { label: '標準', maxDistance: (n) => clamp(0.2 + 0.15 * n, 0.3, 1.6), maxNormalized: 0.3, derivedFromAll: false },
-  // 寬鬆：所有模糊命中都當詞根去找衍生形（標準只用查詢本身與方言變體）
+  // 寬鬆：所有模糊命中都當詞根去找自動派生形（標準只用查詢本身與方言變體）
   loose: { label: '寬鬆', maxDistance: (n) => clamp(0.5 + 0.25 * n, 0.8, 3), maxNormalized: 0.5, derivedFromAll: true },
 })
 
@@ -73,12 +74,12 @@ export const FUZZINESS = Object.freeze({
  * @property {import('./format.js').DocSummary} doc
  * @property {string} term 命中的詞庫詞（搜尋鍵）
  * @property {number} distance 加權編輯距離；前綴／包含命中為 0
- * @property {number} score 排序用的等效距離（見 rankScore）
+ * @property {number} score 排序用的等效距離（見 scoring.js）
  * @property {MatchType} matchType 以哪一種方式命中
  * @property {import('./format.js').MatchKind} kind
  * @property {AlignmentNote[] | null} alignment
- * @property {LemmaAnalysis | null} [analysis] 構詞分析：詞根相符（matchType 'lemma'）時是查詢的分析，
- *   衍生形（matchType 'derived'）時是命中詞的分析
+ * @property {LemmaAnalysis | null} [analysis] 構詞分析：自動拆解（matchType 'lemma'）時是查詢的分析，
+ *   自動派生（matchType 'derived'）時是命中詞的分析
  */
 
 /**
@@ -91,16 +92,16 @@ export const FUZZINESS = Object.freeze({
  * @property {string} stem 詞幹（詞庫中的寫法）
  * @property {Array<import('../fuzzy/morph-search.js').MorphStepHit>} steps 由外而內的構詞步驟
  * @property {number} cost 總成本：構詞步驟＋整個詞的音變（docs/bcdp.md 1.2）
- * @property {string} [variantOf] 衍生形方向以查詢的相近寫法當起點時，查詢本身
+ * @property {string} [variantOf] 自動派生以查詢的相近寫法當起點時，查詢本身
  * @property {number} [variantDistance] 查詢 → 起點的距離
  * @property {AlignmentNote[]} [variantNotes] 查詢 → 起點的對齊說明
  * @property {Array<{term: string, stem: string, steps: Array<import('../fuzzy/morph-search.js').MorphStepHit>, cost: number}>} [chain]
- *   衍生形方向經過其他衍生詞時，由起點往下的每一層（不含最後一層，那一層就是 stem、steps）：
+ *   自動派生經過其他詞時，由起點往下的每一層（不含最後一層，那一層就是 stem、steps）：
  *   查 sungut 找到 pausunguday，chain 是 [pusungut ＝ pu- ＋ sungut]，stem 是 pusungut
- * @property {MorphNote[] | null} [notes] 整個詞的音變說明（詞根相符方向只為前幾筆結果計算）
+ * @property {MorphNote[] | null} [notes] 整個詞的音變說明（自動拆解只為前幾筆結果計算）
  */
 
-/** @typedef {'fuzzy' | 'prefix' | 'lemma' | 'derived' | 'substring'} MatchType */
+/** @typedef {import('./scoring.js').MatchType} MatchType */
 
 /**
  * @typedef {object} TermMatch 一個查詢詞在詞庫中的命中
@@ -108,7 +109,8 @@ export const FUZZINESS = Object.freeze({
  * @property {unknown[]} payloads
  * @property {number} distance
  * @property {MatchType} matchType
- * @property {LemmaAnalysis} [analysis] 構詞命中（lemma、derived）的分析
+ * @property {number} [score] 已經定下的分數（開頭相符又能自動派生時取兩者較好的；見 scoring.js 的 mergeMorphMatch）
+ * @property {LemmaAnalysis} [analysis] 構詞命中（lemma 自動拆解、derived 自動派生）的分析
  */
 
 /**
@@ -124,7 +126,10 @@ export const FUZZINESS = Object.freeze({
 /**
  * @typedef {object} OccurrenceMatch 例句中一個查詢詞的命中（欄位與 EntryHit 相同，介面共用同一套標籤）
  * @property {string} word 查詢詞
- * @property {string} term 句中命中的詞（搜尋鍵）
+ * @property {string} term 查詢命中的詞庫詞（搜尋鍵）；kind 為 root 時是詞根，句中的詞在 token
+ * @property {string} token 句中命中的詞（搜尋鍵）
+ * @property {'token' | 'root'} kind token：句中的詞就是 term；root：句中的詞是辭典列在 term 條下的派生詞
+ *   （查 usa，句中的 mukusa；見 _dictionaryDerivatives）
  * @property {MatchType} matchType
  * @property {number} distance
  * @property {AlignmentNote[] | null} alignment 模糊命中的對齊說明（只為前幾句計算）
@@ -151,76 +156,18 @@ export const FUZZINESS = Object.freeze({
  * @property {{elapsedMs: number, visitedNodes: number}} stats
  */
 
-const KIND_RANK = { head: 0, alt: 1, variant: 2, root: 3, token: 4 }
-
-/**
- * 命中方式：
- * - fuzzy：加權編輯距離在門檻內（含完全相同、跨方言變體）
- * - prefix：詞庫中的詞以查詢開頭（查 pihi → pihilut）
- * - lemma：查詢去詞綴後的詞幹命中詞庫的詞（查 mudaux → daux）
- * - derived：詞庫的詞去詞綴後正好是查詢（查 baket → binaket、mubaket）
- * - substring：詞庫中的詞包含查詢（查 k → 所有含 k 的詞與句子）
- * lemma 與 derived 只在語言設定檔有 `morphology` 時出現。
- */
-const MATCH_TYPES = /** @type {const} */ (['fuzzy', 'prefix', 'lemma', 'derived', 'substring'])
-const MATCH_TYPE_RANK = { fuzzy: 0, prefix: 1, lemma: 2, derived: 3, substring: 4 }
-
-/**
- * 構詞相關命中的基本等效距離：一層詞綴（成本 0.3）約 0.7，
- * 排在完全相同、跨方言變體與短的前綴命中之後，包含命中之前。
- */
-const MORPHOLOGY_BASE_SCORE = 0.4
-
-/** 詞根相符時，辭典標註的派生詞（root posting）排在詞根本身之後 */
-const LEMMA_DERIVATIVE_PENALTY = 0.1
-
 /** 構詞搜尋的總成本上限：min(LEMMA_MAX_DISTANCE, 模糊程度門檻 ＋ LEMMA_EXTRA_DISTANCE) */
 const LEMMA_MAX_DISTANCE = 1
 const LEMMA_EXTRA_DISTANCE = 0.6
 
-/** 查詢的方言變體也拿來找衍生形：只取距離這麼小、且全由方言規則構成的模糊命中 */
+/** 查詢的方言變體也拿來找自動派生形：只取距離這麼小、且全由方言規則構成的模糊命中 */
 const DIALECT_VARIANT_DISTANCE = 0.3
-
-
-/**
- * 把前綴／包含命中換算成「等效距離」，好跟模糊命中一起排序。
- *
- * 分數的意義：完全相同 0、跨方言變體 0.1–0.3、前綴命中約 0.35 起、包含命中約 0.9 起，
- * 多出來的字元越多分數越高。這樣「查 pihi 找 pihilut」會排在「拼錯一個字母的 pihik-（0.8）」之前，
- * 而精確與跨方言命中仍然穩居最前面。
- *
- * @param {MatchType} matchType
- * @param {number} distance 模糊命中的距離
- * @param {number} extraLength 詞比查詢多出來的字元數
- */
-function rankScore(matchType, distance, extraLength) {
-  if (matchType === 'fuzzy') return distance
-  if (matchType === 'lemma' || matchType === 'derived') return MORPHOLOGY_BASE_SCORE + distance
-  const base = matchType === 'prefix' ? 0.35 : 0.9
-  return base + Math.min(extraLength, 12) * 0.05
-}
-
-/**
- * 構詞命中 m 是否比同一個詞原有的命中 prev 好（見 _matchTerms）。
- * @param {TermMatch} m 構詞命中（lemma 或 derived）
- * @param {TermMatch} prev
- * @param {string} key 查詢詞
- */
-function isBetterMatch(m, prev, key) {
-  const extra = Math.max(0, m.term.length - key.length)
-  const a = rankScore(m.matchType, m.distance, extra)
-  const b = rankScore(prev.matchType, prev.distance, extra)
-  // 分數是幾個小數相加（0.4 ＋ 0.2），比較時容許浮點誤差，免得同分被當成不同分
-  if (Math.abs(a - b) > 1e-9) return a < b
-  return prev.matchType === 'prefix' || prev.matchType === 'substring'
-}
 
 /** 前綴／包含比對每個查詢詞最多取幾個詞，避免單字母查詢產生過多結果 */
 const SUBSTRING_TERM_LIMIT = 300
 
 /** 英文釋義搜尋忽略的虛詞 */
 const GLOSS_STOPWORDS = new Set(['a', 'an', 'the', 'of', 'to', 'in', 'on', 'at', 'is', 'be', 'and', 'or', 'for', 'with'])
-const ROLE_RANK = { head: 0, item: 0, form: 1, segment: 2, example: 3, '': 4 }
 
 export class SearchEngine {
   /**
@@ -230,7 +177,7 @@ export class SearchEngine {
    *   profile: import('../fuzzy/profile.js').LanguageProfile,
    *   derivations?: import('./derivations.js').DerivationData | null,
    * }} data `profile` 必須是建索引時用的同一份語言設定檔（建置輸出的 search/language.json）；
-   *   `derivations` 是衍生關係圖（search/derivations.json），沒有時不找衍生形
+   *   `derivations` 是自動派生圖（search/derivations.json，見 derivations.js），沒有時不找自動派生形
    */
   constructor({ docs, lexicon, profile, derivations = null }) {
     if (docs.version !== INDEX_FORMAT_VERSION) {
@@ -258,7 +205,9 @@ export class SearchEngine {
     this._listCache = null
     /** @type {WeakMap<LemmaAnalysis, () => MorphNote[]>} 構詞命中的音變說明（需要時才計算） */
     this._lazyNotes = new WeakMap()
-    /** 衍生關係圖（衍生形方向，見 derivations.js） */
+    /** @type {Map<string, Array<{term: string, depth: number, payloads: unknown[]}>>} 詞 → 辭典列在它條下的派生詞（_dictionaryDerivatives） */
+    this._derivatives = new Map()
+    /** 自動派生圖（查詞根找自動派生形，見 derivations.js） */
     this.derivations = derivations && this.morphSearch ? new DerivationGraph(derivations, this.index.terms) : null
   }
 
@@ -537,9 +486,8 @@ export class SearchEngine {
           doc: prev?.doc ?? this.doc(k),
           term: t.term,
           distance: t.distance,
-          score:
-            rankScore(t.matchType, t.distance, Math.max(0, t.term.length - key.length)) +
-            (t.matchType === 'lemma' && kind === 'root' ? LEMMA_DERIVATIVE_PENALTY : 0),
+          // 詞根 posting 是辭典標註的派生關係：排在詞本身之後（與例句的辭典派生詞同一條規則，scoring.js）
+          score: recordScore(termScore(t, key), kind === 'root' ? 1 : 0),
           matchType: t.matchType,
           kind,
           alignment: null,
@@ -586,8 +534,30 @@ export class SearchEngine {
       if (shown >= explainLimit) break
     }
 
-    // 例句：每個查詢詞都要在句中出現（模糊），距離相加排序。
-    // 重複的查詢詞（例如 ma sa kau ma ngit 的 ma）只算一次，走訪統計照樣累加，與逐次計算相同
+    response.occurrences = this._searchOccurrences(key, words, fullTerms, level, accept, response, fuzzy).filter((o) => !entries.has(o.doc.index))
+    // 例句的命中說明與詞條相同，也只為前幾句計算
+    for (const o of response.occurrences.slice(0, explainLimit)) for (const m of o.matches) explainMatch(m.word, m)
+  }
+
+  /**
+   * 例句：每個查詢詞都要在句中出現，各詞的分數相加排序。分數與詞條同一套規則（scoring.js）：
+   * - 句中的詞就是查詢命中的詞庫詞：詞的分數（完全相同、方言變體、開頭相符、自動拆解、自動派生、包含）；
+   * - 句中的詞是辭典列在命中詞條下的派生詞（查 usa，句中的 mukusa）：詞的分數加上派生的層數，
+   *   與詞條的「衍生自」（詞根 posting）相同。只從寫法與查詢相同的詞條展開。
+   * 同一句同一個查詢詞有好幾種命中時取分數最好的一種，說明標籤（matches）也是那一種。
+   * 重複的查詢詞（例如 ma sa kau ma ngit 的 ma）只算一次，走訪統計照樣累加，與逐次計算相同。
+   *
+   * @param {string} key 整個查詢
+   * @param {string[]} words 查詢中的詞
+   * @param {TermMatch[]} fullTerms 整個查詢的命中（只有一個詞時直接沿用）
+   * @param {typeof FUZZINESS[Fuzziness]} level
+   * @param {(k: number) => boolean} accept
+   * @param {SearchResponse} response 累加走訪統計
+   * @param {boolean} fuzzy
+   * @returns {OccurrenceHit[]}
+   * @private
+   */
+  _searchOccurrences(key, words, fullTerms, level, accept, response, fuzzy) {
     /** @type {Map<string, {terms: TermMatch[], visited: number}>} */
     const seen = new Map()
     const matchWord = (/** @type {string} */ word) => {
@@ -606,29 +576,38 @@ export class SearchEngine {
     /** @type {Map<number, Combined> | null} */
     let combined = null
     for (const word of words.length > 0 ? words : [key]) {
-      const terms = matchWord(word)
       /** @type {Map<number, Combined>} */
       const found = new Map()
-      for (const t of terms) {
-        const rank = MATCH_TYPE_RANK[t.matchType]
-        const score = rankScore(t.matchType, t.distance, Math.max(0, t.term.length - word.length))
-        /** @type {OccurrenceMatch} */
-        const match = { word, term: t.term, matchType: t.matchType, distance: t.distance, alignment: null, analysis: t.analysis ?? null }
-        for (const code of /** @type {number[]} */ (t.payloads)) {
+      /** 句中的一個詞落在含它的各句上 @param {unknown[]} payloads @param {number} score @param {OccurrenceMatch} match */
+      const place = (payloads, score, match) => {
+        const rank = MATCH_TYPE_RANK[match.matchType]
+        for (const code of /** @type {number[]} */ (payloads)) {
           const { doc: k, kind } = decodePosting(code)
           if (kind !== 'token' || !accept(k)) continue
           const prev = found.get(k)
-          if (!prev) found.set(k, { distance: t.distance, score, rank, terms: [t.term], matches: [match] })
+          if (!prev) found.set(k, { distance: match.distance, score, rank, terms: [match.token], matches: [match] })
           else {
-            prev.terms.push(t.term)
-            // 同一句可能同時被多種方式命中，取最好的一種
+            prev.terms.push(match.token)
             if (score < prev.score) {
               prev.rank = rank
               prev.score = score
-              prev.distance = t.distance
+              prev.distance = match.distance
               prev.matches = [match]
             }
           }
+        }
+      }
+      for (const t of matchWord(word)) {
+        const score = termScore(t, word)
+        /** @type {OccurrenceMatch} 同一個物件由含這個詞的各句共用：說明只算一次，每一句都看得到 */
+        const match = { word, term: t.term, token: t.term, kind: 'token', matchType: t.matchType, distance: t.distance, alignment: null, analysis: t.analysis ?? null }
+        place(t.payloads, recordScore(score), match)
+        // 辭典列在條目下的派生詞只從「就是查詢那個詞」的詞條展開（搜尋鍵相同）。寫法相近的詞條已經是一層不確定
+        // （sungut 與 zenget 只差三條方言規則，卻是不同的詞），再加上派生就不是查詢的那個詞了；
+        // 它們的派生詞仍可經由自動派生找到，分數照實加上寫法的差距
+        if (t.matchType !== 'fuzzy' || t.distance > 0) continue
+        for (const d of this._dictionaryDerivatives(t)) {
+          place(d.payloads, recordScore(score, d.depth), { ...match, token: d.term, kind: 'root' })
         }
       }
       if (combined === null) {
@@ -651,27 +630,67 @@ export class SearchEngine {
       }
       if (combined.size === 0) break
     }
-
-    response.occurrences = [...(combined ?? new Map())]
-      .filter(([k]) => !entries.has(k))
+    return [...(combined ?? new Map())]
       .map(([k, v]) => ({
         doc: this.doc(k),
         terms: [...new Set(v.terms)],
         distance: Math.round(v.distance * 1e9) / 1e9,
-        score: v.score,
+        score: Math.round(v.score * 1e9) / 1e9,
         matchType: /** @type {MatchType} */ (MATCH_TYPES[v.rank]),
-        // 同一個命中物件由含同一個詞的各句共用：說明只算一次，每一句都看得到
         matches: v.matches,
       }))
-      .sort(
-        (a, b) =>
-          a.score - b.score ||
-          a.distance - b.distance ||
-          a.doc.text.length - b.doc.text.length ||
-          a.doc.index - b.doc.index,
-      )
-    // 例句的命中說明與詞條相同，也只為前幾句計算
-    for (const o of response.occurrences.slice(0, explainLimit)) for (const m of o.matches) explainMatch(m.word, m)
+      .sort(compareOccurrences)
+  }
+
+  /**
+   * 辭典列在一個詞的條目下的派生詞（辭典標註的關係，不是演算法推定的）：
+   * 以這個詞為詞形的記錄在詞條家族中的所有下層詞（docs.parent：條目下的詞形、標明 < 這個詞的另立條目），
+   * 以及標明由它衍生、但接不上家族的記錄（詞根 posting，例如同形異義詞）。只收詞與詞綴，不收片語與例句。
+   * 查 usa：mukusa（p.204 另立條目「< usa」、usa 條下的詞形）。
+   *
+   * @param {TermMatch} t
+   * @returns {Array<{term: string, depth: number, payloads: unknown[]}>} 每個詞取最淺的一層
+   * @private
+   */
+  _dictionaryDerivatives(t) {
+    const cached = this._derivatives.get(t.term)
+    if (cached) return cached
+    const docs = this.docs
+    /** @type {Map<string, {term: string, depth: number, payloads: unknown[]}>} */
+    const out = new Map()
+    /** @param {number} k @param {number} depth */
+    const add = (k, depth) => {
+      const unit = docs.units[docs.unit[k]]
+      if (unit !== 'word' && unit !== 'affix') return
+      const term = this.text.searchKey(docs.text[k])
+      if (!term || term === t.term || term.includes(' ')) return
+      const prev = out.get(term)
+      if (prev && prev.depth <= depth) return
+      const payloads = this.index.lookup(term)
+      if (payloads) out.set(term, { term, depth, payloads })
+    }
+    /** @type {Array<[number, number]>} 待走的（記錄, 層數），依層數由淺到深 */
+    const queue = []
+    const visited = new Set()
+    for (const code of /** @type {number[]} */ (t.payloads)) {
+      const { doc: k, kind } = decodePosting(code)
+      if (kind === 'token') continue
+      if (kind === 'root') add(k, 1)
+      queue.push([k, kind === 'root' ? 1 : 0])
+    }
+    queue.sort((a, b) => a[1] - b[1])
+    while (queue.length) {
+      const [k, depth] = /** @type {[number, number]} */ (queue.shift())
+      if (visited.has(k)) continue
+      visited.add(k)
+      for (const c of this._childrenOf(k)) {
+        add(c, depth + 1)
+        queue.push([c, depth + 1])
+      }
+    }
+    const list = [...out.values()]
+    this._derivatives.set(t.term, list)
+    return list
   }
 
   /**
@@ -740,36 +759,34 @@ export class SearchEngine {
       if (!matches.has(m.term)) matches.set(m.term, m)
     }
     if (morphology) {
-      // 查詢的相近寫法也當作詞根去找衍生形：標準只用方言變體（純規則、距離不大；查 daux 也找得到 minudox），
+      // 查詢的相近寫法也當作詞根去找自動派生形：標準只用方言變體（純規則、距離不大；查 daux 也找得到 minudox），
       // 寬鬆用所有模糊命中（查 sugut 經 sungut 找到 pausunguday）
       const variants = [...matches.values()]
         .filter((m) => m.matchType === 'fuzzy' && m.distance > 0)
         .filter((m) => level.derivedFromAll || (m.distance <= DIALECT_VARIANT_DISTANCE && this.explainNotes(key, m.term).every((s) => s.op === 'rule')))
-      // 同一個詞有多種命中方式時，取排序分數（rankScore，與詞條排序用的是同一個）較好的一種。
-      // 不能只看命中方式：詞根落在模糊門檻內時（查 parazem，razem 的模糊距離 1.2 在門檻 1.25 內），
-      // 最好的構詞分析（pa- ＋ razem，0.2）會被較差的模糊命中蓋掉。同分時模糊命中優先（直接相符），
-      // 構詞命中優先於前綴、包含（說明比較有用）
-      for (const m of [...lemma, ...this._derivedTerms(key, variants)]) {
-        const prev = matches.get(m.term)
-        if (!prev || isBetterMatch(m, prev, key)) matches.set(m.term, m)
+      // 同一個詞有多種命中方式時的取捨見 scoring.js 的 mergeMorphMatch：開頭相符、包含的詞能自動拆解或派生時
+      // 改以構詞命中呈現、分數取較好的；與模糊命中之間取分數較好的
+      for (const m of [...lemma, ...this._derivedTerms(key, variants, this._lemmaMax(key, level))]) {
+        matches.set(m.term, mergeMorphMatch(m, matches.get(m.term), key))
       }
     }
     return [...matches.values()]
   }
 
   /**
-   * 衍生形（查詞根、找衍生詞）：由查詢與它的相近寫法沿衍生關係圖往下走（derivations.js）。
+   * 自動派生（查詞根、找衍生詞）：由查詢與它的相近寫法沿自動派生圖往下走（derivations.js）。
    *
-   * 圖的每一條邊是建置時 BCDP 對衍生詞求得的最好詞根，所以「查 r 看到 w」等於「查 w 時 r 是最好的詞根」，
-   * 衍生詞的衍生詞也走得到（sungut → pusungut → pausunguday）。分數是起點距離加上路徑上各條邊的成本，
-   * 路徑本身的成本不超過 1（與詞根相符方向的上限相同）。
+   * 圖的每一條邊是建置時 BCDP 對那個詞求得的最好詞根，所以「查 r 看到 w」等於「查 w 時自動拆解最好的詞根是 r」，
+   * 派生詞的派生詞也走得到。分數是起點距離加上路徑上各條邊的成本；路徑本身的成本不超過自動拆解方向的上限
+   * （_lemmaMax：同一個模糊程度，兩個方向的上限相同）。
    *
    * @param {string} key
-   * @param {TermMatch[]} [variants] 查詢的相近寫法（模糊命中的詞）
+   * @param {TermMatch[]} variants 查詢的相近寫法（模糊命中的詞）
+   * @param {number} maxPath 路徑成本的上限
    * @returns {TermMatch[]}
    * @private
    */
-  _derivedTerms(key, variants = []) {
+  _derivedTerms(key, variants, maxPath) {
     const graph = this.derivations
     if (!graph) return []
     /** @type {Array<{term: string, distance: number}>} */
@@ -783,7 +800,7 @@ export class SearchEngine {
     const terms = this.index.terms
     /** @type {Map<number, AlignmentNote[]>} 查詢 → 起點的對齊說明（每個起點算一次） */
     const variantNotes = new Map()
-    return graph.descendants(seeds).map((r) => {
+    return graph.descendants(seeds, maxPath).map((r) => {
       const seed = seeds[r.seed]
       const last = /** @type {(typeof r.path)[number]} */ (r.path.at(-1))
       /** @type {LemmaAnalysis} */
@@ -845,7 +862,7 @@ export class SearchEngine {
   }
 
   /**
-   * 詞根相符（去詞綴方向）：音變 ∘ 構詞 ∘ 詞庫的聯合搜尋 BCDP（babizu/fuzzy 的 morph-search.js）。
+   * 自動拆解（去詞綴方向）：音變 ∘ 構詞 ∘ 詞庫的聯合搜尋 BCDP（babizu/fuzzy 的 morph-search.js）。
    *
    * 分析的成本是構詞步驟加上整個詞的音變：同一套方言規則對整個詞計算，可以跨越詞素交界
    * （ta-kita-aw → takitaw），詞首、詞尾規則與構詞音變在交界也適用（docs/bcdp.md 第 1 節）。
@@ -1099,32 +1116,15 @@ export class SearchEngine {
 
 /**
  * 哪些 posting 可以跟哪種命中方式搭配：
- * - 詞根相符（lemma）：詞根本身，以及辭典標註的派生詞（root posting，排在詞根之後）。
+ * - 自動拆解（lemma）：詞根本身，以及辭典標註的派生詞（root posting，排在詞根之後）。
  *   查 kinawas 得到詞根 kawas 時，mukawas、maakawas 等已標註的派生詞也要列出來
- * - 衍生形（derived）：不沿用 root posting，那是「衍生詞的衍生詞」
+ * - 自動派生（derived）：不沿用 root posting，那是「派生詞的派生詞」
  * @param {MatchType} matchType
  * @param {import('./format.js').MatchKind} kind
  */
 function usablePosting(matchType, kind) {
   if (matchType === 'derived') return kind !== 'root'
   return true
-}
-
-/**
- * 詞條命中的排序：先分組（模糊 → 前綴 → 包含），組內再比距離、命中身分、角色、長度。
- * @param {EntryHit} a
- * @param {EntryHit} b
- */
-function compareHits(a, b) {
-  return (
-    a.score - b.score ||
-    MATCH_TYPE_RANK[a.matchType] - MATCH_TYPE_RANK[b.matchType] ||
-    a.term.length - b.term.length ||
-    KIND_RANK[a.kind] - KIND_RANK[b.kind] ||
-    (ROLE_RANK[a.doc.role] ?? 9) - (ROLE_RANK[b.doc.role] ?? 9) ||
-    a.doc.text.length - b.doc.text.length ||
-    a.doc.index - b.doc.index
-  )
 }
 
 /** @param {EntryHit[]} hits */

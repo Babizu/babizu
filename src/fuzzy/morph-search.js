@@ -896,21 +896,6 @@ export function createMorphSearch({ analyzer, metric, index }) {
   }
 
   /**
-   * 衍生形方向：詞 word 能否分析成「詞綴 · stem · 詞綴」——同一個 BCDP，詞庫只有 stem 一個詞。
-   * @param {string} word 已正規化的詞（衍生形的候選）
-   * @param {string} stem 已正規化的詞根
-   * @param {number} maxDistance 總成本上限
-   * @returns {{hit: MorphHit, prepared: Prepared} | null}
-   */
-  function derive(word, stem, maxDistance) {
-    const prepared = prepare(word, maxDistance)
-    if (!prepared || word === stem) return null
-    const single = new FuzzyIndex(metric).addAll([[stem, null]])
-    const hit = finish(prepared, single.searchChannels(prepared.channels), maxDistance).find((h) => h.term === stem)
-    return hit ? { hit, prepared } : null
-  }
-
-  /**
    * 構詞搜尋（單獨執行；搜尋引擎則把通道與普通模糊搜尋合併成一次走訪）。
    * @param {string} query 已正規化的查詢（搜尋鍵）
    * @param {{maxDistance: number, stats?: {visitedNodes: number}}} options
@@ -1015,7 +1000,7 @@ export function createMorphSearch({ analyzer, metric, index }) {
     }
   }
 
-  return { search, prepare, seed, finish, explain, explainHit, notesOf, derive, clearCache: () => cache.clear() }
+  return { search, prepare, seed, finish, explain, explainHit, notesOf, clearCache: () => cache.clear() }
 }
 
 /**

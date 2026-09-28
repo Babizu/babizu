@@ -1,5 +1,5 @@
 /**
- * 搜尋引擎的構詞功能：詞根相符（去詞綴）與衍生形（還原詞綴）。
+ * 搜尋引擎的構詞功能：自動拆解（去詞綴）與自動派生（還原詞綴）。
  * 詞綴規格是合成的，只用來驗證機制。
  */
 
@@ -57,7 +57,7 @@ const withMorphology = engineWith({ ...PAZEH_PROFILE, morphology: MORPHOLOGY })
 const without = engineWith(PAZEH_PROFILE)
 const ids = (/** @type {Array<{doc: {id: string}}>} */ hits) => hits.map((h) => h.doc.id)
 
-describe('詞根相符（查衍生詞 → 找到詞根）', () => {
+describe('自動拆解（查衍生詞 → 找到詞根）', () => {
   it('查 mudaux 找到詞根 daux，附上構詞分析', () => {
     const res = withMorphology.search('mudaux', { fields: ['native'] })
     const hit = res.entries.find((h) => h.doc.id === 'dict:daux')
@@ -73,7 +73,7 @@ describe('詞根相符（查衍生詞 → 找到詞根）', () => {
     expect(hit?.analysis?.steps.map((s) => s.form).sort()).toEqual(['an', 'mu', 'pa'])
   })
 
-  it('精確模式不做詞根相符', () => {
+  it('精確模式不做自動拆解', () => {
     const res = withMorphology.search('mudaux', { fields: ['native'], fuzziness: 'exact' })
     expect(res.entries.some((h) => h.matchType === 'lemma')).toBe(false)
   })
@@ -85,7 +85,7 @@ describe('詞根相符（查衍生詞 → 找到詞根）', () => {
   })
 })
 
-describe('衍生形（查詞根 → 找到衍生詞）', () => {
+describe('自動派生（查詞根 → 找到衍生詞）', () => {
   it('查 baket 找到中綴形式 binaket，排在詞根本身之後', () => {
     const res = withMorphology.search('baket', { fields: ['native'] })
     expect(ids(res.entries).slice(0, 2)).toEqual(['dict:baket', 'dict:binaket'])
@@ -95,12 +95,12 @@ describe('衍生形（查詞根 → 找到衍生詞）', () => {
     expect(hit.analysis?.steps).toEqual([expect.objectContaining({ type: 'infix', form: 'in' })])
   })
 
-  it('查詞根也找到含衍生形的例句（中綴形式，包含比對找不到）', () => {
+  it('查詞根也找到含自動派生的例句（中綴形式，包含比對找不到）', () => {
     expect(ids(withMorphology.search('baket', { fields: ['native'] }).occurrences)).toContain('dict:s2')
     expect(ids(without.search('baket', { fields: ['native'] }).occurrences)).not.toContain('dict:s2')
   })
 
-  it('衍生形必須正好由查詢衍生：查 bak 不會列出 binaket（它的詞幹是 baket）', () => {
+  it('自動派生必須正好由查詢衍生：查 bak 不會列出 binaket（它的詞幹是 baket）', () => {
     const res = withMorphology.search('bak', { fields: ['native'] })
     expect(ids(res.entries)).toContain('dict:baket')
     expect(ids(res.entries)).not.toContain('dict:binaket')
@@ -110,7 +110,7 @@ describe('衍生形（查詞根 → 找到衍生詞）', () => {
     expect(ids(withMorphology.neighbors('dict:baket'))).not.toContain('dict:binaket')
   })
 
-  it('查詞根時，前綴衍生詞改標為衍生形（原本只是包含命中）', () => {
+  it('查詞根時，前綴衍生詞改標為自動派生（原本只是包含命中）', () => {
     const res = withMorphology.search('daux', { fields: ['native'] })
     const occ = res.occurrences.find((h) => h.doc.id === 'dict:s1')
     expect(occ?.matchType).toBe('derived')
@@ -119,7 +119,7 @@ describe('衍生形（查詞根 → 找到衍生詞）', () => {
 })
 
 describe('第二版：派生詞列表與音變 ∘ 構詞的聯合搜尋', () => {
-  it('詞根相符時列出辭典標註的派生詞，排在詞根本身之後', () => {
+  it('自動拆解時列出辭典標註的派生詞，排在詞根本身之後', () => {
     const res = withMorphology.search('kinawas', { fields: ['native'] })
     const root = res.entries.find((h) => h.doc.id === 'dict:kawas')
     const child = res.entries.find((h) => h.doc.id === 'dict:mukawas')
@@ -143,7 +143,7 @@ describe('第二版：派生詞列表與音變 ∘ 構詞的聯合搜尋', () =>
     expect(hit?.analysis?.notes?.map((n) => `${n.source}→${n.target}@${n.where}`)).toEqual(['e→u@prefix'])
   })
 
-  it('衍生形方向也涵蓋查詢的方言變體：查 daux 找到 mudox（經由 dox）', () => {
+  it('自動派生方向也涵蓋查詢的方言變體：查 daux 找到 mudox（經由 dox）', () => {
     const hit = withMorphology.search('daux', { fields: ['native'] }).entries.find((h) => h.doc.id === 'dict:mudox')
     expect(hit?.matchType).toBe('derived')
     expect(hit?.analysis).toMatchObject({ stem: 'dox', variantOf: 'daux', variantDistance: 0.1, notes: [] })
@@ -162,7 +162,7 @@ describe('環綴：兩側一起算一個步驟', () => {
     morphology: { ...MORPHOLOGY, prefixes: [{ form: 'mu' }], suffixes: [], circumfixes: [{ prefix: 'ta', suffix: 'aw', gloss: 'HORT' }, { infix: 'in', suffix: 'an' }] },
   })
 
-  it('詞根相符：takitaaw → kita，一個步驟 0.3', () => {
+  it('自動拆解：takitaaw → kita，一個步驟 0.3', () => {
     const hit = circ.search('takitaaw', { fields: ['native'] }).entries.find((h) => h.matchType === 'lemma' && h.term === 'kita')
     expect(hit?.distance).toBeCloseTo(0.3, 9)
     expect(hit?.analysis?.steps).toEqual([expect.objectContaining({ type: 'circumfix', form: 'ta…aw', suffix: 'aw', left: { type: 'prefix', form: 'ta' } })])
@@ -173,7 +173,7 @@ describe('環綴：兩側一起算一個步驟', () => {
     expect(hit?.analysis?.steps.map((s) => s.form)).toEqual(['mu', 'in…an'])
   })
 
-  it('衍生形：查 kita 找到 takitaaw，說明是環綴', () => {
+  it('自動派生：查 kita 找到 takitaaw，說明是環綴', () => {
     const hit = circ.search('kita', { fields: ['native'] }).entries.find((h) => h.term === 'takitaaw')
     expect(hit?.matchType).toBe('derived')
     expect(hit?.analysis?.steps.map((s) => s.form)).toEqual(['ta…aw'])
@@ -181,7 +181,7 @@ describe('環綴：兩側一起算一個步驟', () => {
 })
 
 describe('explainMorphology：實驗室用的構詞說明', () => {
-  it('與搜尋的詞根相符命中一致（同一個總成本上限）；沒有構詞規格時為 null', () => {
+  it('與搜尋的自動拆解命中一致（同一個總成本上限）；沒有構詞規格時為 null', () => {
     const hit = withMorphology.search('mudaux', { fields: ['native'] }).entries.find((h) => h.doc.id === 'dict:daux')
     const e = /** @type {any} */ (withMorphology.explainMorphology('Mu-daux', 'daux'))
     expect(e.query).toBe('mudaux')
@@ -196,7 +196,7 @@ describe('同一個詞有多種命中方式：取排序分數較好的一種', (
   // 回歸：原本構詞命中遇到同一個詞的模糊命中一律捨棄。查詢夠長時門檻變大（7 字元 1.25），
   // 刪掉短前綴（p 1.0 ＋ 閃音規則 0.1…）就落在門檻內，最好的構詞分析反而被較差的模糊命中蓋掉
   const multi = (() => {
-    // 衍生形由詞庫中的詞根往下找（衍生關係圖），所以詞根本身要在詞庫中
+    // 自動派生由詞庫中的詞根往下找（自動派生圖），所以詞根本身要在詞庫中
     const list = [rec('razem', 'word', 'razem', '賽跑'), rec('daux', 'word', 'daux', '喝'), rec('daux2', 'word', 'dauxi', '喝吧')]
     const built = buildSearchIndex({
       items: list.map((record) => ({ record, shard: 'all' })),
@@ -217,7 +217,7 @@ describe('同一個詞有多種命中方式：取排序分數較好的一種', (
     expect(res.terms.map((t) => t.term)).not.toContain('razem')
   })
 
-  it('衍生形方向：查 daux，dauxi 雖然也是模糊命中（補一個字元 0.8），仍以衍生形列出', () => {
+  it('自動派生方向：查 daux，dauxi 雖然也是模糊命中（補一個字元 0.8），仍以自動派生列出', () => {
     const hit = multi.search('daux', { fields: ['native'] }).entries.find((h) => h.doc.id === 'dict:daux2')
     expect(hit).toMatchObject({ matchType: 'derived', term: 'dauxi' })
   })

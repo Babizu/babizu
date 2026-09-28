@@ -1,9 +1,10 @@
 /**
- * @file 網站建置：衍生關係圖（search/derivations.json，見 src/search/derivations.js）。
+ * @file 網站建置：自動派生圖（search/derivations.json，見 src/search/derivations.js）。
  *
  * 要對詞庫中每個詞各跑一次構詞搜尋（1 萬個詞約 30 秒），所以：
  * - 以 worker_threads 平行計算：詞編號切成小塊，各執行緒輪流領取；結果依詞編號接起來，與單執行緒相同。
- * - 以「詞圖、語言設定檔、框架版本」的雜湊快取在 `.babizu/cache/`：資料沒有變動時不重算。
+ * - 以「詞圖、語言設定檔、分析程式」的雜湊快取在 `.babizu/cache/`：資料與程式沒有變動時不重算。
+ *   分析程式是 src/fuzzy/ 與 src/search/derivations.js 的原始碼（開發時改了演算法、還沒升版本也會重算）。
  */
 
 import { createHash } from 'node:crypto'
@@ -26,8 +27,9 @@ const CHUNK = 250
  * @returns {Promise<{data: import('../search/derivations.js').DerivationData, cached: boolean}>}
  */
 export async function buildDerivations({ lexicon, profile, count, cacheDir }) {
-  const pkg = JSON.parse(await readFile(new URL('../../package.json', import.meta.url), 'utf8'))
-  const key = createHash('sha1').update(JSON.stringify([pkg.version, profile, lexicon])).digest('hex').slice(0, 16)
+  const hash = createHash('sha1').update(JSON.stringify([profile, lexicon]))
+  for (const source of await analysisSources()) hash.update(await readFile(source))
+  const key = hash.digest('hex').slice(0, 16)
   const file = join(cacheDir, `derivations-${key}.json`)
   try {
     return { data: JSON.parse(await readFile(file, 'utf8')), cached: true }
@@ -40,6 +42,13 @@ export async function buildDerivations({ lexicon, profile, count, cacheDir }) {
   for (const name of await readdir(cacheDir)) if (name.startsWith('derivations-')) await rm(join(cacheDir, name), { force: true })
   await writeFile(file, JSON.stringify(data))
   return { data, cached: false }
+}
+
+/** 分析結果取決於哪些原始碼（快取鍵的一部分） */
+async function analysisSources() {
+  const fuzzy = new URL('../fuzzy/', import.meta.url)
+  const names = (await readdir(fuzzy)).filter((n) => n.endsWith('.js')).sort()
+  return [...names.map((n) => new URL(n, fuzzy)), new URL('../search/derivations.js', import.meta.url), new URL('../search/text.js', import.meta.url)]
 }
 
 /**

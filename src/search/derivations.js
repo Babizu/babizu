@@ -1,9 +1,10 @@
 /**
- * @file 衍生關係圖：查詞根時找到它的加綴變化（衍生形方向，docs/bcdp.md 第 10 節）。
+ * @file 自動派生圖：查詞根時找到演算法推定的加綴變化（自動派生，docs/bcdp.md 第 10 節）。
+ * 這是演算法推定的關係；辭典標註的派生關係在 docs.parent 與詞根 posting，兩者分開計算、分開標示。
  *
  * 建置時以構詞搜尋 BCDP 對詞庫中每個詞 w（含例句中的詞）求**成本最低的詞根** r（同分的都取），
  * 詞根必須比 w 短（以字元計），記一條邊 w → r，附上 BCDP 對 w 的分析。查詢時由查詢（與它的相近寫法）
- * 沿反向的邊往下走：查 sungut 得到 pusungut（pu-），再由 pusungut 得到 pausunguday（<a>、-ay）。
+ * 沿反向的邊往下走，派生詞的派生詞也走得到：查 sungut 得到 pausunguday（p<a>u-…-ay，一個組合規則）。
  *
  * - 兩個方向一致：「查 r 看到 w」等於「查 w 時 r 是最好的詞根」，每條邊都是 BCDP 算出來的，
  *   不需要另一套演算法。
@@ -27,7 +28,7 @@ import { createTextTools } from './text.js'
 /** derivations.json 的格式版本 */
 export const DERIVATIONS_FORMAT_VERSION = 1
 
-/** 一條邊的分析成本上限（與詞根相符方向的上限 LEMMA_MAX_DISTANCE 相同） */
+/** 一條邊的分析成本上限（與自動拆解方向的上限 LEMMA_MAX_DISTANCE 相同） */
 export const DERIVATION_MAX_COST = 1
 
 /**
@@ -136,7 +137,7 @@ export function encodeDerivations(edges, count) {
 }
 
 /**
- * 建立衍生關係圖（單執行緒；測試與評估工具用，網站建置另有平行版本）。
+ * 建立自動派生圖（單執行緒；測試與評估工具用，網站建置另有平行版本）。
  * @param {{lexicon: import('../fuzzy/fuzzy-index.js').SerializedIndex, profile: import('../fuzzy/profile.js').LanguageProfile}} input
  * @returns {DerivationData}
  */
@@ -146,14 +147,14 @@ export function buildDerivationGraph({ lexicon, profile }) {
 }
 
 /**
- * @typedef {object} DerivedReach 由某個起點走到的衍生形
+ * @typedef {object} DerivedReach 由某個起點走到的自動派生形
  * @property {number} word 詞編號
  * @property {number} cost 總分：起點距離＋路徑上各條邊的成本
  * @property {number} seed 起點在 seeds 中的位置
  * @property {Array<{word: number, root: number, analysis: DerivationAnalysis}>} path 由起點往下的每一條邊（最後一條進入 word）
  */
 
-/** 查詢端：衍生關係圖（詞根 → 衍生詞） */
+/** 查詢端：自動派生圖（詞根 → 衍生詞） */
 export class DerivationGraph {
   /**
    * @param {DerivationData} data
@@ -161,9 +162,9 @@ export class DerivationGraph {
    */
   constructor(data, terms) {
     if (data.version !== DERIVATIONS_FORMAT_VERSION) {
-      throw new Error(`衍生關係圖格式版本 ${data.version} 與框架（${DERIVATIONS_FORMAT_VERSION}）不符，請重新建置網站`)
+      throw new Error(`自動派生圖格式版本 ${data.version} 與框架（${DERIVATIONS_FORMAT_VERSION}）不符，請重新建置網站`)
     }
-    if (data.count !== terms.length) throw new Error(`衍生關係圖的詞數（${data.count}）與詞圖（${terms.length}）不符，請重新建置網站`)
+    if (data.count !== terms.length) throw new Error(`自動派生圖的詞數（${data.count}）與詞圖（${terms.length}）不符，請重新建置網站`)
     /** @type {DerivationAnalysis[]} */
     this.analyses = data.analyses.map(([cost, steps, notes]) => ({
       cost,
@@ -192,7 +193,7 @@ export class DerivationGraph {
   }
 
   /**
-   * 由起點往下找所有衍生形，每個詞取總分最小的路徑；路徑本身的成本（不含起點距離）不超過 maxPath。
+   * 由起點往下找所有自動派生形，每個詞取總分最小的路徑；路徑本身的成本（不含起點距離）不超過 maxPath。
    *
    * 邊一定由短的詞指向長的詞，所以詞長由短到長就是拓撲順序：依這個順序鬆弛一遍就是最短路徑（DAG 最短路徑）。
    *

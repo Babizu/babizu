@@ -10,7 +10,7 @@
  * data/search/docs.json            搜尋結果顯示用的摘要（欄式）
  * data/search/lexicon.json         序列化的詞圖索引
  * data/search/language.json        建索引時用的語言設定檔（查詢端必須用同一份）
- * data/search/derivations.json     衍生關係圖（查詞根找到加綴變化；見 src/search/derivations.js）
+ * data/search/derivations.json     自動派生圖（查詞根找到加綴變化；見 src/search/derivations.js）
  * data/media/…、data/scans/…        從資料集複製（增量；已不存在的會刪除）
  * <站台 public/ 的檔案>             站徽等
  * ```
@@ -99,7 +99,7 @@ export async function prepareSiteData(site, { log = console.log } = {}) {
   })
   await writeJson('search/derivations.json', derivations.data)
   log(
-    `✓ 衍生關係圖：${derivations.data.edges.length / 3} 條邊、${derivations.data.analyses.length} 種分析（${derivations.cached ? '快取' : `${Date.now() - t2} ms`}）`,
+    `✓ 自動派生圖：${derivations.data.edges.length / 3} 條邊、${derivations.data.analyses.length} 種分析（${derivations.cached ? '快取' : `${Date.now() - t2} ms`}）`,
   )
 
   // 4. 媒體、掃描圖、站台的靜態檔（增量同步，並刪掉已不存在的檔案）

@@ -343,7 +343,7 @@ console.table(flat.circumfixes.map((c) => ({ ...c, parts: c.parts.map((p) => `${
 ### 5.5 分析器
 
 `createAnalyzer` 的 `analyze`、`generate` 都加上外側的 L；`stemInitial` 的項目只接元音開頭的詞根。
-衍生形方向（查詞根找衍生詞）改由建置時的衍生關係圖處理（bcdp.md 第 10 節），直接用 BCDP 的結果，不再經過分析器。
+查詞根找衍生詞（自動派生）改由建置時的自動派生圖處理（bcdp.md 第 10 節），直接用 BCDP 的結果，不再經過分析器。
 
 ## 6. 拿掉了什麼、為什麼
 

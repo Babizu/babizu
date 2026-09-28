@@ -17,7 +17,7 @@ export const TOKEN_KINDS = [
     value: 'derivation',
     glyph: '+',
     label: msg('像加綴派生'),
-    hint: msg('構詞分析找得到辭典中的詞根，多半是詞根條目底下沒有列出的加綴形式。'),
+    hint: msg('自動拆解（演算法推定）找得到辭典中的詞根，多半是詞根條目底下沒有列出的加綴形式。'),
   },
   {
     value: 'near',

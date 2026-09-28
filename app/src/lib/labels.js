@@ -55,16 +55,25 @@ export const STATUS_LABELS = { unreviewed: msg('未校對'), reviewed: msg('初�
 /** @param {string} code */
 export const statusLabel = (code) => labelOf(STATUS_LABELS, code)
 
-/** 詞在記錄中出現的身分（見 babizu/search 的 MatchKind） */
+/**
+ * 詞在記錄中出現的身分（見 babizu/search 的 MatchKind）。這些都是**資料來源寫明的**關係；
+ * 演算法推定的關係是命中方式（MATCH_TYPES 的自動拆解、自動派生），名稱都帶「自動」，兩者不混用。
+ */
 export const MATCH_KIND_LABELS = {
   head: msg('詞形'),
   alt: msg('其他寫法'),
   variant: msg('變體'),
-  root: msg('衍生自'),
+  root: msg('辭典：衍生自'),
   token: msg('句中'),
 }
 /** @param {string} kind */
 export const matchKindLabel = (kind) => labelOf(MATCH_KIND_LABELS, kind)
+/** 身分標籤的說明（滑鼠停留時顯示） */
+export const MATCH_KIND_HINTS = {
+  root: msg('辭典標明這個詞由它衍生，或把這個詞列在它的條目下；不是演算法推定的'),
+}
+/** @param {string} kind */
+export const matchKindHint = (kind) => (kind in MATCH_KIND_HINTS ? t(MATCH_KIND_HINTS[/** @type {keyof typeof MATCH_KIND_HINTS} */ (kind)]) : '')
 
 /** 編輯操作的名稱 */
 export const OP_LABELS = {
@@ -77,12 +86,15 @@ export const OP_LABELS = {
 /** @param {string} op */
 export const opLabel = (op) => labelOf(OP_LABELS, op)
 
-/** 命中方式的名稱與說明（見 babizu/search 的 MatchType；fuzzy 沒有標籤） */
+/**
+ * 命中方式的名稱與說明（見 babizu/search 的 MatchType；fuzzy 沒有標籤）。
+ * 演算法推定的構詞關係一律冠上「自動」，與資料來源寫明的關係（MATCH_KIND_LABELS 的「辭典：衍生自」）區分。
+ */
 export const MATCH_TYPES = {
   prefix: { label: msg('開頭相符'), hint: msg('這個詞以你輸入的字串開頭') },
   substring: { label: msg('包含'), hint: msg('這個詞裡面含有你輸入的字串') },
   lemma: { label: msg('自動拆解'), hint: msg('演算法自動去掉詞綴後得到這個詞；是推定的結果，不是確定的分析') },
-  derived: { label: msg('衍生形'), hint: msg('這個詞是你輸入的詞加上詞綴') },
+  derived: { label: msg('自動派生'), hint: msg('演算法推定這個詞由你輸入的詞加上詞綴而來；是推定的結果，不是辭典的標註') },
 }
 /** @param {string} type */
 export const matchTypeLabel = (type) => (type in MATCH_TYPES ? t(MATCH_TYPES[/** @type {keyof typeof MATCH_TYPES} */ (type)].label) : type)

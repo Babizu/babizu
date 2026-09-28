@@ -7,10 +7,10 @@ import MatchExplanation from '@/components/common/MatchExplanation.vue'
 import MatchTypeTag from '@/components/common/MatchTypeTag.vue'
 import MetaTag from '@/components/common/MetaTag.vue'
 import MorphologyExplanation from '@/components/common/MorphologyExplanation.vue'
-import { matchKindLabel } from '@/lib/labels.js'
+import { matchKindHint, matchKindLabel } from '@/lib/labels.js'
 
 defineProps({
-  /** search-core 的 EntryHit，或例句的 OccurrenceMatch（沒有 kind） */
+  /** search-core 的 EntryHit，或例句的 OccurrenceMatch（kind 為 token 時不標身分） */
   hit: { type: Object, required: true },
   query: { type: String, default: '' },
   /**
@@ -21,7 +21,7 @@ defineProps({
 </script>
 
 <template>
-  <MetaTag v-if="hit.kind && hit.kind !== 'head' && (showRootKind || hit.kind !== 'root')" variant="soft">
+  <MetaTag v-if="hit.kind && hit.kind !== 'head' && hit.kind !== 'token' && (showRootKind || hit.kind !== 'root')" variant="soft" :title="matchKindHint(hit.kind) || undefined">
     {{ matchKindLabel(hit.kind) }} <span class="native-text font-medium">{{ hit.term }}</span>
   </MetaTag>
   <span v-if="hit.analysis" class="relative z-10 inline-flex min-w-0">

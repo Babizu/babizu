@@ -1,5 +1,5 @@
 /**
- * 衍生關係圖（src/search/derivations.js）：建置時由 BCDP 求每個詞最好的詞根，查詢時由詞根往下找衍生形。
+ * 自動派生圖（src/search/derivations.js）：建置時由 BCDP 求每個詞最好的詞根，查詢時由詞根往下找自動派生形。
  * 資料是合成的，仿照 sungut（橋）→ pusungut（造橋）→ pausunguday（將要造橋；只出現在例句中）。
  */
 
@@ -110,7 +110,7 @@ describe('查詢：由詞根往下走', () => {
     expect(m?.analysis?.notes?.map((n) => `${n.source}→${n.target}`)).toEqual(['d→t'])
   })
 
-  it('直接的衍生形沒有 chain；詞條與例句都找得到', () => {
+  it('直接的自動派生形沒有 chain；詞條與例句都找得到', () => {
     const res = engine.search('sungut', { fields: ['native'] })
     const hit = res.entries.find((h) => h.doc.id === 'dict:pusungut')
     expect(hit).toMatchObject({ matchType: 'derived', distance: 0.3 })
@@ -118,7 +118,7 @@ describe('查詢：由詞根往下走', () => {
     expect(res.occurrences.find((o) => o.doc.id === 'dict:s2')?.matches[0]).toMatchObject({ term: 'masungut', matchType: 'derived' })
   })
 
-  it('路徑成本不超過上限；起點本身不算衍生形', () => {
+  it('路徑成本不超過上限；起點本身不算自動派生形', () => {
     const graph = /** @type {DerivationGraph} */ (engine.derivations)
     const id = (/** @type {string} */ t) => engine.index.dawg.lookup(t)
     const all = graph.descendants([{ id: id('sungut'), distance: 0 }]).map((r) => terms[r.word])
@@ -138,7 +138,7 @@ describe('查詢：由詞根往下走', () => {
     expect(m?.distance).toBeCloseTo(/** @type {number} */ (m?.analysis?.variantDistance) + 0.95, 9)
   })
 
-  it('沒有衍生關係圖時不找衍生形', () => {
+  it('沒有自動派生圖時不找自動派生形', () => {
     const bare = new SearchEngine(built)
     expect(bare.search('sungut', { fields: ['native'] }).occurrences.some((o) => o.matchType === 'derived')).toBe(false)
   })
@@ -151,5 +151,73 @@ describe('例句的命中說明', () => {
     const fuzzy = two?.matches[1]
     expect(fuzzy).toMatchObject({ term: 'pausunguday', matchType: 'fuzzy' })
     expect(fuzzy?.alignment?.length).toBeGreaterThan(0)
+  })
+})
+
+/** 另建一個小引擎（資料與規格各自獨立，不影響上面的圖） @param {any[]} list @param {object} morphology @param {any[]} [groups] */
+function engineOf(list, morphology, groups = []) {
+  const data = JSON.parse(JSON.stringify(buildSearchIndex({ items: list.map((record) => ({ record, shard: 'all' })), groups, sourceIds: ['dict'], profile: { ...PAZEH_PROFILE, morphology } })))
+  return new SearchEngine({ ...data, derivations: buildDerivationGraph(data) })
+}
+
+describe('構詞文法：p<a>u-…-ay 是一個組合規則（pu ＋ PROG ＋ IRR），不是兩個獨立的步驟', () => {
+  const GRAMMAR = {
+    cost: 0.2,
+    minStem: 3,
+    morphemes: [
+      { id: 'PU', type: 'prefix', form: 'pu' },
+      { id: 'PROG', type: 'infix', form: 'a' },
+      { id: 'IRR', type: 'suffix', form: 'ay' },
+    ],
+    constructions: [{ id: 'PU.IRR', sequence: ['PU', 'PROG', 'IRR'] }],
+    alternations: [{ underlying: 't', surface: 'd', position: 'final', cost: 0.05 }],
+  }
+  const g = engineOf([rec('sungut', 'word', 'sungut'), rec('pusungut', 'word', 'pusungut'), rec('s1', 'sentence', 'ini haw isia pausunguday')], GRAMMAR)
+
+  it('pausunguday 直接連到 sungut：一個步驟，由 pu、<a>、-ay 三個詞素構成', () => {
+    const m = g.search('sungut', { fields: ['native'] }).occurrences.find((o) => o.doc.id === 'dict:s1')?.matches[0]
+    expect(m?.analysis?.stem).toBe('sungut')
+    expect(m?.analysis?.chain).toBeUndefined()
+    expect(m?.analysis?.steps.map((s) => (s.parts ?? []).map((p) => `${p.id}=${p.form}`).join('+'))).toEqual(['PU=pu+PROG=a+IRR=ay'])
+    // 一個組合規則（0.2）＋ 詞根末的 t 在後綴前濁化（0.05）
+    expect(m?.analysis?.cost).toBeCloseTo(0.25, 9)
+  })
+})
+
+describe('例句：辭典列在詞條下的派生詞（辭典標註，不是自動派生）', () => {
+  const withRoot = (/** @type {string} */ localId, /** @type {string} */ text, /** @type {string} */ root) =>
+    createRecord(
+      { source: 'dict', localId, unit: 'word', text, citation: createCitation(`dict ${localId}`) },
+      { senses: [createSense({ zh: text })], morphology: { formType: 'free', segmentation: null, gloss: null, derivedFrom: [{ relation: '<', text: root }] } },
+    )
+  const d = engineOf(
+    [rec('usa', 'word', 'usa'), withRoot('mukusa', 'mukusa', 'usa'), rec('s1', 'sentence', 'dusa a batan'), rec('s2', 'sentence', 'mukusa di binayu')],
+    { cost: 0.3, minStem: 3, prefixes: [{ form: 'mu' }] },
+  )
+
+  it('查 usa：含 mukusa 的例句標為「辭典：衍生自 usa」，分數是 usa 的分數加一層，排在只是包含 usa 的 dusa 之前', () => {
+    const res = d.search('usa', { fields: ['native'] })
+    const ids = res.occurrences.map((o) => o.doc.id)
+    expect(ids.indexOf('dict:s2')).toBeLessThan(ids.indexOf('dict:s1'))
+    const o = res.occurrences.find((x) => x.doc.id === 'dict:s2')
+    expect(o?.matches[0]).toMatchObject({ word: 'usa', term: 'usa', token: 'mukusa', kind: 'root', matchType: 'fuzzy' })
+    expect(o?.score).toBeCloseTo(0.1, 9)
+    expect(o?.terms).toEqual(['mukusa'])
+  })
+
+  it('只從寫法與查詢相同的詞條展開：查相近寫法 uza（s → z）時，mukusa 不算辭典派生詞', () => {
+    const o = d.search('uza', { fields: ['native'] }).occurrences.find((x) => x.doc.id === 'dict:s2')
+    expect(o?.matches.some((m) => m.kind === 'root') ?? false).toBe(false)
+  })
+})
+
+describe('開頭相符又能自動派生的詞：附上派生的說明，分數取兩者較好的', () => {
+  const p = engineOf([rec('sungut', 'word', 'sungut'), rec('sungutan', 'word', 'sungutan')], { cost: 0.3, minStem: 3, suffixes: [{ form: 'an' }] })
+
+  it('查 sungut：sungutan 以自動派生（sungut ＋ -an）呈現，分數是開頭相符的 0.45（比自動派生的 0.7 好）', () => {
+    const hit = p.search('sungut', { fields: ['native'] }).entries.find((h) => h.doc.id === 'dict:sungutan')
+    expect(hit?.matchType).toBe('derived')
+    expect(hit?.analysis?.steps.map((s) => s.form)).toEqual(['an'])
+    expect(hit?.score).toBeCloseTo(0.45, 9)
   })
 })
