@@ -76,6 +76,8 @@ const methods = {
   checklistTokens: (p) => checklistFor(p).tokenPage(p),
   /** @param {{lexicalSources: string[], filter?: any, offset?: number, limit?: number}} p */
   checklistDuplicates: (p) => checklistFor(p).duplicatePage(p),
+  /** @param {{lexicalSources: string[], filter?: any, offset?: number, limit?: number}} p */
+  checklistSentences: (p) => checklistFor(p).sentencePage(p),
 }
 
 function requireEngine() {

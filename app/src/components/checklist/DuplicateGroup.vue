@@ -1,6 +1,6 @@
 <script setup>
 /**
- * 檢查清單：詞形完全相同的一組詞條，放在一起比對。
+ * 檢查清單：詞形完全相同的一組詞條（或句子完全相同的一組例句），放在一起比對。
  *
  * 每一筆一列：出處在左、釋義在右，縱向對齊，一眼看得出哪幾筆的釋義一樣。
  * 同一個來源內釋義也相同的列標「釋義相同」：那是最可能重複登錄的地方。
@@ -13,8 +13,10 @@ import { t } from '@/i18n.js'
 import { formatCount, recordRoute } from '@/lib/labels.js'
 
 const props = defineProps({
-  /** Checklist.duplicatePage 的一組 */
+  /** Checklist.duplicatePage／sentencePage 的一組 */
   group: { type: Object, required: true },
+  /** word：詞條（標題用大號詞形，比的是釋義）；sentence：例句（標題是整句，比的是翻譯） */
+  kind: { type: String, default: 'word' },
 })
 
 const { shortTitle } = useSources()
@@ -32,8 +34,8 @@ const repeated = computed(() => {
 <template>
   <li class="py-5">
     <div class="mb-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-      <h3 class="native-text text-xl leading-snug font-semibold">
-        <RouterLink :to="{ name: 'search', query: { q: group.text } }" class="hover:underline" :title="t('用這個詞搜尋')">
+      <h3 class="native-text leading-snug font-semibold" :class="kind === 'sentence' ? 'text-base' : 'text-xl'">
+        <RouterLink :to="{ name: 'search', query: { q: group.text } }" class="hover:underline" :title="kind === 'sentence' ? t('用這一句搜尋') : t('用這個詞搜尋')">
           {{ group.text }}
         </RouterLink>
       </h3>
@@ -59,9 +61,10 @@ const repeated = computed(() => {
           <span v-if="doc.zh || doc.en" class="gloss-zh min-w-0 text-sm">
             {{ doc.zh }}<span v-if="doc.en" class="text-muted-foreground" :class="doc.zh && 'ml-2'">{{ doc.en }}</span>
           </span>
-          <span v-else class="text-muted-foreground text-sm">{{ t('（沒有釋義）') }}</span>
+          <span v-else class="text-muted-foreground text-sm">{{ kind === 'sentence' ? t('（沒有翻譯）') : t('（沒有釋義）') }}</span>
           <DialectBadge v-for="d in doc.dialects" :key="d" :dialect="d" />
-          <MetaTag v-if="repeated.has(doc.id)" :title="t('同一個來源內，另一筆的釋義也完全相同')">{{ t('釋義相同') }}</MetaTag>
+          <MetaTag v-if="repeated.has(doc.id) && kind === 'sentence'" :title="t('同一個來源內，另一筆的翻譯也完全相同')">{{ t('翻譯相同') }}</MetaTag>
+          <MetaTag v-else-if="repeated.has(doc.id)" :title="t('同一個來源內，另一筆的釋義也完全相同')">{{ t('釋義相同') }}</MetaTag>
         </div>
       </li>
     </ul>

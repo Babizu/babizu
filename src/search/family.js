@@ -19,6 +19,16 @@
  *   排在只有 kinawas 一個例子的 <in> 條之前）；最後依 compareHits 比較最好的命中。
  * - 家族內樹根固定在最上面；同一層的子項目依子樹中最好的分數排，同分依辭典中的順序。
  * - 另立條目的詞目與同一層某個詞形寫法相同時（p.225 的 pakita 與 kita- 條下的 pakita），併成一列（`also`）。
+ *
+ * ## 同形詞組（查詢時，mergeSpellings）
+ * 不同來源（或同一來源的同形異義詞）各自登錄、寫法完全相同的詞，搜尋結果中合成一項：詞形只寫一次，
+ * 底下每筆記錄一列（釋義、方言、出處）。「寫法完全相同」比的是原始寫法（Unicode 正規化、去頭尾空白），
+ * 附加符號不同就是不同的寫法（maturai 與 mātūra͡i 分開）。
+ * - 只合併**單獨一筆**的結果；有上下層的家族（kita- 條）維持原樣，不塞進同形詞組。
+ * - 家族中也有同樣寫法的命中時（kita- 條下的 mikita），同形詞組另外列一份，標明它也在哪個詞條下，
+ *   讀者在同形詞組裡就能看到這個詞在所有來源的釋義。家族本身不變。
+ *   同一來源、釋義也相同的已經在組裡時不再列（辭典在詞條下與另立條目各列一次 apui，不是兩個不同的說法）。
+ * - 同形詞組排在其中最前面那一筆原本的位置。
  */
 
 /** 分數比較容許的浮點誤差（分數是幾個小數相加） */
@@ -140,10 +150,24 @@ export function computeParents(items, groups, searchKey) {
  */
 
 /**
- * @typedef {object} EntryGroup 搜尋結果中的一個詞條家族
- * @property {EntryNode} root 樹根（家族的代表）
- * @property {import('./engine.js').EntryHit} best 家族中最好的命中
- * @property {number} hits 家族中命中的記錄數
+ * @typedef {object} EntryGroup 搜尋結果中的一項：一個詞條家族，或一個同形詞組（有 spelling）
+ * @property {EntryNode} root 樹根（家族的代表）；同形詞組是第一筆單獨的結果
+ * @property {import('./engine.js').EntryHit} best 最好的命中
+ * @property {number} hits 命中的記錄數
+ * @property {SpellingSet} [spelling] 同形詞組（mergeSpellings）
+ */
+
+/**
+ * @typedef {object} SpellingSet 寫法完全相同的一組記錄
+ * @property {string} text 寫法
+ * @property {SpellingMember[]} members 依結果順序；也在家族中的排在最後
+ */
+
+/**
+ * @typedef {object} SpellingMember
+ * @property {import('./format.js').DocSummary} doc
+ * @property {import('./engine.js').EntryHit} hit
+ * @property {import('./format.js').DocSummary | null} family 也列在哪個家族（樹根）底下；單獨的結果是 null
  */
 
 /**
@@ -218,6 +242,90 @@ export function buildEntryGroups(hits, { parent, children = () => [], doc, key, 
       compareHits(a.best, b.best),
   )
   return groups.map(({ root, best, hits: n }) => ({ root, best, hits: n }))
+}
+
+/** 比對同形用的寫法：原始寫法，只做 Unicode 正規化與去頭尾空白（附加符號不同就是不同的寫法） @param {string} text */
+export const spellingOf = (text) => text.normalize('NFC').trim()
+
+/**
+ * 把寫法完全相同的單獨結果合成同形詞組（見檔頭「同形詞組」）。家族不變；家族中同樣寫法的命中另外列一份進同形詞組。
+ * @param {EntryGroup[]} groups buildEntryGroups 的結果（已排序）
+ * @returns {EntryGroup[]}
+ */
+export function mergeSpellings(groups) {
+  const single = (/** @type {EntryGroup} */ g) => g.root.children.length === 0 && g.root.also.length === 0 && g.root.hit !== null
+  /** @type {Map<string, EntryGroup[]>} 寫法 → 單獨的結果 */
+  const standalone = new Map()
+  for (const g of groups) {
+    if (!single(g)) continue
+    const key = spellingOf(g.root.doc.text)
+    const list = standalone.get(key)
+    if (list) list.push(g)
+    else standalone.set(key, [g])
+  }
+  /** @type {Map<string, SpellingMember[]>} 寫法 → 家族中同樣寫法的命中 */
+  const inFamily = new Map()
+  for (const g of groups) {
+    if (single(g)) continue
+    /** @param {EntryNode} node */
+    const visit = (node) => {
+      const member = representative(node, g.root.doc)
+      if (member && standalone.has(spellingOf(member.doc.text))) {
+        const key = spellingOf(member.doc.text)
+        const list = inFamily.get(key)
+        if (list) list.push(member)
+        else inFamily.set(key, [member])
+      }
+      node.children.forEach(visit)
+    }
+    visit(g.root)
+  }
+
+  /** @type {EntryGroup[]} */
+  const out = []
+  /** @type {Set<string>} */
+  const emitted = new Set()
+  for (const g of groups) {
+    if (!single(g)) {
+      out.push(g)
+      continue
+    }
+    const key = spellingOf(g.root.doc.text)
+    const alone = /** @type {EntryGroup[]} */ (standalone.get(key))
+    // 家族中的那一筆若與某筆單獨的結果同一來源、釋義也相同（辭典在詞條下與另立條目各列一次），不再重複
+    const same = new Set(alone.map((a) => sameEntryKey(a.root.doc)))
+    const extra = (inFamily.get(key) ?? []).filter((m) => !same.has(sameEntryKey(m.doc)))
+    if (alone.length + extra.length < 2) {
+      out.push(g)
+      continue
+    }
+    if (emitted.has(key)) continue
+    emitted.add(key)
+    /** @type {SpellingMember[]} */
+    const members = [
+      ...alone.map((a) => ({ doc: a.root.doc, hit: /** @type {import('./engine.js').EntryHit} */ (a.root.hit), family: null })),
+      ...extra,
+    ]
+    out.push({ root: g.root, best: g.best, hits: members.length, spelling: { text: key, members } })
+  }
+  return out
+}
+
+/** 同一來源、同樣釋義 @param {import('./format.js').DocSummary} doc */
+const sameEntryKey = (doc) => `${doc.source} ${doc.zh} ${doc.en}`
+
+/**
+ * 家族中一列作為同形詞組成員的代表：有命中的另立條目（完整的詞條，有自己的出處）優先，其次是這一列本身。
+ * @param {EntryNode} node
+ * @param {import('./format.js').DocSummary} family 家族的樹根
+ * @returns {SpellingMember | null}
+ */
+function representative(node, family) {
+  const head = node.also.find((a) => a.hit !== null && a.doc.role === 'head')
+  if (head) return { doc: head.doc, hit: /** @type {import('./engine.js').EntryHit} */ (head.hit), family }
+  if (node.hit) return { doc: node.doc, hit: node.hit, family }
+  const any = node.also.find((a) => a.hit !== null)
+  return any ? { doc: any.doc, hit: /** @type {import('./engine.js').EntryHit} */ (any.hit), family } : null
 }
 
 /**

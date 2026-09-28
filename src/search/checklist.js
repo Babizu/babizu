@@ -9,6 +9,8 @@
  *    模糊搜尋比較花時間，只在要顯示（或依類別篩選）時才做，結果快取。
  * 2. **完全相同的詞條**：辭典來源中詞形（原始寫法，只做 Unicode 正規化與去頭尾空白）完全相同的記錄，放在一起看。
  *    標出同一個來源內重複、跨來源，以及同一個來源內釋義也相同（最可能是重複登錄）。
+ * 3. **重複的例句**：所有來源（含語料）中句子完全相同的記錄（連續的空白視為一個），標記方式同上：
+ *    同一個來源內翻譯也相同的最可能是重複收錄。
  */
 
 import { decodePosting, docAt } from './format.js'
@@ -43,7 +45,11 @@ const WORDLIKE = /[\p{L}\p{N}]/u
  * @property {number} sources 分屬幾個來源
  * @property {boolean} sameSource 同一個來源內有重複
  * @property {boolean} crossSource 跨來源
- * @property {boolean} repeated 同一個來源內有兩筆的釋義也完全相同（最可能是重複登錄）
+ * @property {boolean} repeated 同一個來源內有兩筆的釋義（例句是翻譯）也完全相同（最可能是重複登錄）
+ */
+
+/**
+ * @typedef {{filter?: 'all' | 'repeated' | 'sameSource' | 'crossSource', offset?: number, limit?: number}} GroupPageOptions
  */
 
 /**
@@ -65,6 +71,8 @@ export class Checklist {
     this._tokens = null
     /** @type {DuplicateGroup[] | null} */
     this._duplicates = null
+    /** @type {DuplicateGroup[] | null} */
+    this._sentences = null
     /** @type {Map<string, {kind: TokenKind, hits: EntryHit[]}>} */
     this._candidates = new Map()
   }
@@ -162,46 +170,47 @@ export class Checklist {
     return { analyzed: this._candidates.size, counts }
   }
 
-  /** 辭典來源中詞形完全相同的記錄，依詞形排序 */
+  /** 辭典來源中詞形（原始寫法）完全相同的記錄，依詞形排序 */
   duplicateGroups() {
-    if (this._duplicates) return this._duplicates
     const docs = this.engine.docs
-    /** @type {Map<string, number[]>} */
-    const byText = new Map()
-    for (let k = 0; k < docs.id.length; k++) {
-      if (!this._isLexical(k) || docAt(docs, k).unit === 'sentence') continue
-      const text = docs.text[k].normalize('NFC').trim()
-      if (!text) continue
-      const list = byText.get(text)
-      if (list) list.push(k)
-      else byText.set(text, [k])
-    }
-    /** @type {DuplicateGroup[]} */
-    const out = []
-    for (const [text, ks] of byText) {
-      if (ks.length < 2) continue
-      const sources = new Set(ks.map((k) => docs.source[k]))
-      // 同一個來源、釋義也相同（沒有釋義的不算：只有詞形的詞表無從判斷）
-      const keyed = ks.filter((k) => docs.zh[k] || docs.en[k]).map((k) => `${docs.source[k]}\u0000${docs.zh[k]}\u0000${docs.en[k]}`)
-      out.push({
-        text,
-        docs: ks,
-        sources: sources.size,
-        sameSource: sources.size < ks.length,
-        crossSource: sources.size > 1,
-        repeated: new Set(keyed).size < keyed.length,
-      })
-    }
-    out.sort((a, b) => (a.text < b.text ? -1 : a.text > b.text ? 1 : 0))
-    return (this._duplicates = out)
+    return (this._duplicates ??= groupByText(
+      docs,
+      (k) => this._isLexical(k) && docAt(docs, k).unit !== 'sentence',
+      (text) => text.normalize('NFC').trim(),
+    ))
+  }
+
+  /** 所有來源（含語料）中句子完全相同的記錄（連續的空白視為一個），依句子排序 */
+  duplicateSentences() {
+    const docs = this.engine.docs
+    return (this._sentences ??= groupByText(
+      docs,
+      (k) => docAt(docs, k).unit === 'sentence',
+      (text) => text.normalize('NFC').replace(/\s+/gu, ' ').trim(),
+    ))
   }
 
   /**
    * 一頁「完全相同的詞條」。
-   * @param {{filter?: 'all' | 'repeated' | 'sameSource' | 'crossSource', offset?: number, limit?: number}} [options]
+   * @param {GroupPageOptions} [options]
    */
-  duplicatePage({ filter = 'all', offset = 0, limit = 30 } = {}) {
-    const all = this.duplicateGroups()
+  duplicatePage(options = {}) {
+    return this._groupPage(this.duplicateGroups(), options)
+  }
+
+  /**
+   * 一頁「重複的例句」。
+   * @param {GroupPageOptions} [options]
+   */
+  sentencePage(options = {}) {
+    return this._groupPage(this.duplicateSentences(), options)
+  }
+
+  /**
+   * @param {DuplicateGroup[]} all
+   * @param {GroupPageOptions} options
+   */
+  _groupPage(all, { filter = 'all', offset = 0, limit = 30 }) {
     const list = filter === 'all' ? all : all.filter((g) => g[filter])
     const docs = this.engine.docs
     return {
@@ -232,8 +241,46 @@ export class Checklist {
       tokens: this.tokenCount(),
       untreated: this.untreatedTokens().length,
       duplicates: this.duplicateGroups().length,
+      duplicateSentences: this.duplicateSentences().length,
     }
   }
+}
+
+/**
+ * 文字相同的記錄成組（至少兩筆），依文字排序。
+ * @param {import('./format.js').SearchDocs} docs
+ * @param {(k: number) => boolean} accept 要比對的記錄
+ * @param {(text: string) => string} normalize 比對用的寫法
+ * @returns {DuplicateGroup[]}
+ */
+function groupByText(docs, accept, normalize) {
+  /** @type {Map<string, number[]>} */
+  const byText = new Map()
+  for (let k = 0; k < docs.id.length; k++) {
+    if (!accept(k)) continue
+    const text = normalize(docs.text[k])
+    if (!text) continue
+    const list = byText.get(text)
+    if (list) list.push(k)
+    else byText.set(text, [k])
+  }
+  /** @type {DuplicateGroup[]} */
+  const out = []
+  for (const [text, ks] of byText) {
+    if (ks.length < 2) continue
+    const sources = new Set(ks.map((k) => docs.source[k]))
+    // 同一個來源、釋義也相同（沒有釋義的不算：只有詞形的詞表無從判斷）
+    const keyed = ks.filter((k) => docs.zh[k] || docs.en[k]).map((k) => `${docs.source[k]}\u0000${docs.zh[k]}\u0000${docs.en[k]}`)
+    out.push({
+      text,
+      docs: ks,
+      sources: sources.size,
+      sameSource: sources.size < ks.length,
+      crossSource: sources.size > 1,
+      repeated: new Set(keyed).size < keyed.length,
+    })
+  }
+  return out.sort((a, b) => (a.text < b.text ? -1 : a.text > b.text ? 1 : 0))
 }
 
 /**

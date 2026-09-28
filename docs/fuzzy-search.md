@@ -271,7 +271,21 @@ CPU 剖析顯示，時間的 43% 花在 `fillRow`，而其中大部分是這些�
 4. **家族內**同一層依子樹中最好的分數排，同分依辭典中的順序。
 
 分組只是重新排列：`entries` 仍是依分數排序的命中清單，`entryGroups` 是同一批命中依家族排列的結果，
-每個命中恰好出現一次。其他來源的同一個詞（分類詞表、詞彙表）不屬於辭典的詞條結構，各自成組。
+每個命中恰好出現一次。其他來源的同一個詞（分類詞表、詞彙表）不屬於辭典的詞條結構，交給下一步的同形詞組。
+
+### 同形詞組：寫法完全相同的單獨結果合成一項
+
+不同來源常各有一筆同一個詞（mikita 在噶哈巫分類辭典、潘德興詞彙表各一筆），分開列只是讓讀者一筆一筆比對。
+所以分組之後再做一步（`mergeSpellings`，查詢時計算，不動索引）：
+
+1. **只合併單獨的結果**（只有一筆、沒有子項目的組）。寫法的比較是 `spellingOf`：NFC 正規化、去掉頭尾空白，
+   **其餘逐字相同**——附加符號不同就是不同的寫法（maturai 與 mātūra͡i 分開），因為那是原書的轉寫差異，讀者要看得到。
+2. **家族維持原樣**：kita- 條與它底下的派生詞本身就是一個階層，不拆開、也不塞進詞組。
+   家族中寫法相同的那一列另外**複製一份**進詞組（`family` 指向家族的樹根），介面標「也列在 kita- 條下」，
+   讓跨來源比較時看得到辭典的那一筆；家族中原本的位置不變。
+   複製的那一筆若與某個單獨結果同一來源、釋義也相同（apui 的另立條目與 apu 條下的 apui），就不複製，避免同一筆出現兩次。
+3. **名次**：詞組排在其中第一個單獨結果原本的位置；總數與截斷都以合併後的項目計算。
+4. 至少兩筆才成組；只有一筆時仍是一般的結果列。
 
 評估（全部 2,075 組「衍生詞 < 詞根」，以衍生詞查詢）：詞根所在的家族排第一的比例 94.1%，
 幾乎等於詞根被找到的比例 94.7%；沒排第一的，多半是辭典把衍生詞列在詞綴條目底下（hahalipit 在 ha- 條），
@@ -380,7 +394,8 @@ const data = index.serialize() // FuzzyIndex.deserialize(data, metric)
 | `expandGrammar(spec, normalize)`、`validateGrammar`、`isGrammarSpec` | 構詞文法（[morph-grammar.md](morph-grammar.md)）：展開成平面清單（每項帶 `parts`、`rank`）、驗證、判斷寫法 |
 | `createMorphSearch({ analyzer, metric, index })` | 構詞搜尋 BCDP（[bcdp.md](bcdp.md)）：`search`、`prepare`／`seed`／`finish`（搭配多通道走訪）、`explain`（演算法實驗室）、`notesOf` |
 | `FuzzyIndex.searchChannels(channels)` | 多通道走訪；每個通道可帶交界狀態 `from`（起點）、`to`（詞尾耦合）、`onJunction`（回報詞尾的交界狀態）、`lockBoundary`、`cutoff`（共用的相對上限）、`initialFrom`（以某些字元開頭的詞改由另一個交界狀態出發）；`start`／`end` 是沒有跨界表的簡寫 |
-| `Checklist`（`babizu/search`） | 檢查清單：`untreatedTokens`／`tokenPage`（例句中沒有辭典條目的詞，並列最接近的詞條與猜的類別）、`duplicateGroups`／`duplicatePage`（詞形完全相同的詞條）、`summary` |
+| `Checklist`（`babizu/search`） | 檢查清單：`untreatedTokens`／`tokenPage`（例句中沒有辭典條目的詞，並列最接近的詞條與猜的類別）、`duplicateGroups`／`duplicatePage`（詞形完全相同的詞條）、`duplicateSentences`／`sentencePage`（所有來源中句子完全相同的例句，連續空白視為一個）、`summary` |
+| `mergeSpellings(groups)`、`spellingOf(text)`（`babizu/search`） | 同形詞組：寫法完全相同的單獨結果合成一項（見上「同形詞組」） |
 | `babizu/fst`（實驗性） | 通用 WFST：`compose`、`shortestDistance`、`editTransducer`、`surfaceLexicon`、`fstLemmaSearch` |
 
 搜尋引擎（`babizu/search`）在此之上處理記錄、斷詞、釋義搜尋與結果排序：

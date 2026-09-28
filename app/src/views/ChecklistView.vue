@@ -5,6 +5,7 @@
  * - 例句中沒有詞條的詞：例句、片語裡出現、卻沒有任何辭典來源建立條目的詞，
  *   並列辭典中最接近的詞條，方便判斷它是方言變體、沒被列出的加綴派生，還是真的缺條目。
  * - 完全相同的詞條：辭典來源中詞形完全相同的記錄，放在一起比對。
+ * - 重複的例句：所有來源中句子完全相同的記錄，放在一起比對。
  *
  * 兩份清單都由搜尋 Worker 以已載入的索引算出（babizu/search 的 Checklist），捲動時一頁一頁載入。
  * 分頁、篩選、排序都記在網址上，可以直接分享或重新整理。
@@ -37,7 +38,7 @@ const lexicalSources = computed(() => sources.value.filter((s) => s.type !== 'co
 
 // ── 網址上的狀態 ──
 const query = (/** @type {string} */ key) => (typeof route.query[key] === 'string' ? /** @type {string} */ (route.query[key]) : '')
-const tab = computed(() => (query('tab') === 'duplicates' ? 'duplicates' : 'tokens'))
+const tab = computed(() => (['duplicates', 'sentences'].includes(query('tab')) ? query('tab') : 'tokens'))
 const kind = computed(() => (TOKEN_KINDS.some((k) => k.value === query('kind')) ? query('kind') : 'all'))
 const sort = computed(() => (query('sort') === 'text' ? 'text' : 'count'))
 const filter = computed(() => (DUPLICATE_FILTERS.some((f) => f.value === query('filter')) ? query('filter') : 'all'))
@@ -50,7 +51,7 @@ function setQuery(patch) {
 }
 
 // ── 資料 ──
-/** @type {import('vue').ShallowRef<{entries: number, sentences: number, tokens: number, untreated: number, duplicates: number} | null>} */
+/** @type {import('vue').ShallowRef<{entries: number, sentences: number, tokens: number, untreated: number, duplicates: number, duplicateSentences: number} | null>} */
 const summary = shallowRef(null)
 const summaryError = shallowRef('')
 
@@ -59,7 +60,8 @@ const tokens = useInfiniteList(async (offset) => {
   return { items: page.items, hasMore: page.hasMore, meta: page }
 })
 const duplicates = useInfiniteList(async (offset) => {
-  const page = await client.checklist('checklistDuplicates', { lexicalSources: lexicalSources.value, filter: filter.value, offset, limit: PAGE_SIZE })
+  const method = tab.value === 'sentences' ? 'checklistSentences' : 'checklistDuplicates'
+  const page = await client.checklist(method, { lexicalSources: lexicalSources.value, filter: filter.value, offset, limit: PAGE_SIZE })
   return { items: page.items, hasMore: offset + page.items.length < page.total, meta: page }
 })
 
@@ -77,7 +79,8 @@ watch(
   { immediate: true },
 )
 watch([sourcesLoaded, tab, kind, sort], ([ready]) => ready && tab.value === 'tokens' && tokens.reset(), { immediate: true })
-watch([sourcesLoaded, tab, filter], ([ready]) => ready && tab.value === 'duplicates' && duplicates.reset(), { immediate: true })
+// 完全相同的詞條與重複的例句共用同一份清單狀態（一次只顯示一個）
+watch([sourcesLoaded, tab, filter], ([ready]) => ready && tab.value !== 'tokens' && duplicates.reset(), { immediate: true })
 
 // ── 顯示 ──
 const tokenMeta = computed(() => /** @type {any} */ (tokens.meta.value))
@@ -89,7 +92,14 @@ const analyzedAll = computed(() => tokenMeta.value && tokenMeta.value.analyzed >
 const TABS = computed(() => [
   { value: 'tokens', label: t('例句中沒有詞條的詞'), count: summary.value?.untreated },
   { value: 'duplicates', label: t('完全相同的詞條'), count: summary.value?.duplicates },
+  { value: 'sentences', label: t('重複的例句'), count: summary.value?.duplicateSentences },
 ])
+/** 目前這份組清單（詞條或例句）的說明 */
+const groupNote = computed(() =>
+  tab.value === 'sentences'
+    ? t('所有來源（含語料）中句子完全相同的記錄（連續的空白視為一個），依句子排序。「疑似重複登錄」是同一個來源內翻譯也相同的。')
+    : t('辭典與詞表中詞形（原始寫法）完全相同的記錄，依詞形排序。同一個詞在不同來源、不同義項各有一筆是常見的；「疑似重複登錄」是同一個來源內釋義也相同的。'),
+)
 
 const CHIP = 'inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-sm border px-3 text-sm transition-colors sm:min-h-9 active:translate-y-px motion-reduce:active:translate-y-0'
 /** 篩選晶片：與來源詞彙清單相同的外觀（選中的是主色實底） @param {boolean} active */
@@ -107,7 +117,7 @@ const sortChip = (active) => cn(CHIP, active ? 'bg-accent text-accent-foreground
     <header class="mb-6 max-w-3xl">
       <h1 class="font-serif text-3xl font-bold tracking-tight">{{ t('檢查清單') }}</h1>
       <p class="text-muted-foreground mt-2 leading-relaxed">
-        {{ t('給校對者的資料檢查：例句中出現、卻還沒有任何辭典條目的詞，以及不同來源之間詞形完全相同的詞條。清單直接由搜尋索引算出，資料更新後重新整理就是最新的。') }}
+        {{ t('給校對者的資料檢查：例句中出現、卻還沒有任何辭典條目的詞，詞形完全相同的詞條，以及重複的例句。清單直接由搜尋索引算出，資料更新後重新整理就是最新的。') }}
       </p>
     </header>
 
@@ -118,7 +128,7 @@ const sortChip = (active) => cn(CHIP, active ? 'bg-accent text-accent-foreground
       <section class="border-border mb-8 border-y py-4" aria-labelledby="h-checklist-stats">
         <h2 id="h-checklist-stats" class="sr-only">{{ t('統計') }}</h2>
         <StateMessage v-if="summaryError" tone="error" :title="t('統計載入失敗')" :description="summaryError" />
-        <dl v-else class="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-3 lg:grid-cols-5" :aria-busy="!summary">
+        <dl v-else class="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-3 lg:grid-cols-6" :aria-busy="!summary">
           <div>
             <dt class="text-muted-foreground text-xs">{{ t('辭典與詞表的條目') }}</dt>
             <dd class="font-serif text-2xl font-bold tabular-nums">
@@ -155,11 +165,20 @@ const sortChip = (active) => cn(CHIP, active ? 'bg-accent text-accent-foreground
               <Skeleton v-else class="mt-1 h-7 w-20" />
             </dd>
           </div>
+          <div>
+            <dt class="text-muted-foreground text-xs">{{ t('重複的例句') }}</dt>
+            <dd class="font-serif text-2xl font-bold tabular-nums">
+              <button v-if="summary" type="button" class="group hover:text-primary" @click="setQuery({ tab: 'sentences' })">
+                <span class="decoration-primary/40 group-hover:decoration-primary underline decoration-1 underline-offset-4">{{ formatCount(summary.duplicateSentences) }}</span><span class="text-muted-foreground ml-1.5 font-sans text-sm font-normal">{{ t('組') }}</span>
+              </button>
+              <Skeleton v-else class="mt-1 h-7 w-20" />
+            </dd>
+          </div>
         </dl>
       </section>
 
       <!-- 兩份清單：分頁用底線標出目前的一份，與頁首選單同一種語彙 -->
-      <div class="mb-4 flex gap-6 border-b" role="tablist" :aria-label="t('檢查清單')">
+      <div class="scrollbar-thin -mx-4 mb-4 flex gap-6 overflow-x-auto border-b px-4 sm:mx-0 sm:px-0" role="tablist" :aria-label="t('檢查清單')">
         <button
           v-for="item in TABS"
           :id="`tab-${item.value}`"
@@ -170,7 +189,7 @@ const sortChip = (active) => cn(CHIP, active ? 'bg-accent text-accent-foreground
           :aria-controls="`panel-${item.value}`"
           :class="
             cn(
-              '-mb-px inline-flex min-h-11 items-center gap-2 border-b-2 text-sm font-medium transition-colors',
+              '-mb-px inline-flex min-h-11 shrink-0 items-center gap-2 border-b-2 text-sm font-medium whitespace-nowrap transition-colors',
               tab === item.value ? 'border-primary text-foreground' : 'text-muted-foreground hover:text-foreground border-transparent',
             )
           "
@@ -254,8 +273,8 @@ const sortChip = (active) => cn(CHIP, active ? 'bg-accent text-accent-foreground
         </div>
       </section>
 
-      <!-- ── 完全相同的詞條 ── -->
-      <section v-else id="panel-duplicates" role="tabpanel" aria-labelledby="tab-duplicates">
+      <!-- ── 完全相同的詞條／重複的例句（同一種版面） ── -->
+      <section v-else :id="`panel-${tab}`" role="tabpanel" :aria-labelledby="`tab-${tab}`">
         <div class="scrollbar-thin -mx-4 flex gap-2 overflow-x-auto px-4 sm:mx-0 sm:flex-wrap sm:px-0" role="group" :aria-label="t('篩選')">
           <button
             v-for="f in DUPLICATE_FILTERS"
@@ -270,12 +289,10 @@ const sortChip = (active) => cn(CHIP, active ? 'bg-accent text-accent-foreground
             <span v-if="duplicateMeta" class="text-xs tabular-nums opacity-70">{{ formatCount(duplicateMeta.counts[f.value]) }}</span>
           </button>
         </div>
-        <p class="text-muted-foreground mt-3 text-xs">
-          {{ t('辭典與詞表中詞形（原始寫法）完全相同的記錄，依詞形排序。同一個詞在不同來源、不同義項各有一筆是常見的；「疑似重複登錄」是同一個來源內釋義也相同的。') }}
-        </p>
+        <p class="text-muted-foreground mt-3 text-xs">{{ groupNote }}</p>
 
         <ol class="mt-3 divide-y" :aria-busy="duplicates.loading.value">
-          <DuplicateGroup v-for="group in duplicates.items.value" :key="group.text" :group="group" />
+          <DuplicateGroup v-for="group in duplicates.items.value" :key="group.text" :group="group" :kind="tab === 'sentences' ? 'sentence' : 'word'" />
         </ol>
         <div v-if="duplicates.loading.value" class="divide-y" aria-hidden="true">
           <div v-for="k in duplicates.items.value.length ? 2 : 5" :key="k" class="space-y-2 py-5">
@@ -289,7 +306,7 @@ const sortChip = (active) => cn(CHIP, active ? 'bg-accent text-accent-foreground
         <StateMessage
           v-else-if="!duplicates.loading.value && !duplicates.hasMore.value && !duplicates.items.value.length"
           class="mt-4"
-          :title="t('沒有符合的詞條')"
+          :title="tab === 'sentences' ? t('沒有符合的例句') : t('沒有符合的詞條')"
           :description="t('換一個篩選看看。')"
         />
 

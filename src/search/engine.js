@@ -16,7 +16,7 @@
  */
 
 import { createMorphSearch, FuzzyIndex } from '../fuzzy/index.js'
-import { buildEntryGroups, collectHits } from './family.js'
+import { buildEntryGroups, collectHits, mergeSpellings } from './family.js'
 import { decodePosting, docAt, INDEX_FORMAT_VERSION } from './format.js'
 import { createTextTools, detectQueryMode, glossTokens, zhNormalize } from './text.js'
 
@@ -543,14 +543,17 @@ export class SearchEngine {
       }
     }
     response.entries = sortEntries([...entries.values()])
-    // 詞條家族：辭典確認屬於同一個詞條的命中排在一起，詞根條目在最上面（family.js）
-    response.entryGroups = buildEntryGroups(response.entries, {
-      parent: this.docs.parent,
-      children: (k) => this._childrenOf(k),
-      doc: (k) => this.doc(k),
-      key: (text) => this.text.searchKey(text),
-      compareHits,
-    })
+    // 詞條家族：辭典確認屬於同一個詞條的命中排在一起，詞根條目在最上面；
+    // 寫法完全相同的單獨結果再合成同形詞組（family.js）
+    response.entryGroups = mergeSpellings(
+      buildEntryGroups(response.entries, {
+        parent: this.docs.parent,
+        children: (k) => this._childrenOf(k),
+        doc: (k) => this.doc(k),
+        key: (text) => this.text.searchKey(text),
+        compareHits,
+      }),
+    )
     // 對齊與構詞說明只為前幾筆計算：分數最好的幾筆，以及畫面上依家族排列時的前幾列
     /** @param {EntryHit} hit */
     const explain = (hit) => {
@@ -561,7 +564,7 @@ export class SearchEngine {
     for (const hit of response.entries.slice(0, explainLimit)) explain(hit)
     let shown = 0
     for (const group of response.entryGroups) {
-      for (const hit of collectHits(group.root)) {
+      for (const hit of group.spelling ? group.spelling.members.map((m) => m.hit) : collectHits(group.root)) {
         if (shown++ >= explainLimit) break
         explain(hit)
       }

@@ -33,6 +33,8 @@ const records = [
   rec('corpus', 's2', 'ralan zzzqqq', { unit: 'sentence', zh: '句二' }),
   rec('corpus', 's3', 'mubaket daux', { unit: 'sentence', zh: '句三' }),
   rec('corpus', 'w1', 'ralan', { zh: '語料中的詞' }), // 語料來源的詞不算辭典條目
+  rec('corpus', 's4', 'mubaket  daux', { unit: 'sentence', zh: '句三' }), // 與 s3 只差空白、翻譯相同：重複收錄
+  rec('dict', 'x1', 'ralan zzzqqq', { unit: 'sentence', zh: '辭典的例句' }), // 與 s2 相同，但在另一個來源
 ]
 
 const profile = { ...PAZEH_PROFILE, morphology: { prefixes: [{ form: 'mu', gloss: 'AF' }] } }
@@ -43,9 +45,9 @@ const checklist = new Checklist(engine, ['dict', 'list'])
 describe('例句中沒有辭典條目的詞', () => {
   it('只列沒有辭典條目的詞（語料中的詞不算條目、標點不算詞），依出現次數再依詞排序', () => {
     expect(checklist.untreatedTokens().map((t) => [t.term, t.count])).toEqual([
-      ['mubaket', 2],
-      ['ralan', 2],
-      ['zzzqqq', 1],
+      ['mubaket', 3],
+      ['ralan', 3],
+      ['zzzqqq', 2],
     ])
   })
 
@@ -85,7 +87,18 @@ describe('完全相同的詞條', () => {
   })
 
   it('統計', () => {
-    expect(checklist.summary()).toEqual({ entries: 8, sentences: 3, tokens: 5, untreated: 3, duplicates: 3 })
+    expect(checklist.summary()).toEqual({ entries: 8, sentences: 5, tokens: 5, untreated: 3, duplicates: 3, duplicateSentences: 2 })
+  })
+})
+
+describe('重複的例句', () => {
+  it('所有來源中句子相同的記錄成組（連續的空白視為一個）；同一來源內翻譯也相同的標為疑似重複登錄', () => {
+    const groups = checklist.duplicateSentences().map((g) => ({ text: g.text, ids: g.docs.map((k) => engine.docs.id[k]), crossSource: g.crossSource, repeated: g.repeated }))
+    expect(groups).toEqual([
+      { text: 'mubaket daux', ids: ['corpus:s3', 'corpus:s4'], crossSource: false, repeated: true },
+      { text: 'ralan zzzqqq', ids: ['corpus:s2', 'dict:x1'], crossSource: true, repeated: false },
+    ])
+    expect(checklist.sentencePage({ filter: 'crossSource' }).items.map((g) => g.text)).toEqual(['ralan zzzqqq'])
   })
 })
 

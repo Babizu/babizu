@@ -33,10 +33,10 @@ export const TOKEN_KINDS = [
   },
 ]
 
-/** 完全相同的詞條：篩選 */
+/** 完全相同的詞條、重複的例句：篩選 */
 export const DUPLICATE_FILTERS = [
   { value: 'all', label: msg('全部') },
-  { value: 'repeated', label: msg('疑似重複登錄'), hint: msg('同一個來源內，詞形與釋義都相同的記錄') },
+  { value: 'repeated', label: msg('疑似重複登錄'), hint: msg('同一個來源內，文字與釋義（例句是翻譯）都相同的記錄') },
   { value: 'sameSource', label: msg('同一來源內') },
   { value: 'crossSource', label: msg('跨來源') },
 ]
