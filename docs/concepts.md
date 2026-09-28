@@ -91,7 +91,7 @@ flowchart LR
 ## 網站
 
 - **路由**（hash 模式，任何子路徑都能部署）：`/`（搜尋＝首頁）、`/r/:source/:localId`（詞條）、`/sources`、
-  `/sources/:source/list`、`/sources/:source/:shard?`（瀏覽）、`/lab`（演算法實驗室）、`/about`
+  `/sources/:source/list`、`/sources/:source/:shard?`（瀏覽）、`/checklist`（檢查清單）、`/lab`（演算法實驗室）、`/about`
 - **狀態**：搜尋條件都在網址參數；跨頁共用的狀態放在 `app/src/composables/` 的模組層級單例
 - **站台設定**以虛擬模組 `virtual:babizu/site` 注入；名稱、語系、方言顏色等首屏就需要的值直接寫進 `index.html`
 - **元件**：`components/ui/`（shadcn-vue new-york-v4 的 JavaScript 版）、`components/common/`（全站共用）、

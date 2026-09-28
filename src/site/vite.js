@@ -12,12 +12,16 @@ import vue from '@vitejs/plugin-vue'
 import { APP_DIR, FRAMEWORK_ROOT } from './paths.js'
 
 /**
- * 前端用到的套件：開發伺服器一律預先打包（optimizeDeps.include）。
- * 框架以 GitHub 標籤安裝時，前端原始碼在 node_modules/babizu 裡，Vite 把它當成「套件裡的程式」，
- * 不會自動預先打包它引用的套件：reka-ui 就以數百個原始檔載入，與預先打包的 vue 混用，
- * 元件之間的 provide／inject 對不上（對話框、彈出選單全部失效）。明列出來，開發與建置才一致。
+ * 前端用到的套件：開發伺服器只預先打包這些（optimizeDeps.include），並關掉自動探索（noDiscovery）。
+ *
+ * 框架以 GitHub 標籤安裝時，前端原始碼在 node_modules/babizu 裡，Vite 把它當成「套件裡的程式」：
+ * - 它引用的套件不會自動預先打包：reka-ui 以數百個原始檔載入，與預先打包的 vue 混用，
+ *   元件之間的 provide／inject 對不上（對話框、彈出選單全部失效）；
+ * - 反過來，`@/…`、`@babizu/…` 這類以 @ 開頭的別名，解析到 node_modules 裡，會被當成套件另外打包一份：
+ *   同一個模組兩份實體，全站共用的狀態（語系、來源清單、播放器）各自一份，改了程式也不會重新載入。
+ * 所以只打包明列的套件，其他一律當原始碼。新增前端依賴時要加進這裡（test/site/vite.test.js 檢查）。
  */
-const FRONTEND_DEPS = ['vue', 'vue-router', 'reka-ui', '@lucide/vue', '@vueuse/core', 'class-variance-authority', 'clsx', 'tailwind-merge', 'vue-sonner']
+export const FRONTEND_DEPS = ['vue', 'vue-router', 'reka-ui', '@lucide/vue', '@vueuse/core', 'class-variance-authority', 'clsx', 'tailwind-merge', 'vue-sonner']
 
 /**
  * 框架的依賴實際安裝的 node_modules 目錄（以 GitHub 標籤安裝時通常被提升到站台的 node_modules，
@@ -110,7 +114,7 @@ export function createViteConfig(site, { publicDir, port }) {
       // 同一個套件只能有一份（Vue 的 provide／inject、reka-ui 的元件 context 都靠模組實體相同）
       dedupe: ['vue', 'vue-router', 'reka-ui'],
     },
-    optimizeDeps: { include: FRONTEND_DEPS },
+    optimizeDeps: { include: FRONTEND_DEPS, noDiscovery: true },
     worker: { format: 'es' },
     build: {
       outDir: join(site.root, 'dist'),

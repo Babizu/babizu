@@ -380,6 +380,7 @@ const data = index.serialize() // FuzzyIndex.deserialize(data, metric)
 | `expandGrammar(spec, normalize)`、`validateGrammar`、`isGrammarSpec` | 構詞文法（[morph-grammar.md](morph-grammar.md)）：展開成平面清單（每項帶 `parts`、`rank`）、驗證、判斷寫法 |
 | `createMorphSearch({ analyzer, metric, index })` | 構詞搜尋 BCDP（[bcdp.md](bcdp.md)）：`search`、`prepare`／`seed`／`finish`（搭配多通道走訪）、`explain`（演算法實驗室）、`notesOf` |
 | `FuzzyIndex.searchChannels(channels)` | 多通道走訪；每個通道可帶交界狀態 `from`（起點）、`to`（詞尾耦合）、`onJunction`（回報詞尾的交界狀態）、`lockBoundary`、`cutoff`（共用的相對上限）、`initialFrom`（以某些字元開頭的詞改由另一個交界狀態出發）；`start`／`end` 是沒有跨界表的簡寫 |
+| `Checklist`（`babizu/search`） | 檢查清單：`untreatedTokens`／`tokenPage`（例句中沒有辭典條目的詞，並列最接近的詞條與猜的類別）、`duplicateGroups`／`duplicatePage`（詞形完全相同的詞條）、`summary` |
 | `babizu/fst`（實驗性） | 通用 WFST：`compose`、`shortestDistance`、`editTransducer`、`surfaceLexicon`、`fstLemmaSearch` |
 
 搜尋引擎（`babizu/search`）在此之上處理記錄、斷詞、釋義搜尋與結果排序：

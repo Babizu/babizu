@@ -118,6 +118,17 @@ export class SearchClient {
   }
 
   /**
+   * 檢查清單（/checklist）：頁首統計、例句中沒有詞條的詞、完全相同的詞條。
+   * @param {'checklistSummary' | 'checklistTokens' | 'checklistDuplicates'} method
+   * @param {{lexicalSources: string[]} & Record<string, unknown>} params 見 babizu/search 的 Checklist
+   * @returns {Promise<any>}
+   */
+  async checklist(method, params) {
+    await this.ready()
+    return this._call(method, params)
+  }
+
+  /**
    * @param {string} method
    * @param {unknown} params
    * @private

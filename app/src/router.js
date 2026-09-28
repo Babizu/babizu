@@ -44,6 +44,13 @@ export const router = createRouter({
       meta: { titleKey: msg('瀏覽') },
     },
     {
+      // 給校對者的資料檢查：不在主選單，由資料來源頁的說明連入
+      path: '/checklist',
+      name: 'checklist',
+      component: () => import('./views/ChecklistView.vue'),
+      meta: { titleKey: msg('檢查清單') },
+    },
+    {
       path: '/lab',
       name: 'lab',
       component: () => import('./views/LabView.vue'),

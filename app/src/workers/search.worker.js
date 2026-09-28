@@ -11,7 +11,7 @@
  * 錯誤訊息是給開發者看的技術細節，介面會另外加上翻譯過的說明。
  */
 
-import { SearchEngine } from '@babizu/search/index.js'
+import { Checklist, SearchEngine } from '@babizu/search/index.js'
 import { fetchWithRetry } from '../services/fetch-retry.js'
 
 /** @type {SearchEngine | null} */
@@ -45,6 +45,17 @@ async function init({ dataBase, version }) {
   return { records: ready.size, terms: ready.index.size }
 }
 
+/** @type {Checklist | null} 檢查清單（依辭典來源建立，計算結果留著給下一頁用） */
+let checklist = null
+/** @param {{lexicalSources: string[]}} p */
+function checklistFor({ lexicalSources }) {
+  const engine = requireEngine()
+  if (!checklist || checklist.engine !== engine || checklist.lexicalSources.join() !== lexicalSources.join()) {
+    checklist = new Checklist(engine, lexicalSources)
+  }
+  return checklist
+}
+
 /** 需要索引就緒的方法 */
 const methods = {
   /** @param {{query: string, options?: object}} p */
@@ -59,6 +70,12 @@ const methods = {
   explainNotes: (p) => requireEngine().explainNotes(p.query, p.term),
   /** @param {{query: string, term?: string | null, options?: object}} p */
   explainMorphology: (p) => requireEngine().explainMorphology(p.query, p.term ?? null, p.options),
+  /** @param {{lexicalSources: string[]}} p */
+  checklistSummary: (p) => checklistFor(p).summary(),
+  /** @param {{lexicalSources: string[], kind?: any, sort?: any, offset?: number, limit?: number}} p */
+  checklistTokens: (p) => checklistFor(p).tokenPage(p),
+  /** @param {{lexicalSources: string[], filter?: any, offset?: number, limit?: number}} p */
+  checklistDuplicates: (p) => checklistFor(p).duplicatePage(p),
 }
 
 function requireEngine() {

@@ -52,6 +52,9 @@ const notesOf = (s) => (s.notes ?? []).filter((note) => note.trim())
       <p class="text-muted-foreground mt-2">
         {{ t('每個來源都由獨立的轉接器轉成統一格式，原始拼寫與出處資訊完整保留。以下列出各來源的收錄內容與處理說明；點統計數字可以看該類別的完整清單。') }}
       </p>
+      <p class="text-muted-foreground mt-2 text-sm">
+        {{ t('校對資料時，') }}<RouterLink :to="{ name: 'checklist' }" class="text-primary font-medium hover:underline">{{ t('檢查清單') }}</RouterLink>{{ t('列出例句中還沒有辭典條目的詞，以及詞形完全相同的詞條。') }}
+      </p>
     </header>
 
     <StateMessage v-if="error" tone="error" :title="t('無法載入來源資訊')" :description="error" />
