@@ -5,7 +5,7 @@
 
 import { describe, expect, it } from 'vitest'
 import { createCitation, createRecord, createSense } from '../../src/schema/index.js'
-import { SearchEngine, buildSearchIndex } from '../../src/search/index.js'
+import { SearchEngine, buildDerivationGraph, buildSearchIndex } from '../../src/search/index.js'
 import { PAZEH_PROFILE } from '../fixtures/pazeh.js'
 
 const MORPHOLOGY = {
@@ -49,7 +49,8 @@ function engineWith(profile) {
     sourceIds: ['dict'],
     profile,
   })
-  return new SearchEngine(JSON.parse(JSON.stringify(built)))
+  const data = JSON.parse(JSON.stringify(built))
+  return new SearchEngine({ ...data, derivations: buildDerivationGraph(data) })
 }
 
 const withMorphology = engineWith({ ...PAZEH_PROFILE, morphology: MORPHOLOGY })
@@ -145,8 +146,8 @@ describe('第二版：派生詞列表與音變 ∘ 構詞的聯合搜尋', () =>
   it('衍生形方向也涵蓋查詢的方言變體：查 daux 找到 mudox（經由 dox）', () => {
     const hit = withMorphology.search('daux', { fields: ['native'] }).entries.find((h) => h.doc.id === 'dict:mudox')
     expect(hit?.matchType).toBe('derived')
-    expect(hit?.analysis).toMatchObject({ stem: 'dox', variantOf: 'daux', variantDistance: 0.1 })
-    expect(hit?.analysis?.notes?.map((n) => `${n.source}→${n.target}@${n.where}`)).toEqual(['au→o@stem'])
+    expect(hit?.analysis).toMatchObject({ stem: 'dox', variantOf: 'daux', variantDistance: 0.1, notes: [] })
+    expect(hit?.analysis?.variantNotes?.map((n) => `${n.source}→${n.target}`)).toEqual(['au→o'])
   })
 
   it('已移除的 lemmaDistance 會得到清楚的錯誤（音變改以整個詞計算）', () => {
@@ -195,14 +196,16 @@ describe('同一個詞有多種命中方式：取排序分數較好的一種', (
   // 回歸：原本構詞命中遇到同一個詞的模糊命中一律捨棄。查詢夠長時門檻變大（7 字元 1.25），
   // 刪掉短前綴（p 1.0 ＋ 閃音規則 0.1…）就落在門檻內，最好的構詞分析反而被較差的模糊命中蓋掉
   const multi = (() => {
-    const list = [rec('razem', 'word', 'razem', '賽跑'), rec('daux2', 'word', 'dauxi', '喝吧')]
+    // 衍生形由詞庫中的詞根往下找（衍生關係圖），所以詞根本身要在詞庫中
+    const list = [rec('razem', 'word', 'razem', '賽跑'), rec('daux', 'word', 'daux', '喝'), rec('daux2', 'word', 'dauxi', '喝吧')]
     const built = buildSearchIndex({
       items: list.map((record) => ({ record, shard: 'all' })),
       groups: [],
       sourceIds: ['dict'],
       profile: { ...PAZEH_PROFILE, morphology: { ...MORPHOLOGY, suffixes: [{ form: 'an' }, { form: 'i' }] } },
     })
-    return new SearchEngine(JSON.parse(JSON.stringify(built)))
+    const data = JSON.parse(JSON.stringify(built))
+    return new SearchEngine({ ...data, derivations: buildDerivationGraph(data) })
   })()
 
   it('詞根方向：查 parazem，razem 雖然也是模糊命中（1.2），仍以構詞命中（pa- ＋ razem）列出', () => {

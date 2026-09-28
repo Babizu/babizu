@@ -86,8 +86,6 @@ export class WeightedEditDistance {
     this.ruleSet =
       rules instanceof RuleSet ? rules : RuleSet.fromTable(/** @type {any} */ (rules ?? []))
     this.compiled = new CompiledRules(this.ruleSet.expand(this.normalize), this.boundaries)
-    /** @type {PathMatcher | null} jointDistance 的備用路徑匹配器（見該處） */
-    this._spareMatcher = null
     /** @type {PathMatcher | null} `_rows` 重複使用的路徑匹配器（屬於目前這組規則） */
     this._matcher = null
     /** `_rows` 的巢狀深度：追蹤回呼中又呼叫距離函式時，內層另外配置匹配器 */
@@ -451,100 +449,6 @@ export class WeightedEditDistance {
       junctions: offsets.slice(1),
       segmentOf,
     }
-  }
-
-  /**
-   * 整個詞（幾個詞素接起來）的聯合對齊距離：與 explainSegments 同一套交界語意，但不記轉移、不回溯，
-   * 只求距離（衍生形方向逐一驗證候選時用）。
-   * @param {string[]} x 查詢（已正規化）
-   * @param {Array<{chars: string[], lock?: boolean}>} segments 各詞素；lock：詞綴（不能消耗查詢的空白）
-   * @param {number} [bound=Infinity] 超過就不必算完（回傳 Infinity）：成本只增不減，某一列全部超過就停
-   * @param {Map<string, import('./dp.js').QueryPlan>} [plans] 同一個查詢的編譯結果（依 lock 分兩份），
-   *   逐一驗證很多種分析時共用（第 0 列的起點每一段重設）
-   * @returns {number}
-   */
-  jointDistance(x, segments, bound = Infinity, plans = new Map()) {
-    const compiled = this.compiled
-    const n = x.length
-    // 底層字串與 x 完全相同：逐字相同的對齊成本是 0，距離不會是負的
-    let same = segments.reduce((len, seg) => len + seg.chars.length, 0) === n
-    for (let k = 0, i = 0; same && k < segments.length; k++) {
-      for (const ch of segments[k].chars) if (ch !== x[i++]) same = false
-    }
-    if (same) return 0
-    // 路徑匹配器借用一個備用的（配置它不便宜；各段依序使用，跨界狀態在換段前已經取出）
-    const matcher = this._spareMatcher ?? new PathMatcher(compiled)
-    this._spareMatcher = null
-    try {
-      return this._jointDistance(x, segments, bound, plans, matcher)
-    } finally {
-      this._spareMatcher = matcher
-    }
-  }
-
-  /**
-   * jointDistance 的主體。
-   * @param {string[]} x
-   * @param {Array<{chars: string[], lock?: boolean}>} segments
-   * @param {number} bound
-   * @param {Map<string, any>} plans
-   * @param {PathMatcher} matcher
-   * @private
-   */
-  _jointDistance(x, segments, bound, plans, matcher) {
-    const compiled = this.compiled
-    const n = x.length
-    /** @type {{row: Float64Array, pending: Array<{node: number, row: Float64Array}>} | null} */
-    let state = null
-    let result = Infinity
-    for (let k = 0; k < segments.length; k++) {
-      const seg = segments[k]
-      const m = seg.chars.length
-      const last = k === segments.length - 1
-      const key = seg.lock ? 'lock' : 'free'
-      let plan = plans.get(key)
-      if (!plan) plans.set(key, (plan = compiled.compileQuery(x, this.costs, { junctions: true, lockBoundary: Boolean(seg.lock) })))
-      plan.start = state ? state.row : null
-      /** @type {import('./dp.js').Crossing[]} */
-      const cross = []
-      if (state && state.pending.length) {
-        const c0 = createCrossing(state.pending.length)
-        state.pending.forEach((p, q) => {
-          c0.nodes[q] = p.node
-          c0.rows[q] = p.row
-          c0.mins[q] = Math.min(...p.row)
-        })
-        c0.count = state.pending.length
-        cross[0] = c0
-      }
-      /** @type {Float64Array[]} */
-      const rows = []
-      const rowAt = (/** @type {number} */ r) => rows[r]
-      for (let j = 0; j <= m; j++) {
-        if (j > 0) matcher.set(j, compiled.idOf(seg.chars[j - 1]))
-        let crossing = null
-        if (j > 0 && cross[j - 1]?.count) crossing = advanceCrossing(compiled, cross[j - 1], matcher.ids[j - 1], (cross[j] = createCrossing(cross[0].nodes.length)))
-        const column = prepareColumn(plan, compiled, matcher, j, rowAt, k === 0 ? EDGE_WORD : EDGE_JUNCTION, crossing)
-        const fin = j < m ? (compiled.isBoundary(seg.chars[j]) ? EDGE_WORD : EDGE_NONE) : last ? EDGE_WORD : EDGE_JUNCTION
-        const row = new Float64Array(n + 1)
-        const min = fillRow(plan, compiled, column, fin, row)
-        rows.push(row)
-        // 剪枝：這一列與還能跨列的規則都超過上限，之後只會更大（同詞圖搜尋的下界）
-        // 第 0 列的跨界狀態是前一段留下、還沒走完的規則：不參與這一列的計算，但下界要算進去（同詞圖搜尋）
-        const unfinished = j === 0 ? (cross[0] ?? null) : crossing
-        if (min > bound + EPSILON && jumpBound(compiled, matcher, j, (r) => Math.min(...rows[r]), unfinished) > bound + EPSILON) return Infinity
-      }
-      /** @type {Array<{node: number, row: Float64Array}>} */
-      const pending = []
-      const base = m * matcher.cap
-      for (let q = 0; q < matcher.counts[m]; q++) {
-        const s = matcher.states[base + q]
-        if (compiled.trieJump[s] !== Infinity) pending.push({ node: s, row: rows[m - compiled.trieDepth[s]] })
-      }
-      state = { row: rows[m], pending }
-      if (last) result = rows[m][n]
-    }
-    return roundCost(result)
   }
 
   /**

@@ -12,7 +12,7 @@ import { describe, expect, it } from 'vitest'
 import { createAnalyzer, validateMorphology } from '../../src/fuzzy/morphology.js'
 import { evaluate, expandGrammar } from '../../src/fuzzy/grammar.js'
 import { createCitation, createRecord, createSense } from '../../src/schema/index.js'
-import { SearchEngine, buildSearchIndex } from '../../src/search/index.js'
+import { SearchEngine, buildDerivationGraph, buildSearchIndex } from '../../src/search/index.js'
 import { PAZEH_PROFILE } from '../fixtures/pazeh.js'
 import { createRandom, pick } from './helpers.js'
 
@@ -238,7 +238,8 @@ describe('以文法搜尋（原本的 BCDP，只多了包覆單位）', () => {
   it('衍生形方向：查 usa 找到 mausay（辭典沒有標註，由構詞分析連起來），說明是 AF.IRR', () => {
     const recs = ['usa', 'mausay'].map((w) => rec(w, w))
     const b = buildSearchIndex({ items: recs.map((record) => ({ record, shard: 'all' })), groups: [], sourceIds: ['dict'], profile: { ...PAZEH_PROFILE, morphology: GRAMMAR } })
-    const hit = new SearchEngine(JSON.parse(JSON.stringify(b))).search('usa', { fields: ['native'] }).entries.find((h) => h.doc.id === 'dict:mausay')
+    const data = JSON.parse(JSON.stringify(b))
+    const hit = new SearchEngine({ ...data, derivations: buildDerivationGraph(data) }).search('usa', { fields: ['native'] }).entries.find((h) => h.doc.id === 'dict:mausay')
     expect(hit?.matchType).toBe('derived')
     expect(partsOf(hit?.analysis)).toEqual(['AF=m+PROG=a+IRR=ay'])
   })

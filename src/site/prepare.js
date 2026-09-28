@@ -10,6 +10,7 @@
  * data/search/docs.json            搜尋結果顯示用的摘要（欄式）
  * data/search/lexicon.json         序列化的詞圖索引
  * data/search/language.json        建索引時用的語言設定檔（查詢端必須用同一份）
+ * data/search/derivations.json     衍生關係圖（查詞根找到加綴變化；見 src/search/derivations.js）
  * data/media/…、data/scans/…        從資料集複製（增量；已不存在的會刪除）
  * <站台 public/ 的檔案>             站徽等
  * ```
@@ -20,6 +21,7 @@ import { copyFile, mkdir, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname, join, relative } from 'node:path'
 import { readDataset, validateDataset } from '../dataset.js'
 import { buildSearchIndex } from '../search/index.js'
+import { buildDerivations } from './derivations.js'
 
 /** 網站資料格式版本；前端讀到不同版本時會要求重新建置 */
 export const SITE_DATA_VERSION = 2
@@ -87,6 +89,17 @@ export async function prepareSiteData(site, { log = console.log } = {}) {
   await writeJson('search/language.json', index.profile)
   log(
     `✓ 搜尋索引：${index.docs.count} 筆記錄、${index.stats.terms} 個詞、詞圖 ${index.stats.nodes} 節點／${index.stats.edges} 邊（${Date.now() - t1} ms）`,
+  )
+  const t2 = Date.now()
+  const derivations = await buildDerivations({
+    lexicon: index.lexicon,
+    profile: index.profile,
+    count: index.stats.terms,
+    cacheDir: join(site.root, '.babizu', 'cache'),
+  })
+  await writeJson('search/derivations.json', derivations.data)
+  log(
+    `✓ 衍生關係圖：${derivations.data.edges.length / 3} 條邊、${derivations.data.analyses.length} 種分析（${derivations.cached ? '快取' : `${Date.now() - t2} ms`}）`,
   )
 
   // 4. 媒體、掃描圖、站台的靜態檔（增量同步，並刪掉已不存在的檔案）

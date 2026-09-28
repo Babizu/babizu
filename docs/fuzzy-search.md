@@ -173,7 +173,7 @@ CPU 剖析顯示，時間的 43% 花在 `fillRow`，而其中大部分是這些�
 | 標準，含構詞 | 12.87／60.73 ms | 4.24／28.12 ms | 3.0× |
 | 寬鬆，含構詞 | 29.82／119.83 ms | 9.26／40.66 ms | 3.2× |
 
-當時含構詞的 p95 仍偏高，來源不是詞圖搜尋，而是「衍生形」方向對每個候選詞重跑列舉式構詞分析。2026-09 的改動（必要條件 `mayDerive`、分析備忘等）之後，含構詞・標準的 p95 是 10–12 ms；改成整個詞計算音變之後的數字見 [bcdp.md](bcdp.md) 第 13 節。
+當時含構詞的 p95 仍偏高，來源不是詞圖搜尋，而是「衍生形」方向對每個候選詞重跑列舉式構詞分析。v0.5.4 起衍生形方向改由建置時的衍生關係圖處理，查詢時只走圖（[bcdp.md](bcdp.md) 第 10 節）；數字見 bcdp.md 第 13 節。
 
 ## 8. 短查詢與前綴：為什麼還需要另一套索引
 
@@ -357,7 +357,7 @@ DAWG 則是幾個 TypedArray（CSR 格式的 `edgeStart`／`edgeTarget`、邊標
 語言設定檔有 `morphology`（見 [language-profile.md](language-profile.md#morphology-構詞選填)）時，搜尋會多兩種命中：
 
 - **詞根相符**（`lemma`）：查衍生詞，找到詞根。例如 `minudox` → `daux-`：`minu-` ＋ `dox`，其中 dox → daux 是 o→au 的方言音變。
-- **衍生形**（`derived`）：查詞根，找到詞庫與例句中由它衍生的詞，包括中綴與重疊形式。
+- **衍生形**（`derived`）：查詞根，找到詞庫與例句中由它衍生的詞，包括中綴、重疊形式，以及衍生詞的衍生詞（查 sungut 經 pusungut 找到 pausunguday）。建置時對每個詞以 BCDP 求最好的詞根，存成衍生關係圖（`search/derivations.json`），查詢時由查詢往下走（[bcdp.md](bcdp.md) 第 10 節）。寬鬆時查詢的所有模糊命中也當起點。
 
 「詞根相符」使用 **BCDP（Boundary-Coupled DP，邊界耦合 DP）**：一個分析的成本是構詞步驟的成本，加上查詢與整個底層字串（詞綴 · 詞根 · 詞綴）的加權編輯距離，同一套方言規則對整個詞計算，可以跨越詞素交界。DP 走到一個交界時，之後的計算只需要**交界狀態**（交界上的一列，加上還沒走完、跨越交界的規則），不同來源的交界狀態逐項取 min 就能精確合併。所以前綴鏈、後綴鏈各自一層一層走詞綴 trie、合併成一個狀態；詞幹與普通模糊搜尋共用一次詞圖走訪（`FuzzyIndex.searchChannels`），起點是合併後的前綴狀態，走到詞尾時與後綴狀態耦合，得到的就是精確成本。第 1–6 節的遞推式不變；交界狀態的值都不小於 0，所以剪枝的下界照樣成立，另外再用詞尾耦合的位能與「最佳 ＋ `lemmaSpread`」的相對上限收緊（bcdp.md 第 4–7 節）。
 
@@ -384,18 +384,19 @@ const data = index.serialize() // FuzzyIndex.deserialize(data, metric)
 
 | 類別／函式 | 說明 |
 |---|---|
-| `WeightedEditDistance` | `distance`、`normalizedDistance(q, c, 'max' \| 'sum' \| 'query')`、`explain`、`setRules`、`setCosts`（正規化函式不可替換）；同一個查詢對很多候選字串時：`prepareQuery(prepare(q))` 一次，再 `distancePrepared(plan, prepare(c))`；構詞用：`mirror()`（鏡像距離函式）、`jointDistance`／`explainSegments`（幾個詞素接起來的聯合對齊） |
+| `WeightedEditDistance` | `distance`、`normalizedDistance(q, c, 'max' \| 'sum' \| 'query')`、`explain`、`setRules`、`setCosts`（正規化函式不可替換）；同一個查詢對很多候選字串時：`prepareQuery(prepare(q))` 一次，再 `distancePrepared(plan, prepare(c))`；構詞用：`mirror()`（鏡像距離函式）、`explainSegments`（幾個詞素接起來的聯合對齊） |
 | `RuleSet` | `add(source, target, weight, { position, bidirectional, category })`、`RuleSet.fromTable(groups)`、`enable`／`disable(category)`、`categories()` |
 | `CostModel` | 基本成本與單一字元覆寫 |
 | `FuzzyIndex` | `add`、`addAll`、`lookup`、`search`、`searchWithStats`、`freeze`、`terms`、`payloads`、`dawg`、`serialize`／`deserialize` |
 | `createNormalizer(options)` | 建立正規化函式；`DEFAULT_CHAR_MAP` 是預設字元對應 |
 | `createMetricFromProfile`、`createRulesFromProfile`、`validateProfile` | 由語言設定檔建立 |
-| `createAnalyzer(spec, normalize)` | 構詞分析器：`analyze`（去詞綴）、`generate`（還原詞綴）、`coreForms`；文法寫法的規格先展開 |
+| `createAnalyzer(spec, normalize)` | 構詞分析器：`analyze`（去詞綴）、`generate`（還原詞綴）；文法寫法的規格先展開 |
 | `expandGrammar(spec, normalize)`、`validateGrammar`、`isGrammarSpec` | 構詞文法（[morph-grammar.md](morph-grammar.md)）：展開成平面清單（每項帶 `parts`、`rank`）、驗證、判斷寫法 |
 | `createMorphSearch({ analyzer, metric, index })` | 構詞搜尋 BCDP（[bcdp.md](bcdp.md)）：`search`、`prepare`／`seed`／`finish`（搭配多通道走訪）、`explain`（演算法實驗室）、`notesOf` |
 | `FuzzyIndex.searchChannels(channels)` | 多通道走訪；每個通道可帶交界狀態 `from`（起點）、`to`（詞尾耦合）、`onJunction`（回報詞尾的交界狀態）、`lockBoundary`、`cutoff`（共用的相對上限）、`initialFrom`（以某些字元開頭的詞改由另一個交界狀態出發）；`start`／`end` 是沒有跨界表的簡寫 |
 | `Checklist`（`babizu/search`） | 檢查清單：`untreatedTokens`／`tokenPage`（例句中沒有辭典條目的詞，並列最接近的詞條與猜的類別）、`duplicateGroups`／`duplicatePage`（詞形完全相同的詞條）、`duplicateSentences`／`sentencePage`（所有來源中句子完全相同的例句，連續空白視為一個）、`summary` |
 | `mergeSpellings(groups)`、`spellingOf(text)`（`babizu/search`） | 同形詞組：寫法完全相同的單獨結果合成一項（見上「同形詞組」） |
+| `buildDerivationGraph({lexicon, profile})`、`DerivationGraph`（`babizu/search`） | 衍生關係圖：建置（單執行緒；網站建置用平行版本）與查詢端的走訪（`descendants`）；`SearchEngine` 的 `derivations` 選項 |
 | `babizu/fst`（實驗性） | 通用 WFST：`compose`、`shortestDistance`、`editTransducer`、`surfaceLexicon`、`fstLemmaSearch` |
 
 搜尋引擎（`babizu/search`）在此之上處理記錄、斷詞、釋義搜尋與結果排序：

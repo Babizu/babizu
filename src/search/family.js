@@ -312,7 +312,7 @@ export function mergeSpellings(groups) {
 }
 
 /** 同一來源、同樣釋義 @param {import('./format.js').DocSummary} doc */
-const sameEntryKey = (doc) => `${doc.source} ${doc.zh} ${doc.en}`
+const sameEntryKey = (doc) => `${doc.source}\u0000${doc.zh}\u0000${doc.en}`
 
 /**
  * 家族中一列作為同形詞組成員的代表：有命中的另立條目（完整的詞條，有自己的出處）優先，其次是這一列本身。

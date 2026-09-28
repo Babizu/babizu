@@ -1,13 +1,15 @@
 <script setup>
 /**
  * 搜尋結果：查詢詞出現在其中的例句或語料句，命中的詞以高亮標示。
+ * 每個查詢詞怎麼命中這一句（模糊對齊、自動拆解、衍生形）用與詞條相同的標籤（HitTags）說明；
+ * 多詞查詢時每組標籤前面寫出句中命中的詞。
  */
 import { computed } from 'vue'
 import AudioButton from '@/components/common/AudioButton.vue'
 import DialectBadge from '@/components/common/DialectBadge.vue'
 import HighlightText from '@/components/common/HighlightText.vue'
-import MatchTypeTag from '@/components/common/MatchTypeTag.vue'
 import { recordRoute } from '@/lib/labels.js'
+import HitTags from './HitTags.vue'
 import ResultCitation from './ResultCitation.vue'
 
 const props = defineProps({
@@ -16,6 +18,8 @@ const props = defineProps({
 })
 
 const doc = computed(() => props.hit.doc)
+/** 各查詢詞的命中；舊版的回應沒有 matches 時只顯示命中方式 */
+const matches = computed(() => props.hit.matches ?? [{ word: '', term: '', matchType: props.hit.matchType, distance: 0 }])
 </script>
 
 <template>
@@ -32,7 +36,10 @@ const doc = computed(() => props.hit.doc)
       </p>
       <div class="flex flex-wrap items-center gap-2">
         <DialectBadge v-for="d in doc.dialects" :key="d" :dialect="d" />
-        <MatchTypeTag :match-type="hit.matchType" />
+        <span v-for="(m, k) in matches" :key="k" class="inline-flex min-w-0 flex-wrap items-center gap-2">
+          <span v-if="matches.length > 1" class="native-text text-muted-foreground text-xs">{{ m.term }}</span>
+          <HitTags :hit="m" :query="m.word" />
+        </span>
         <ResultCitation :source="doc.source" :citation="doc.citation" :status="doc.status" />
       </div>
     </div>

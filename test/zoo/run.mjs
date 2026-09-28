@@ -38,7 +38,7 @@ function copyDir(from, to) {
 
 const work = mkdtempSync(join(tmpdir(), 'babizu-zoo-'))
 const modules = join(work, 'node_modules')
-for (const dir of ['src', 'test', 'locales', 'app']) copyDir(join(ROOT, dir), join(work, dir))
+for (const dir of ['src', 'test', 'locales', 'app', 'examples']) copyDir(join(ROOT, dir), join(work, dir))
 for (const file of ['package.json', 'vitest.config.js']) copyFileSync(join(ROOT, file), join(work, file))
 symlinkSync(join(ROOT, 'node_modules'), modules, 'junction')
 const vitest = join(ROOT, 'node_modules', 'vitest', 'vitest.mjs')

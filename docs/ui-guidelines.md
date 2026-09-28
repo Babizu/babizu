@@ -75,6 +75,18 @@
 3. **出處**：來源簡稱 · 出處說明（`ResultCitation`）
 4. 播放鈕固定在右側、垂直置中
 
+### 例句（搜尋結果）
+
+- 句子在最上面（命中的詞以高亮標出），下面是翻譯，最下面一列是方言、命中說明、出處。
+- 命中說明與詞條用同一個元件（`HitTags`）：
+  - 衍生形、自動拆解是可以點開的拆解說明（`MorphologyExplanation`）；
+  - 模糊命中是 ≈ 對齊標籤（`MatchExplanation`）；
+  - 前綴、包含是文字標籤。
+- 多詞查詢時每個查詢詞一組標籤，前面用次要字色寫出句中命中的詞。
+- 衍生形經過其他衍生詞時（查 sungut 找到 pausunguday，經 pusungut）：
+  - 標籤仍只寫最後一層（「pusungut ＋ ‹a› ＋ -ay」）；
+  - 上面幾層在彈出框裡逐層列出（「pusungut ＝ pu- ＋ sungut」），每層附成本。
+
 ### 詞條家族（搜尋結果）
 
 辭典確認屬於同一個詞條的命中排成一個區塊（`EntryGroupItem`；排序規則見 [fuzzy-search.md](fuzzy-search.md)）：

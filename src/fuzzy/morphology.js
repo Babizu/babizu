@@ -296,11 +296,6 @@ export function alternationRules(spec) {
  *   結果有備忘，所以是深度凍結的（不能修改）
  * @property {() => void} clearCache 清掉 analyze 的備忘（量測冷快取時用）
  * @property {(stem: string, steps: MorphStep[]) => string} generate 還原詞綴
- * @property {(stem: string) => string[]} coreForms 詞幹在衍生詞中可能的核心形式（找衍生詞時用）
- * @property {(term: string, stem: string, limit?: number) => Array<{prefixes: Array<{form: string, gloss: Gloss, cost: number}>, segment: string, op: MorphStep | null, circumfix: MorphStep | null, suffixes: Array<{form: string, gloss: Gloss, cost: number}>}>} derivations
- *   衍生形方向的候選分析（「前綴鏈 · 核心形式 · 後綴鏈」的結構，交界上容許一個字元的出入）
- * @property {(term: string, stem: string, cores?: string[]) => boolean} mayDerive
- *   衍生形方向的候選條件：term 是否可能是「詞綴 · stem 的核心形式 · 詞綴」（交界上容許一個字元的出入）
  * @property {(w: string) => string} onset 詞首的輔音（群）
  * @property {(pattern: ReduplicationPattern, base: string) => string | null} reduplicant 詞幹 base 套用重疊模式時前面要加的字串
  * @property {(pattern: ReduplicationPattern, rest: string[], red: string) => number[]} reduplicantStems
@@ -390,8 +385,6 @@ export function createAnalyzer(spec, normalize = (s) => s) {
   const len = (s) => Array.from(s).length
   /** 第一個、最後一個 code point @param {string} w */
   const firstChar = (w) => String.fromCodePoint(/** @type {number} */ (w.codePointAt(0)))
-  /** 位置 p（UTF-16）開始的 code point @param {string} w @param {number} p */
-  const charAt = (w, p) => String.fromCodePoint(/** @type {number} */ (w.codePointAt(p)))
   const lastChar = (/** @type {string} */ w) => {
     const lo = w.charCodeAt(w.length - 1)
     const hi = w.charCodeAt(w.length - 2)
@@ -415,14 +408,6 @@ export function createAnalyzer(spec, normalize = (s) => s) {
   }
   const prefixesByFirst = bucket(prefixes, firstChar)
   const suffixesByLast = bucket(suffixes, lastChar)
-  /** mayDerive 用：環綴兩側的部分也算詞綴（只是必要條件，放寬不影響結果） */
-  const circPrefixes = circumfixes
-    .map((c) => (c.kind === 'prefix' ? c.left : c.outer))
-    .filter(Boolean)
-    .map((form) => ({ form, gloss: null, cost: 0 }))
-  const circSuffixes = circumfixes.filter((c) => c.suffix).map((c) => ({ form: c.suffix, gloss: c.gloss, cost: c.cost }))
-  const outerPrefixesByFirst = bucket([...prefixes, ...circPrefixes], firstChar)
-  const suffixesByFirst = bucket([...suffixes, ...circSuffixes], firstChar)
   /** @type {Array<{affix: typeof prefixes[number], length: number}>} */
   const none = []
   /** 詞首的輔音（群）：第一個元音之前的所有字元 @param {string} w */
@@ -691,215 +676,10 @@ export function createAnalyzer(spec, normalize = (s) => s) {
     return w
   }
 
-  /**
-   * 詞幹在衍生詞中可能呈現的「核心形式」：詞幹本身，以及中綴、重疊、詞幹交替改變後的樣子。
-   * 前綴、後綴只加在外面，衍生詞一定含有其中一種核心形式——所以「找出某個詞幹的所有衍生詞」
-   * 可以先找含有核心形式的詞，再用 analyze 驗證，不必列舉所有詞綴組合。
-   * @param {string} stem
-   * @returns {string[]}
-   */
-  function coreForms(stem) {
-    const out = new Set([stem])
-    for (const x of infixes) out.add(generate(stem, [step('infix', x.form, null, 0)]))
-    for (const r of reduplication) {
-      const red = reduplicant(r.pattern, stem)
-      if (red) out.add(red + stem)
-    }
-    for (const c of circumfixes) {
-      if (c.kind === 'infix') out.add(generate(stem, [step('infix', c.left, null, 0)]))
-      if (c.kind === 'reduplication') {
-        const red = reduplicant(/** @type {ReduplicationPattern} */ (c.left), stem)
-        if (red) out.add(red + stem)
-      }
-    }
-    for (const a of alternations) {
-      if (a.position !== 'initial' && stem.endsWith(a.underlying)) out.add(stem.slice(0, stem.length - a.underlying.length) + a.surface)
-      if (a.position !== 'final' && stem.startsWith(a.underlying)) out.add(a.surface + stem.slice(a.underlying.length))
-    }
-    return [...out].filter(Boolean)
-  }
-
-  /**
-   * 衍生形方向（查詞根、找衍生詞）的候選條件：term 是否可能是「前綴鏈 · 核心形式 · 後綴鏈」，
-   * 其中前綴鏈、後綴鏈是詞綴原樣的串接（至多各 maxSteps 個），核心形式（coreForms）是詞幹本身，
-   * 或加了中綴、重疊、構詞音變後的樣子。詞綴與核心形式的交界上容許一個字元的出入：交界上的增生
-   * （例如喉塞音 tau'alawan）、元音合併（ta-kita-aw → takitaw）都只影響交界旁的一個字元。
-   * 這是衍生形方向的定義的一部分（docs/bcdp.md 第 10 節）：詞典中的衍生詞是標準寫法，
-   * 詞綴不會有方言音變；成立的候選再以 BCDP 驗證（詞庫只有 stem）。
-   * 例外：詞幹沒有元音時，中綴的位置（首輔音之後）會落到後綴裡，核心形式不連續，這時一律回傳 true。
-   * @param {string} term
-   * @param {string} stem
-   * @param {string[]} [cores] coreForms(stem)（呼叫端已經算好時傳入）
-   */
-  function mayDerive(term, stem, cores = coreForms(stem)) {
-    if (infixes.length && !Array.from(stem).some((c) => vowels.has(c))) return true
-    const L = term.length
-    // pre[p]：term[0..p) 最少由幾個前綴拼成；suf[q]：term[q..L) 最少由幾個後綴拼成（UTF-16 位置，與 indexOf 一致）
-    const pre = new Float64Array(L + 1).fill(Infinity)
-    pre[0] = 0
-    for (let p = 0; p < L; p++) {
-      if (pre[p] > maxSteps) continue
-      for (const { affix } of outerPrefixesByFirst.get(charAt(term, p)) ?? none) {
-        if (term.startsWith(affix.form, p)) pre[p + affix.form.length] = Math.min(pre[p + affix.form.length], pre[p] + 1)
-      }
-    }
-    const suf = new Float64Array(L + 1).fill(Infinity)
-    suf[L] = 0
-    for (let q = L - 1; q >= 0; q--) {
-      for (const { affix } of suffixesByFirst.get(charAt(term, q)) ?? none) {
-        if (term.startsWith(affix.form, q)) suf[q] = Math.min(suf[q], suf[q + affix.form.length] + 1)
-      }
-    }
-    // 交界上可以有一個字元的出入：交界上的增生（例如喉塞音）、元音合併、詞素邊緣的構詞音變
-    const near = (/** @type {Float64Array} */ arr, /** @type {number} */ at) => Math.min(arr[at - 1] ?? Infinity, arr[at] ?? Infinity, arr[at + 1] ?? Infinity)
-    for (const core of cores) {
-      for (let p = term.indexOf(core); p !== -1; p = term.indexOf(core, p + 1)) {
-        // 環綴兩側各多一個部分，所以上限是 maxSteps ＋ 1
-        if (near(pre, p) <= maxSteps + 1 && near(suf, p + core.length) <= maxSteps + 1) return true
-      }
-    }
-    return false
-  }
-
-  /**
-   * 衍生形方向的候選分析：term 拆成「前綴鏈 · 核心形式 · 後綴鏈」的所有方式——詞綴原樣（至多各 maxSteps 個），
-   * 詞綴與核心形式的交界上容許一個字元的出入（交界上的增生、元音合併）。這裡只列出結構；
-   * 每一種都要再以整個詞的聯合對齊驗證（WeightedEditDistance.jointDistance），交界上的出入、
-   * 構詞音變的成本都在那裡計算（docs/bcdp.md 第 10 節）。
-   * @param {string} term
-   * @param {string} stem
-   * @param {number} [limit=32] 最多列出幾種
-   * @returns {Array<{prefixes: Array<{form: string, gloss: Gloss, cost: number}>, segment: string, op: MorphStep | null,
-   *   circumfix: MorphStep | null, suffixes: Array<{form: string, gloss: Gloss, cost: number}>}>}
-   *   prefixes、suffixes 由外而內（不含環綴的兩側）；segment 是詞幹在底層字串中的樣子（中綴、重疊的核心形式含
-   *   非串接的部分；構詞音變的核心形式用詞幹本身，讓 DP 算它的成本）；circumfix 是環綴（緊貼詞幹）
-   */
-  function derivations(term, stem, limit = 32) {
-    /** @type {Array<{form: string, segment: string, op: MorphStep | null}>} */
-    const cores = [{ form: stem, segment: stem, op: null }]
-    for (const x of infixes) {
-      const f = generate(stem, [step('infix', x.form, null, 0)])
-      cores.push({ form: f, segment: f, op: step('infix', x.form, x.gloss, x.cost, x.parts) })
-    }
-    for (const r of reduplication) {
-      const red = reduplicant(r.pattern, stem)
-      if (red) cores.push({ form: red + stem, segment: red + stem, op: { type: 'reduplication', form: red, pattern: r.pattern, gloss: r.gloss, cost: r.cost, ...(r.parts ? { parts: r.parts } : {}) } })
-    }
-    for (const a of alternations) {
-      if (a.position !== 'initial' && a.underlying && stem.endsWith(a.underlying)) cores.push({ form: stem.slice(0, stem.length - a.underlying.length) + a.surface, segment: stem, op: null })
-      if (a.position !== 'final' && a.underlying && stem.startsWith(a.underlying)) cores.push({ form: a.surface + stem.slice(a.underlying.length), segment: stem, op: null })
-    }
-    const L = term.length
-    /** 前綴鏈：preAt[p] ＝ term[0..p) 原樣拼成的所有前綴鏈（由外而內） @type {Map<number, Array<typeof prefixes>>} */
-    const preAt = new Map([[0, [[]]]])
-    /** @param {number} p @param {typeof prefixes} chain */
-    const walkPrefixes = (p, chain) => {
-      if (chain.length >= maxSteps || p >= L) return
-      for (const { affix } of prefixesByFirst.get(charAt(term, p)) ?? none) {
-        if (!term.startsWith(affix.form, p)) continue
-        const q = p + affix.form.length
-        const next = [...chain, affix]
-        if (!preAt.has(q)) preAt.set(q, [])
-        preAt.get(q)?.push(next)
-        walkPrefixes(q, next)
-      }
-    }
-    walkPrefixes(0, [])
-    /** 後綴鏈：sufAt[q] ＝ term[q..L) 原樣拼成的所有後綴鏈（由外而內） @type {Map<number, Array<typeof suffixes>>} */
-    const sufAt = new Map([[L, [[]]]])
-    /** @param {number} q @param {typeof suffixes} chain */
-    const walkSuffixes = (q, chain) => {
-      if (chain.length >= maxSteps || q <= 0) return
-      for (const { affix } of suffixesByLast.get(lastChar(term.slice(0, q))) ?? none) {
-        if (!term.endsWith(affix.form, q)) continue
-        const p = q - affix.form.length
-        const next = [...chain, affix]
-        if (!sufAt.has(p)) sufAt.set(p, [])
-        sufAt.get(p)?.push(next)
-        walkSuffixes(p, next)
-      }
-    }
-    walkSuffixes(L, [])
-
-    /** @type {ReturnType<typeof derivations>} */
-    const out = []
-    const seen = new Set()
-    for (const core of cores) {
-      for (let p = term.indexOf(core.form); p !== -1 && out.length < limit; p = term.indexOf(core.form, p + 1)) {
-        const q = p + core.form.length
-        for (const p2 of [p, p - 1, p + 1]) {
-          for (const q2 of [q, q + 1, q - 1]) {
-            for (const pre of preAt.get(p2) ?? []) {
-              for (const suf of sufAt.get(q2) ?? []) {
-                if (pre.length + suf.length === 0 && !core.op) continue // 至少一個構詞步驟
-                const key = `${pre.map((a) => a.form).join('+')}|${core.segment}|${core.op?.form ?? ''}|${suf.map((a) => a.form).join('+')}`
-                if (seen.has(key) || out.length >= limit) continue
-                seen.add(key)
-                out.push({ prefixes: pre, segment: core.segment, op: core.op, circumfix: null, suffixes: suf })
-              }
-            }
-          }
-        }
-      }
-    }
-
-    // 環綴：左邊的部分緊貼詞幹（前綴接在核心形式左邊；中綴、重疊已在核心形式裡），後綴接在右邊；
-    // 兩個交界各容許一個字元的出入，外面再接原樣的前綴鏈、後綴鏈
-    /** 同一個重疊型式的重疊部分只算一次 @type {Map<string, string | null>} */
-    const reds = new Map()
-    for (const c of circumfixes) {
-      /** 緊貼詞幹、在核心形式左邊的前綴：前綴式的左邊，或中綴、重疊式外側的前綴（可以沒有） */
-      const before = c.kind === 'prefix' ? c.left : c.outer
-      // 後綴、左邊的前綴根本不在 term 裡的環綴不必試：大多數環綴在這裡就略過
-      if (!term.includes(c.suffix) || !term.includes(before)) continue
-      /** @type {Array<{form: string, segment: string, left: string}>} */
-      const inner = []
-      if (c.kind === 'prefix') {
-        // 要求詞幹元音開頭的（m<a>- 在元音開頭的詞根上）：詞根不是元音開頭就不適用
-        if (c.vowelStem && !vowels.has(firstChar(stem))) continue
-        for (const core of cores) if (!core.op) inner.push({ form: core.form, segment: core.segment, left: c.left })
-      } else if (c.kind === 'infix') {
-        const f = generate(stem, [step('infix', c.left, null, 0)])
-        inner.push({ form: f, segment: f, left: c.left })
-      } else {
-        let red = reds.get(c.left)
-        if (red === undefined) reds.set(c.left, (red = reduplicant(/** @type {ReduplicationPattern} */ (c.left), stem)))
-        if (red) inner.push({ form: red + stem, segment: red + stem, left: red })
-      }
-      for (const core of inner) {
-        /** @type {MorphStep | null} */
-        let circ = null
-        for (let p = term.indexOf(core.form); p !== -1 && out.length < limit; p = term.indexOf(core.form, p + 1)) {
-          const q = p + core.form.length
-          for (const p2 of [p, p - 1, p + 1]) {
-            const start = p2 - before.length
-            if (start < 0 || !term.startsWith(before, start)) continue
-            for (const q2 of [q, q + 1, q - 1]) {
-              if (!term.startsWith(c.suffix, q2)) continue
-              for (const pre of preAt.get(start) ?? []) {
-                for (const suf of sufAt.get(q2 + c.suffix.length) ?? []) {
-                  const key = `${pre.map((a) => a.form).join('+')}|${core.segment}|${c.outer}+${core.left}…${c.suffix}|${suf.map((a) => a.form).join('+')}`
-                  if (seen.has(key) || out.length >= limit) continue
-                  seen.add(key)
-                  circ ??= circumfixStep(c, core.left)
-                  out.push({ prefixes: pre, segment: core.segment, op: null, circumfix: circ, suffixes: suf })
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-    return out
-  }
-
   return {
     analyze,
-    derivations,
     clearCache: () => memo.clear(),
     generate,
-    coreForms,
-    mayDerive,
     onset,
     reduplicant,
     reduplicantStems,

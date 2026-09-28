@@ -355,8 +355,8 @@ describe('交界狀態：一段一段走 ＝ 整個詞的聯合對齊', () => {
   })
 })
 
-describe('jointDistance（衍生形方向的驗證）', () => {
-  it('前綴 · 詞幹 · 後綴的聯合對齊 ＝ ref-joint；上限內相等，超過上限時也超過', () => {
+describe('explainSegments：整個詞的聯合對齊', () => {
+  it('前綴 · 詞幹 · 後綴的聯合對齊距離 ＝ ref-joint', () => {
     const random = createRandom(6007)
     let same = 0
     let crossing = 0
@@ -383,13 +383,11 @@ describe('jointDistance（衍生形方向的驗證）', () => {
       const J1 = Array.from(p).length
       const J2 = J1 + Array.from(t).length
       const want = refJoint(ctx, x, Array.from(p + t + s), { junctions: [J1, J2], stem: [J1, J2] })
-      const bound = pick(random, [0.2, 0.5, Infinity])
-      const got = metric.jointDistance(x, segments, bound)
+      const got = metric.explainSegments(x, segments).distance
       if (x.join('') === p + t + s) same++
-      if (want <= bound + EPSILON) expect(close(got, want), `p=${p} t=${t} s=${s} x=${x.join('')}：${got} ≠ ${want} rules=${JSON.stringify(ctx.rules)} bound=${bound}`).toBe(true)
-      else expect(got, `p=${p} t=${t} s=${s} x=${x.join('')}：${got} 應超過 ${bound}（ref ${want}）`).toBeGreaterThan(bound + EPSILON)
+      expect(close(got, want), `p=${p} t=${t} s=${s} x=${x.join('')}：${got} ≠ ${want} rules=${JSON.stringify(ctx.rules)}`).toBe(true)
     }
-    // reaching check：逐字相同（捷徑）與刻意跨界的情形都出現過
+    // reaching check：逐字相同與刻意跨界的情形都出現過
     expect(same).toBeGreaterThan(20)
     expect(crossing).toBeGreaterThan(50)
   })
@@ -432,6 +430,6 @@ describe('構詞音變只在詞素交界適用', () => {
     const m = new WeightedEditDistance({ rules, normalize: (s) => s, costs: { substitute: 1, delete: 1, insert: 1 } })
     expect(m.distance('alebi', 'alepi')).toBe(1)
     const x = Array.from('alebi')
-    expect(m.jointDistance(x, [{ chars: Array.from('alep'), lock: false }, { chars: ['i'], lock: true }])).toBeCloseTo(0.05, 9)
+    expect(m.explainSegments(x, [{ chars: Array.from('alep'), lock: false }, { chars: ['i'], lock: true }]).distance).toBeCloseTo(0.05, 9)
   })
 })

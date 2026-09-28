@@ -5,6 +5,8 @@
  * - 每個構詞步驟與語法說明、步驟本身的成本。構詞文法的組合規則（m<a>-…-ay）另外列出由哪些詞素構成
  * - 整個詞一起比對的音變（docs/bcdp.md 1.2）：每一個標出落在前綴、詞幹、後綴，或詞素交界
  *   （例如 takitaw 的 aa → a 跨越詞幹與後綴的交界）
+ * - 衍生形經過其他衍生詞時（查 sungut 找到 pausunguday，經 pusungut），逐層列出上面幾層
+ * - 由查詢的相近寫法出發時（寬鬆查 sugut，經 sungut），列出兩者的差異
  */
 import { computed } from 'vue'
 import { Badge } from '@/components/ui/badge'
@@ -24,7 +26,7 @@ import {
 } from '@/lib/labels.js'
 
 const props = defineProps({
-  /** search 引擎的 LemmaAnalysis：{ stem, steps, cost, variantOf?, notes? } */
+  /** search 引擎的 LemmaAnalysis：{ stem, steps, cost, notes?, chain?, variantOf?, variantDistance?, variantNotes? } */
   analysis: { type: Object, required: true },
   /** lemma（查詢去詞綴 → 這個詞）或 derived（這個詞去詞綴 → 查詢） */
   matchType: { type: String, required: true },
@@ -42,7 +44,22 @@ const intro = computed(() =>
 /** 整個詞的音變（只為前幾筆結果計算，其餘為 null） */
 const notes = computed(() => /** @type {Array<{op: string, source: string, target: string, cost: number, category: string | null, where: string}>} */ (props.analysis.notes ?? []))
 const soundCost = computed(() => notes.value.reduce((sum, n) => sum + n.cost, 0))
-const hasSoundChange = computed(() => notes.value.length > 0 || props.analysis.cost > props.analysis.steps.reduce((sum, s) => sum + s.cost, 0) + 1e-9)
+/** @param {Array<{cost: number}>} steps */
+const stepCost = (steps) => steps.reduce((sum, s) => sum + s.cost, 0)
+/** 衍生形經過的上層（由起點往下；不含最後一層，那一層就是 stem、steps） */
+const chain = computed(() => /** @type {Array<{term: string, stem: string, steps: any[], cost: number}>} */ (props.analysis.chain ?? []))
+/** 這一層本身的成本：總成本扣掉起點的距離與上面幾層 */
+const ownCost = computed(() => props.analysis.cost - (props.analysis.variantDistance ?? 0) - chain.value.reduce((sum, c) => sum + c.cost, 0))
+/** 任何一層有音變，或起點是查詢的相近寫法 */
+const hasSoundChange = computed(
+  () =>
+    notes.value.length > 0 ||
+    (props.analysis.variantDistance ?? 0) > 0 ||
+    ownCost.value > stepCost(props.analysis.steps) + 1e-9 ||
+    chain.value.some((c) => c.cost > stepCost(c.steps) + 1e-9),
+)
+/** 起點（詞庫中的詞根）：有上層時是最上面那一層的詞根 */
+const root = computed(() => chain.value[0]?.stem ?? props.analysis.stem)
 /** 步驟的名稱：由幾個詞素構成的（構詞文法的組合規則）顯示「組合規則」，其他依類型 @param {any} step */
 const stepLabel = (step) => morphStepLabel(step.parts?.length > 1 ? 'construction' : step.type)
 /** 詞素的寫法（組合規則展開的每一個詞素） @param {{type: string, form: string}} part @param {number} k */
@@ -70,7 +87,23 @@ const partLabel = (part, k) => (part.type === 'prefix' ? `${part.form}-` : part.
       <p class="font-medium">{{ t('拆解說明') }}</p>
       <!-- 查詢 → 詞根，接著說明這是演算法推定的結果，不是分析標註 -->
       <p class="native-text mt-1.5 text-base leading-tight">{{ intro }}</p>
-      <p v-if="analysis.variantOf" class="text-muted-foreground mt-1 text-xs">{{ t('查詢「{query}」是「{stem}」的方言寫法。', { query: analysis.variantOf, stem: analysis.stem }) }}</p>
+      <div v-if="analysis.variantOf" class="text-muted-foreground mt-1 text-xs">
+        <p>{{ t('查詢「{query}」與詞庫中的「{root}」寫法相近，由「{root}」找衍生形。', { query: analysis.variantOf, root }) }}</p>
+        <p v-if="analysis.variantNotes?.length" class="mt-0.5 flex flex-wrap items-baseline gap-x-2">
+          <code v-for="(n, k) in analysis.variantNotes" :key="k" class="bg-muted native-text rounded px-1">{{ formatStep(n) }}</code>
+          <span class="font-mono tabular-nums">+{{ formatDistance(analysis.variantDistance) }}</span>
+        </p>
+      </div>
+      <!-- 經過其他衍生詞：先列出上面幾層（由詞根往下），下面的步驟是最後一層 -->
+      <div v-if="chain.length" class="mt-2">
+        <p class="text-muted-foreground text-xs">{{ t('「{stem}」本身是「{root}」的衍生形：', { stem: analysis.stem, root }) }}</p>
+        <ul class="border-border mt-1 ml-1 space-y-0.5 border-l pl-2">
+          <li v-for="(level, k) in chain" :key="k" class="flex items-baseline justify-between gap-3 text-xs">
+            <span class="native-text min-w-0">{{ level.term }} ＝ {{ morphSummary(level) }}</span>
+            <span class="text-muted-foreground font-mono tabular-nums">+{{ formatDistance(level.cost) }}</span>
+          </li>
+        </ul>
+      </div>
       <ul class="mt-3 space-y-1.5">
         <li v-for="(step, k) in analysis.steps" :key="k">
           <div class="flex items-baseline justify-between gap-3">

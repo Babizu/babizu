@@ -62,6 +62,7 @@ flowchart LR
 | `search/docs.json` | 進站後在 Web Worker 背景載入 | 每筆記錄的搜尋結果摘要（欄式儲存）、語言變體的位元對照與包含關係 |
 | `search/lexicon.json` | 同上 | 序列化的詞圖（DAWG）與 posting |
 | `search/language.json` | 同上 | 語言設定檔（Worker 用它處理查詢） |
+| `search/derivations.json` | 同上 | 衍生關係圖：每個詞由 BCDP 求得的最好詞根，查詞根時往下找衍生形（[bcdp.md](bcdp.md) 第 10 節；沒有構詞規格時是空的） |
 | `records/<來源>/<分片>.json` | 開啟詞條頁、瀏覽頁時 | 完整記錄與群組 |
 | `media/…`、`scans/…` | 播放、查看掃描頁時 | 音檔、原書掃描圖 |
 

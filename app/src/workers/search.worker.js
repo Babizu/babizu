@@ -30,12 +30,13 @@ async function init({ dataBase, version }) {
         if (!res.ok) throw new Error(`Cannot load ${path} (HTTP ${res.status})`)
         return res.json()
       }
-      const [docs, lexicon, profile] = await Promise.all([
+      const [docs, lexicon, profile, derivations] = await Promise.all([
         fetchJson('search/docs.json'),
         fetchJson('search/lexicon.json'),
         fetchJson('search/language.json'),
+        fetchJson('search/derivations.json'),
       ])
-      engine = new SearchEngine({ docs, lexicon, profile })
+      engine = new SearchEngine({ docs, lexicon, profile, derivations })
       engine.warmup()
       return engine
     })()

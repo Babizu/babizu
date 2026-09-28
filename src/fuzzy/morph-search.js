@@ -875,15 +875,6 @@ export function createMorphSearch({ analyzer, metric, index }) {
   }
 
   /**
-   * 任意一組詞素的音變說明（衍生形方向用）：整個詞的聯合對齊，標出每一步落在哪裡。
-   * @param {string[]} x 查詢（衍生形方向是衍生詞本身）
-   * @param {Array<{chars: string[], lock: boolean, type: 'prefix' | 'stem' | 'suffix'}>} segments
-   */
-  function notesFor(x, segments) {
-    return notesFrom(x, segments, metric.explainSegments(x, segments))
-  }
-
-  /**
    * @param {string[]} _x
    * @param {Array<{type: 'prefix' | 'stem' | 'suffix'}>} segments
    * @param {ReturnType<typeof metric.explainSegments>} explanation
@@ -1024,7 +1015,7 @@ export function createMorphSearch({ analyzer, metric, index }) {
     }
   }
 
-  return { search, prepare, seed, finish, explain, explainHit, notesOf, notesFor, derive, clearCache: () => cache.clear() }
+  return { search, prepare, seed, finish, explain, explainHit, notesOf, derive, clearCache: () => cache.clear() }
 }
 
 /**

@@ -16,6 +16,7 @@
  */
 
 import { createMorphSearch, FuzzyIndex } from '../fuzzy/index.js'
+import { DerivationGraph } from './derivations.js'
 import { buildEntryGroups, collectHits, mergeSpellings } from './family.js'
 import { decodePosting, docAt, INDEX_FORMAT_VERSION } from './format.js'
 import { createTextTools, detectQueryMode, glossTokens, zhNormalize } from './text.js'
@@ -25,9 +26,10 @@ import { createTextTools, detectQueryMode, glossTokens, zhNormalize } from './te
  * normalization 一律用 'max'（距離 ÷ 較長字串長度），避免短查詢配到長詞。
  */
 export const FUZZINESS = Object.freeze({
-  exact: { label: '精確', maxDistance: () => 0, maxNormalized: Infinity },
-  normal: { label: '標準', maxDistance: (n) => clamp(0.2 + 0.15 * n, 0.3, 1.6), maxNormalized: 0.3 },
-  loose: { label: '寬鬆', maxDistance: (n) => clamp(0.5 + 0.25 * n, 0.8, 3), maxNormalized: 0.5 },
+  exact: { label: '精確', maxDistance: () => 0, maxNormalized: Infinity, derivedFromAll: false },
+  normal: { label: '標準', maxDistance: (n) => clamp(0.2 + 0.15 * n, 0.3, 1.6), maxNormalized: 0.3, derivedFromAll: false },
+  // 寬鬆：所有模糊命中都當詞根去找衍生形（標準只用查詢本身與方言變體）
+  loose: { label: '寬鬆', maxDistance: (n) => clamp(0.5 + 0.25 * n, 0.8, 3), maxNormalized: 0.5, derivedFromAll: true },
 })
 
 /** @typedef {keyof typeof FUZZINESS} Fuzziness */
@@ -89,10 +91,13 @@ export const FUZZINESS = Object.freeze({
  * @property {string} stem 詞幹（詞庫中的寫法）
  * @property {Array<import('../fuzzy/morph-search.js').MorphStepHit>} steps 由外而內的構詞步驟
  * @property {number} cost 總成本：構詞步驟＋整個詞的音變（docs/bcdp.md 1.2）
- * @property {string} [variantOf] 衍生形方向以查詢的方言變體當詞根時，查詢本身
- * @property {number} [variantDistance] 查詢 → 方言變體的距離
- * @property {MorphNote[] | null} [notes] 整個詞的音變說明（只為前幾筆結果計算）；
- *   衍生形方向用了方言變體時，查詢 → 變體的音變也在內（where 為 stem）
+ * @property {string} [variantOf] 衍生形方向以查詢的相近寫法當起點時，查詢本身
+ * @property {number} [variantDistance] 查詢 → 起點的距離
+ * @property {AlignmentNote[]} [variantNotes] 查詢 → 起點的對齊說明
+ * @property {Array<{term: string, stem: string, steps: Array<import('../fuzzy/morph-search.js').MorphStepHit>, cost: number}>} [chain]
+ *   衍生形方向經過其他衍生詞時，由起點往下的每一層（不含最後一層，那一層就是 stem、steps）：
+ *   查 sungut 找到 pausunguday，chain 是 [pusungut ＝ pu- ＋ sungut]，stem 是 pusungut
+ * @property {MorphNote[] | null} [notes] 整個詞的音變說明（詞根相符方向只為前幾筆結果計算）
  */
 
 /** @typedef {'fuzzy' | 'prefix' | 'lemma' | 'derived' | 'substring'} MatchType */
@@ -113,6 +118,17 @@ export const FUZZINESS = Object.freeze({
  * @property {number} distance 各查詢詞距離總和
  * @property {number} score 排序用的等效距離總和
  * @property {MatchType} matchType 各查詢詞中最弱的命中方式
+ * @property {OccurrenceMatch[]} matches 每個查詢詞在這一句中決定分數的命中（說明標籤用）
+ */
+
+/**
+ * @typedef {object} OccurrenceMatch 例句中一個查詢詞的命中（欄位與 EntryHit 相同，介面共用同一套標籤）
+ * @property {string} word 查詢詞
+ * @property {string} term 句中命中的詞（搜尋鍵）
+ * @property {MatchType} matchType
+ * @property {number} distance
+ * @property {AlignmentNote[] | null} alignment 模糊命中的對齊說明（只為前幾句計算）
+ * @property {LemmaAnalysis | null} analysis 構詞命中的分析
  */
 
 /**
@@ -165,13 +181,6 @@ const LEMMA_EXTRA_DISTANCE = 0.6
 /** 查詢的方言變體也拿來找衍生形：只取距離這麼小、且全由方言規則構成的模糊命中 */
 const DIALECT_VARIANT_DISTANCE = 0.3
 
-/**
- * 衍生形方向（查詞根、找衍生詞）允許的音變：詞典中的衍生詞是標準寫法，音變只來自詞素交界
- * （喉塞音增生、元音合併、構詞音變），一兩條規則的成本就夠
- */
-const DERIVED_SOUND_DISTANCE = 0.2
-/** 衍生形方向跨查詢保留的編譯結果個數（每個詞兩份，約數 KB） */
-const PLAN_CACHE_LIMIT = 4096
 
 /**
  * 把前綴／包含命中換算成「等效距離」，好跟模糊命中一起排序。
@@ -219,9 +228,11 @@ export class SearchEngine {
    *   docs: import('./format.js').SearchDocs,
    *   lexicon: import('../fuzzy/fuzzy-index.js').SerializedIndex,
    *   profile: import('../fuzzy/profile.js').LanguageProfile,
-   * }} data `profile` 必須是建索引時用的同一份語言設定檔（建置輸出的 search/language.json）
+   *   derivations?: import('./derivations.js').DerivationData | null,
+   * }} data `profile` 必須是建索引時用的同一份語言設定檔（建置輸出的 search/language.json）；
+   *   `derivations` 是衍生關係圖（search/derivations.json），沒有時不找衍生形
    */
-  constructor({ docs, lexicon, profile }) {
+  constructor({ docs, lexicon, profile, derivations = null }) {
     if (docs.version !== INDEX_FORMAT_VERSION) {
       throw new Error(`搜尋索引格式版本 ${docs.version} 與框架（${INDEX_FORMAT_VERSION}）不符，請重新建置網站`)
     }
@@ -247,12 +258,8 @@ export class SearchEngine {
     this._listCache = null
     /** @type {WeakMap<LemmaAnalysis, () => MorphNote[]>} 構詞命中的音變說明（需要時才計算） */
     this._lazyNotes = new WeakMap()
-    /**
-     * 衍生形方向：候選詞 → 它的聯合對齊編譯結果（依詞綴、詞幹兩種段落）。同一個詞會被不同的詞根、
-     * 同一個查詢的不同詞、不同的查詢反覆驗證，編譯只看這個詞，所以跨查詢保留最近用過的 PLAN_CACHE_LIMIT 個
-     * @type {Map<string, Map<string, any>>}
-     */
-    this._derivedPlans = new Map()
+    /** 衍生關係圖（衍生形方向，見 derivations.js） */
+    this.derivations = derivations && this.morphSearch ? new DerivationGraph(derivations, this.index.terms) : null
   }
 
   /**
@@ -295,7 +302,6 @@ export class SearchEngine {
   clearCaches() {
     this.text.morphology?.clearCache()
     this.morphSearch?.clearCache()
-    this._derivedPlans.clear()
   }
 
   /** 記錄總數 */
@@ -555,12 +561,21 @@ export class SearchEngine {
       }),
     )
     // 對齊與構詞說明只為前幾筆計算：分數最好的幾筆，以及畫面上依家族排列時的前幾列
-    /** @param {EntryHit} hit */
-    const explain = (hit) => {
-      if (hit.matchType === 'fuzzy' && hit.distance > 0 && hit.alignment === null) hit.alignment = this.explainNotes(key, hit.term)
+    /** 同一次搜尋中，同一對（查詢詞, 詞）的對齊只算一次（詞條與許多例句常是同一對） @type {Map<string, AlignmentNote[]>} */
+    const aligned = new Map()
+    /** @param {string} word @param {{matchType: MatchType, distance: number, term: string, alignment: AlignmentNote[] | null, analysis?: LemmaAnalysis | null}} hit */
+    const explainMatch = (word, hit) => {
+      if (hit.matchType === 'fuzzy' && hit.distance > 0 && hit.alignment === null) {
+        const k = `${word}\u0000${hit.term}`
+        let notes = aligned.get(k)
+        if (!notes) aligned.set(k, (notes = this.explainNotes(word, hit.term)))
+        hit.alignment = notes
+      }
       const a = hit.analysis
       if (a && a.notes === undefined) a.notes = this._lazyNotes.get(a)?.() ?? null
     }
+    /** @param {EntryHit} hit */
+    const explain = (hit) => explainMatch(key, hit)
     for (const hit of response.entries.slice(0, explainLimit)) explain(hit)
     let shown = 0
     for (const group of response.entryGroups) {
@@ -587,20 +602,23 @@ export class SearchEngine {
       seen.set(word, { terms, visited: response.stats.visitedNodes - before })
       return terms
     }
-    /** @type {Map<number, {distance: number, score: number, rank: number, terms: string[]}> | null} */
+    /** @typedef {{distance: number, score: number, rank: number, terms: string[], matches: OccurrenceMatch[]}} Combined */
+    /** @type {Map<number, Combined> | null} */
     let combined = null
     for (const word of words.length > 0 ? words : [key]) {
       const terms = matchWord(word)
-      /** @type {Map<number, {distance: number, score: number, rank: number, terms: string[]}>} */
+      /** @type {Map<number, Combined>} */
       const found = new Map()
       for (const t of terms) {
         const rank = MATCH_TYPE_RANK[t.matchType]
         const score = rankScore(t.matchType, t.distance, Math.max(0, t.term.length - word.length))
+        /** @type {OccurrenceMatch} */
+        const match = { word, term: t.term, matchType: t.matchType, distance: t.distance, alignment: null, analysis: t.analysis ?? null }
         for (const code of /** @type {number[]} */ (t.payloads)) {
           const { doc: k, kind } = decodePosting(code)
           if (kind !== 'token' || !accept(k)) continue
           const prev = found.get(k)
-          if (!prev) found.set(k, { distance: t.distance, score, rank, terms: [t.term] })
+          if (!prev) found.set(k, { distance: t.distance, score, rank, terms: [t.term], matches: [match] })
           else {
             prev.terms.push(t.term)
             // 同一句可能同時被多種方式命中，取最好的一種
@@ -608,6 +626,7 @@ export class SearchEngine {
               prev.rank = rank
               prev.score = score
               prev.distance = t.distance
+              prev.matches = [match]
             }
           }
         }
@@ -624,6 +643,7 @@ export class SearchEngine {
               score: v.score + w.score,
               rank: Math.max(v.rank, w.rank),
               terms: [...v.terms, ...w.terms],
+              matches: [...v.matches, ...w.matches],
             })
           }
         }
@@ -640,6 +660,8 @@ export class SearchEngine {
         distance: Math.round(v.distance * 1e9) / 1e9,
         score: v.score,
         matchType: /** @type {MatchType} */ (MATCH_TYPES[v.rank]),
+        // 同一個命中物件由含同一個詞的各句共用：說明只算一次，每一句都看得到
+        matches: v.matches,
       }))
       .sort(
         (a, b) =>
@@ -648,6 +670,8 @@ export class SearchEngine {
           a.doc.text.length - b.doc.text.length ||
           a.doc.index - b.doc.index,
       )
+    // 例句的命中說明與詞條相同，也只為前幾句計算
+    for (const o of response.occurrences.slice(0, explainLimit)) for (const m of o.matches) explainMatch(m.word, m)
   }
 
   /**
@@ -716,10 +740,11 @@ export class SearchEngine {
       if (!matches.has(m.term)) matches.set(m.term, m)
     }
     if (morphology) {
-      // 查詢的方言變體（純規則、距離不大）也當作詞幹去找衍生形：查 daux 也找得到 minudox
+      // 查詢的相近寫法也當作詞根去找衍生形：標準只用方言變體（純規則、距離不大；查 daux 也找得到 minudox），
+      // 寬鬆用所有模糊命中（查 sugut 經 sungut 找到 pausunguday）
       const variants = [...matches.values()]
-        .filter((m) => m.matchType === 'fuzzy' && m.distance > 0 && m.distance <= DIALECT_VARIANT_DISTANCE)
-        .filter((m) => this.explainNotes(key, m.term).every((s) => s.op === 'rule'))
+        .filter((m) => m.matchType === 'fuzzy' && m.distance > 0)
+        .filter((m) => level.derivedFromAll || (m.distance <= DIALECT_VARIANT_DISTANCE && this.explainNotes(key, m.term).every((s) => s.op === 'rule')))
       // 同一個詞有多種命中方式時，取排序分數（rankScore，與詞條排序用的是同一個）較好的一種。
       // 不能只看命中方式：詞根落在模糊門檻內時（查 parazem，razem 的模糊距離 1.2 在門檻 1.25 內），
       // 最好的構詞分析（pa- ＋ razem，0.2）會被較差的模糊命中蓋掉。同分時模糊命中優先（直接相符），
@@ -733,88 +758,53 @@ export class SearchEngine {
   }
 
   /**
-   * 衍生形（還原詞綴方向）：詞庫中分析得出詞幹正好是查詢的詞，包括語料句子裡的詞。
+   * 衍生形（查詞根、找衍生詞）：由查詢與它的相近寫法沿衍生關係圖往下走（derivations.js）。
    *
-   * 與詞根相符是同一個模型：分析的成本是構詞步驟加上整個詞的音變（規則可以跨越詞素交界）。
-   * 候選先用「字元 → 詞」索引找含有詞根核心形式的詞，再列出「前綴鏈 · 核心形式 · 後綴鏈」的結構
-   * （詞綴原樣、交界上容許一個字元的出入，morphology.derivations），逐一以整個詞的聯合對齊
-   * （metric.jointDistance）驗證。衍生詞是標準寫法，整個詞的音變不能超過 DERIVED_SOUND_DISTANCE
-   * （docs/bcdp.md 第 10 節）。
-   *
-   * 查詢的方言變體（variants：純規則、距離小的模糊命中詞）也各當一次詞根，
-   * 成本加上變體本身的距離，說明中附上查詢 → 變體的音變。
+   * 圖的每一條邊是建置時 BCDP 對衍生詞求得的最好詞根，所以「查 r 看到 w」等於「查 w 時 r 是最好的詞根」，
+   * 衍生詞的衍生詞也走得到（sungut → pusungut → pausunguday）。分數是起點距離加上路徑上各條邊的成本，
+   * 路徑本身的成本不超過 1（與詞根相符方向的上限相同）。
    *
    * @param {string} key
-   * @param {TermMatch[]} [variants]
+   * @param {TermMatch[]} [variants] 查詢的相近寫法（模糊命中的詞）
    * @returns {TermMatch[]}
    * @private
    */
   _derivedTerms(key, variants = []) {
-    const morphology = /** @type {import('../fuzzy/morphology.js').Analyzer} */ (this.text.morphology)
-    const search = /** @type {NonNullable<typeof this.morphSearch>} */ (this.morphSearch)
-    const { terms } = this._ensureTermIndex()
-    /** @type {Map<string, TermMatch>} */
-    const out = new Map()
-    const plansOf = this._derivedPlans
-    for (const { term: stem, distance: offset } of [{ term: key, distance: 0 }, ...variants]) {
-      if (Array.from(stem).length < morphology.spec.minStem) continue
-      const seen = new Set()
-      const cores = morphology.coreForms(stem)
-      for (const core of cores) {
-        for (const id of this._termsContaining(core)) {
-          const term = terms[id]
-          if (term === key || term === stem || seen.has(term)) continue
-          seen.add(term)
-          // 候選分析的結構（詞綴原樣、交界上容許一個字元的出入），逐一以整個詞的聯合對齊驗證
-          const x = Array.from(term)
-          let plans = plansOf.get(term)
-          if (plans) plansOf.delete(term)
-          else plans = new Map()
-          plansOf.set(term, plans)
-          if (plansOf.size > PLAN_CACHE_LIMIT) plansOf.delete(/** @type {string} */ (plansOf.keys().next().value))
-          /** @type {{cost: number, steps: import('../fuzzy/morph-search.js').MorphStepHit[], segments: any[]} | null} */
-          let best = null
-          for (const d of morphology.derivations(term, stem)) {
-            const circ = d.circumfix
-            /** @param {'prefix' | 'suffix'} type @param {string} form */
-            const affix = (type, form) => ({ chars: Array.from(form), lock: true, type })
-            // 環綴緊貼詞幹：前綴式的左邊是最內層的前綴，後綴是最內層的後綴（中綴、重疊式的左邊已在詞幹段裡）
-            const segments = [
-              ...d.prefixes.map((a) => affix('prefix', a.form)),
-              // 緊貼詞幹的前綴：前綴式環綴的左邊，或中綴、重疊式環綴外側的前綴（m<a>- 的 m）
-              ...(circ?.left?.type === 'prefix' ? [affix('prefix', circ.left.form)] : circ?.outer ? [affix('prefix', circ.outer)] : []),
-              { chars: Array.from(d.segment), lock: false, type: /** @type {const} */ ('stem') },
-              ...(circ?.suffix ? [affix('suffix', circ.suffix)] : []),
-              ...[...d.suffixes].reverse().map((a) => affix('suffix', a.form)),
-            ]
-            const sound = this.metric.jointDistance(x, segments, DERIVED_SOUND_DISTANCE, plans)
-            if (sound > DERIVED_SOUND_DISTANCE + 1e-9) continue
-            /** @type {import('../fuzzy/morph-search.js').MorphStepHit[]} */
-            const steps = [
-              ...d.prefixes.map((a) => ({ type: /** @type {const} */ ('prefix'), form: a.form, gloss: a.gloss, cost: a.cost, ...(a.parts ? { parts: a.parts } : {}) })),
-              ...(d.op ? [/** @type {any} */ (d.op)] : []),
-              ...(circ ? [/** @type {any} */ (circ)] : []),
-              ...d.suffixes.map((a) => ({ type: /** @type {const} */ ('suffix'), form: a.form, gloss: a.gloss, cost: a.cost, ...(a.parts ? { parts: a.parts } : {}) })),
-            ]
-            const cost = steps.reduce((sum, st) => sum + st.cost, 0) + sound
-            if (!best || cost < best.cost - 1e-9 || (Math.abs(cost - best.cost) <= 1e-9 && steps.length < best.steps.length)) best = { cost, steps, segments }
-          }
-          if (!best) continue
-          const distance = Math.round((best.cost + offset) * 1e9) / 1e9
-          const prev = out.get(term)
-          if (prev && prev.distance <= distance) continue
-          /** @type {LemmaAnalysis} */
-          const analysis = { stem, steps: best.steps, cost: distance, ...(offset > 0 ? { variantOf: key, variantDistance: offset } : {}) }
-          const segments = best.segments
-          this._lazyNotes.set(analysis, () => [
-            ...(offset > 0 ? this.explainNotes(key, stem).map((n) => ({ ...n, where: /** @type {const} */ ('stem') })) : []),
-            ...search.notesFor(x, segments),
-          ])
-          out.set(term, { term, payloads: this.index.payloads[id], distance, matchType: 'derived', analysis })
-        }
-      }
+    const graph = this.derivations
+    if (!graph) return []
+    /** @type {Array<{term: string, distance: number}>} */
+    const starts = [{ term: key, distance: 0 }, ...variants]
+    /** @type {Array<{id: number, distance: number, term: string}>} */
+    const seeds = []
+    for (const s of starts) {
+      const id = this.index.dawg.lookup(s.term)
+      if (id !== -1) seeds.push({ id, distance: s.distance, term: s.term })
     }
-    return [...out.values()]
+    const terms = this.index.terms
+    /** @type {Map<number, AlignmentNote[]>} 查詢 → 起點的對齊說明（每個起點算一次） */
+    const variantNotes = new Map()
+    return graph.descendants(seeds).map((r) => {
+      const seed = seeds[r.seed]
+      const last = /** @type {(typeof r.path)[number]} */ (r.path.at(-1))
+      /** @type {LemmaAnalysis} */
+      const analysis = {
+        stem: terms[last.root],
+        steps: last.analysis.steps,
+        cost: r.cost,
+        notes: /** @type {MorphNote[]} */ (last.analysis.notes),
+        ...(r.path.length > 1
+          ? {
+              chain: r.path.slice(0, -1).map((e) => ({ term: terms[e.word], stem: terms[e.root], steps: e.analysis.steps, cost: e.analysis.cost })),
+            }
+          : {}),
+        ...(seed.distance > 0 ? { variantOf: key, variantDistance: seed.distance } : {}),
+      }
+      if (seed.distance > 0) {
+        if (!variantNotes.has(r.seed)) variantNotes.set(r.seed, this.explainNotes(key, seed.term))
+        analysis.variantNotes = variantNotes.get(r.seed)
+      }
+      return { term: terms[r.word], payloads: this.index.payloads[r.word], distance: r.cost, matchType: /** @type {MatchType} */ ('derived'), analysis }
+    })
   }
 
   /**
