@@ -44,11 +44,13 @@ import { expandGrammar, isGrammarSpec, validateGrammar } from './grammar.js'
  */
 
 /**
- * @typedef {'Ca' | 'CV' | 'CVV' | 'CVCV' | 'CVCVC' | 'full'} ReduplicationPattern
+ * @typedef {'Ca' | 'CV' | 'CVV' | 'CVN' | 'CVCV' | 'CVCVC' | 'full'} ReduplicationPattern
  * 重疊的型式（docs/bcdp.md 1.6）。重疊部分放在詞幹前面，由詞幹 base 依模板產生：
  * - Ca：首輔音（群）＋ a（`da~dius`、`la~luzuk`）
  * - CV：首輔音＋第一個元音（`ki~kiliw`、`du~dusa`）
  * - CVV：首輔音＋第一個元音重複兩次，即元音加長（`dee~depex`、`kii~kita`）
+ * - CVN：首輔音＋第一個元音核，元音核至少兩個元音（`ria~riak`、`tia~tianak`、`ziu~ziux`）；
+ *   元音核只有一個元音時不適用（那就是 CV）
  * - CVCV：base 從頭到第二個元音核為止，即「兩音節、去掉韻尾」（`kipu~kipud-i`、`luba~lubahing`）
  * - CVCVC：CVCV 再加上其後連續的輔音，即「兩音節、含韻尾」（噶哈巫語 `kudung~kudung`）
  * - full：整個詞幹重疊
@@ -58,7 +60,7 @@ import { expandGrammar, isGrammarSpec, validateGrammar } from './grammar.js'
  */
 
 /** 支援的重疊型式 */
-export const REDUPLICATION_PATTERNS = Object.freeze(['Ca', 'CV', 'CVV', 'CVCV', 'CVCVC', 'full'])
+export const REDUPLICATION_PATTERNS = Object.freeze(['Ca', 'CV', 'CVV', 'CVN', 'CVCV', 'CVCVC', 'full'])
 
 /**
  * @typedef {object} ReduplicationSpec
@@ -449,9 +451,10 @@ export function createAnalyzer(spec, normalize = (s) => s) {
     if (v1 === n) return null
     if (pattern === 'CV') return { end: v1 + 1, extra: '' }
     if (pattern === 'CVV') return { end: v1 + 1, extra: chars[v1] }
-    // CVCV／CVCVC：第一個元音核之後，跳過輔音，找第二個元音核
     let k = v1
     while (k < n && vowels.has(chars[k])) k++ // 第一個元音核結束
+    if (pattern === 'CVN') return k - v1 >= 2 ? { end: k, extra: '' } : null
+    // CVCV／CVCVC：第一個元音核之後，跳過輔音，找第二個元音核
     while (k < n && !vowels.has(chars[k])) k++ // 第二個音節的首輔音
     if (k >= n) return null // 只有一個音節
     while (k < n && vowels.has(chars[k])) k++ // 第二個元音核結束

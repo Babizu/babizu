@@ -136,6 +136,11 @@ describe('重疊模板（docs/bcdp.md 1.6 第 2 項）', () => {
     ['CV', 'kiliw', 'ki'],
     ['CVV', 'depex', 'dee'],
     ['CVV', 'kita', 'kii'],
+    // CVN：首輔音＋整個第一個元音核（至少兩個元音）；只有一個元音時不適用
+    ['CVN', 'riak', 'ria'],
+    ['CVN', 'tianak', 'tia'],
+    ['CVN', 'ziux', 'ziu'],
+    ['CVN', 'kita', null],
     ['CVCV', 'kiput', 'kipu'],
     ['CVCV', 'lubahing', 'luba'],
     ['CVCV', 'kudung', 'kudu'],

@@ -3,7 +3,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { compareOccurrences, DERIVATIVE_PENALTY, mergeMorphMatch, rankScore, recordScore, termScore } from '../../src/search/scoring.js'
+import { alternativesOf, compareOccurrences, DERIVATIVE_PENALTY, mergeMorphMatch, methodOf, rankScore, recordScore, termScore } from '../../src/search/scoring.js'
 
 /** @param {Partial<import('../../src/search/scoring.js').Scored>} o */
 const m = (o) => /** @type {import('../../src/search/scoring.js').Scored} */ ({ term: 'x', distance: 0, matchType: 'fuzzy', ...o })
@@ -37,9 +37,21 @@ describe('同一個詞的構詞命中與原本的命中（mergeMorphMatch）', (
   it('與模糊命中之間取分數較好的；同分時模糊命中優先', () => {
     const fuzzy = m({ term: 'razem', distance: 1.2 })
     const lemma = m({ term: 'razem', matchType: 'lemma', distance: 0.2 })
-    expect(mergeMorphMatch(lemma, fuzzy, 'parazem')).toBe(lemma)
+    // 取分數較好的，被取代的留在 others（篩掉勝出的方法時改用它）
+    expect(mergeMorphMatch(lemma, fuzzy, 'parazem')).toMatchObject({ matchType: 'lemma', others: [{ matchType: 'fuzzy', distance: 1.2 }] })
     const near = m({ term: 'dauxi', distance: 0.6 })
-    expect(mergeMorphMatch(m({ term: 'dauxi', matchType: 'derived', distance: 0.2 }), near, 'daux')).toBe(near)
+    expect(mergeMorphMatch(m({ term: 'dauxi', matchType: 'derived', distance: 0.2 }), near, 'daux')).toMatchObject({ matchType: 'fuzzy', distance: 0.6 })
+  })
+
+  it('alternativesOf 依序列出命中與被它取代的命中；methodOf 取把握最小的一種', () => {
+    const merged = mergeMorphMatch(m({ term: 'usaan', matchType: 'derived', distance: 0.3 }), m({ term: 'usaan', matchType: 'prefix' }), 'usa')
+    expect(alternativesOf(merged).map((x) => x.matchType)).toEqual(['derived', 'prefix'])
+    expect(methodOf({ matchType: 'fuzzy', distance: 0 })).toBe('exact')
+    expect(methodOf({ matchType: 'fuzzy', distance: 0.1 })).toBe('fuzzy')
+    expect(methodOf({ matchType: 'fuzzy', distance: 0, kind: 'parent' })).toBe('dictLemma')
+    expect(methodOf({ matchType: 'fuzzy', distance: 0.1, kind: 'root' })).toBe('dictDerived')
+    expect(methodOf({ matchType: 'lemma', distance: 0.2, kind: 'root' })).toBe('lemma')
+    expect(methodOf({ matchType: 'suffix', distance: 0, kind: 'sibling' })).toBe('suffix')
   })
 
   it('沒有原本的命中時直接收下', () => {

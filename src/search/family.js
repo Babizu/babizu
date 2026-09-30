@@ -31,6 +31,8 @@
  * - 同形詞組排在其中最前面那一筆原本的位置。
  */
 
+import { DICTIONARY_KINDS } from './scoring.js'
+
 /** 分數比較容許的浮點誤差（分數是幾個小數相加） */
 const EPSILON = 1e-9
 
@@ -229,8 +231,9 @@ export function buildEntryGroups(hits, { parent, children = () => [], doc, key, 
     finish(root)
     const all = collectHits(root)
     const best = all.reduce((a, b) => (compareHits(b, a) < 0 ? b : a))
-    // 以詞根身分命中的（辭典標註衍生自查詢詞根的詞）是詞根命中的連帶結果，不算獨立的證據
-    const own = all.filter((h) => h.kind !== 'root')
+    // 只經由辭典構詞關係命中的（確定派生、拆解、同根）是查詢那個詞的連帶結果，不算獨立的證據；
+    // 記錄原本也被直接命中時（例如自動拆解到的詞根，後來以確定拆解呈現）仍算（EntryHit.direct）
+    const own = all.filter((h) => h.direct ?? !DICTIONARY_KINDS.has(h.kind))
     const atBest = own.filter((h) => Math.abs(h.score - best.score) <= EPSILON).length
     return { root, best, hits: all.length, atBest, related: own.length }
   })

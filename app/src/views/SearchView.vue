@@ -58,6 +58,7 @@ const filters = computed({
     sources: list(route.query.src),
     dialects: list(route.query.dia),
     units: list(route.query.unit),
+    exclude: list(route.query.x),
   }),
   set: (f) =>
     updateQuery({
@@ -67,6 +68,7 @@ const filters = computed({
       src: f.sources.join(',') || undefined,
       dia: f.dialects.join(',') || undefined,
       unit: f.units.join(',') || undefined,
+      x: f.exclude.join(',') || undefined,
     }),
 })
 const tab = computed({
@@ -78,6 +80,7 @@ const activeFilterCount = computed(
     filters.value.sources.length +
     filters.value.dialects.length +
     filters.value.units.length +
+    filters.value.exclude.length +
     (filters.value.fields.length === DEFAULT_FIELDS.length ? 0 : 1),
 )
 
@@ -119,7 +122,7 @@ const limits = ref({ entries: PAGE_SIZE, occurrences: PAGE_SIZE, glosses: PAGE_S
 let requestSeq = 0
 
 watch(
-  () => [route.query.q, route.query.fz, route.query.src, route.query.dia, route.query.unit, route.query.f],
+  () => [route.query.q, route.query.fz, route.query.src, route.query.dia, route.query.unit, route.query.f, route.query.x],
   async () => {
     const q = String(route.query.q ?? '').trim()
     limits.value = { entries: PAGE_SIZE, occurrences: PAGE_SIZE, glosses: PAGE_SIZE }
@@ -137,6 +140,7 @@ watch(
         fuzziness: f.fuzziness,
         fields: f.fields,
         filters: { sources: f.sources, dialects: f.dialects, units: f.units },
+        exclude: f.exclude,
       })
       if (seq === requestSeq) response.value = result
     } catch (e) {
@@ -197,10 +201,10 @@ const filterSheetOpen = ref(false)
           <SheetContent side="bottom" class="overflow-y-auto">
             <SheetHeader>
               <SheetTitle>{{ t('搜尋條件') }}</SheetTitle>
-              <SheetDescription>{{ t('調整模糊程度，或限定來源、方言、語言單位。') }}</SheetDescription>
+              <SheetDescription>{{ t('調整模糊程度與搜尋方法，或限定來源、方言、語言單位。') }}</SheetDescription>
             </SheetHeader>
             <div class="px-4 pb-6">
-              <FilterPanel v-model="filters" />
+              <FilterPanel v-model="filters" :counts="response?.methods ?? null" />
             </div>
           </SheetContent>
         </Sheet>
@@ -210,7 +214,7 @@ const filterSheetOpen = ref(false)
     <div class="grid gap-8 lg:grid-cols-[15rem_minmax(0,1fr)]">
       <aside class="hidden lg:block">
         <div class="sticky top-36">
-          <FilterPanel v-model="filters" />
+          <FilterPanel v-model="filters" :counts="response?.methods ?? null" />
         </div>
       </aside>
 

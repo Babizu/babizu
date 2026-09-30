@@ -11,6 +11,8 @@
  *   隨機測試幾乎碰不到；由 finish 與 SpreadCutoff.eligible 共用同一個條件的程式審查守著。
  * - 普通搜尋（沒有交界）編譯時略過構詞音變的 continue 拿掉：admissible 在沒有交界的位置本來就不收構詞音變，
  *   只是變慢，是等價突變；junction.test.js「構詞音變只在詞素交界適用」守著結果。
+ * - 確定同根不扣掉自己這一支（_dictionaryRelations 的 !down.has(k)、!up.has(k)）：自己的下層經上層繞回來，
+ *   層數是往上 u ＋ u ＋ 原本的層數，一定比直接往下深，put 取最淺的一種，結果不變，是等價突變；留著只為寫明意圖。
  * - 實驗室元件（app/）的突變：動物園只跑 node 端的測試；實驗室與搜尋的一致性由 app 端的 lab-state 測試守著。
  */
 
@@ -151,8 +153,8 @@ export const MUTANTS = [
   {
     name: '構詞命中遇到同一個詞的模糊命中一律捨棄（v0.2.0 起的原始寫法）',
     file: 'src/search/scoring.js',
-    find: '  return a < b - EPSILON ? m : prev',
-    replace: '  return prev',
+    find: "  if (m.matchType === 'sibling' || a >= b - EPSILON) return keep(prev, m)",
+    replace: '  return keep(prev, m)',
     why: '查 parazem 時 razem 只剩模糊命中 1.2；morphology 測試「同一個詞有多種命中方式」、scoring 測試',
   },
   {
@@ -263,14 +265,14 @@ export const MUTANTS = [
   {
     name: '開頭相符、包含的詞能自動派生時仍保留原本的命中',
     file: 'src/search/scoring.js',
-    find: "  if (prev.matchType === 'prefix' || prev.matchType === 'substring') return { ...m, score: Math.min(a, b) }",
-    replace: "  if (prev.matchType === 'prefix' || prev.matchType === 'substring') return prev",
+    find: '  if (PARTIAL.has(prev.matchType)) return keep(m, prev, { score: Math.min(a, b) })',
+    replace: '  if (PARTIAL.has(prev.matchType)) return keep(prev, m)',
     why: '開頭相符的 sungutan 沒有派生的說明；derivations 測試「開頭相符又能自動派生的詞」、scoring 測試',
   },
   {
     name: '辭典派生詞不加層數的差距',
     file: 'src/search/scoring.js',
-    find: '  return score + depth * DERIVATIVE_PENALTY',
+    find: '  return Math.round((score + depth * DERIVATIVE_PENALTY) * 1e9) / 1e9',
     replace: '  return score',
     why: '派生詞與詞本身同分；scoring 測試、derivations 測試「含 mukusa 的例句分數是 usa 的分數加一層」',
   },
@@ -305,9 +307,23 @@ export const MUTANTS = [
   {
     name: '自動同根取代分數較差的其他命中',
     file: 'src/search/scoring.js',
-    find: "  if (m.matchType === 'sibling') return prev\n",
-    replace: '\n',
+    find: "  if (m.matchType === 'sibling' || a >= b - EPSILON) return keep(prev, m)",
+    replace: '  if (a >= b - EPSILON) return keep(prev, m)',
     why: '原本的自動派生、自動拆解被自動同根蓋掉；derivations 測試「自動同根不取代其他命中」',
+  },
+  {
+    name: '被取代的命中不留下來（排除取代它的方法時連它也消失）',
+    file: 'src/search/scoring.js',
+    find: '  return [m, .../** @type {T[]} */ (m.others ?? [])]',
+    replace: '  return [m]',
+    why: '排除自動派生後，原本開頭相符的 sungutan 也不見；derivations 測試「搜尋方法」',
+  },
+  {
+    name: '辭典的構詞關係沒有上層（確定拆解）',
+    file: 'src/search/engine.js',
+    find: "    for (const [k, d] of up) put(k, 'parent', d)",
+    replace: '    void up',
+    why: '查 pinakita 時 kita-、pakita 不是確定拆解；family 測試',
   },
   {
     name: '記錄上的自動同根與其他命中一樣比分數',
@@ -315,6 +331,20 @@ export const MUTANTS = [
     find: '  if (a !== b) return b\n',
     replace: '\n',
     why: '詞條的原本命中被自動同根取代；derivations 測試（replacesRecordHit）',
+  },
+  {
+    name: '詞綴的條目也當成同根的依據',
+    file: 'src/search/engine.js',
+    find: '      if (this._isAffixEntry(a)) continue\n',
+    replace: '\n',
+    why: '<in> 條下的例子（binaket）成了 kinawas 的確定同根；derivations 測試「詞綴的條目不算同根」',
+  },
+  {
+    name: '家族排序不看記錄原本的直接命中',
+    file: 'src/search/family.js',
+    find: '    const own = all.filter((h) => h.direct ?? !DICTIONARY_KINDS.has(h.kind))',
+    replace: '    const own = all.filter((h) => !DICTIONARY_KINDS.has(h.kind))',
+    why: '自動拆解到的 kawas- 以確定拆解呈現後不算證據，<in> 條排到 kawas- 條之前；derivations 測試',
   },
   {
     name: '另立條目對到多個同形詞目時接到第一個',

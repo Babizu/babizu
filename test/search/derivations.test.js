@@ -4,8 +4,9 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { createCitation, createRecord, createSense } from '../../src/schema/index.js'
+import { createCitation, createGroup, createRecord, createSense } from '../../src/schema/index.js'
 import { buildDerivationGraph, buildSearchIndex, createDerivationAnalyzer, DerivationGraph, isVirtualRootShape, SearchEngine, VIRTUAL_ROOT_PENALTY } from '../../src/search/index.js'
+import { mergeEdges } from '../../src/search/derivations.js'
 import { mergeMorphMatch, replacesRecordHit } from '../../src/search/scoring.js'
 import { PAZEH_PROFILE } from '../fixtures/pazeh.js'
 
@@ -69,7 +70,9 @@ describe('建置：每個詞連到 BCDP 求得的最好詞根', () => {
 
   it('每條邊都是 BCDP 對那個詞最好的分析，而且詞根比詞短（所以沒有循環）', () => {
     const analyzer = createDerivationAnalyzer(built)
-    const analyzed = analyzer.analyze()
+    // 兩個階段：詞庫中的詞根（可切塊平行），再看全部的邊求虛擬詞根
+    const lexical = analyzer.analyze()
+    const analyzed = mergeEdges(lexical, analyzer.virtual(lexical))
     expect(analyzed.length).toBe(edges.length)
     for (const { word, root, analysis } of analyzed) {
       // 詞庫中的詞根是詞編號，虛擬詞根是詞幹字串；都比詞短
@@ -80,7 +83,7 @@ describe('建置：每個詞連到 BCDP 求得的最好詞根', () => {
     }
     // 切塊計算與一次算完相同（網站建置平行計算時依詞編號接起來）
     const half = Math.floor(analyzer.count / 2)
-    expect([...analyzer.analyze(0, half), ...analyzer.analyze(half)]).toEqual(analyzed)
+    expect([...analyzer.analyze(0, half), ...analyzer.analyze(half)]).toEqual(lexical)
   })
 
   it('同樣的步驟與分析只存一次', () => {
@@ -281,8 +284,100 @@ describe('虛擬詞根與自動同根：共同的詞根不在詞庫中（查 bin
   it('自動同根不取代其他命中：同一個詞已有自動派生時保留原本的', () => {
     const m = { term: 'x', distance: 0.3, matchType: /** @type {const} */ ('sibling') }
     const prev = { term: 'x', distance: 0.6, matchType: /** @type {const} */ ('derived') }
-    expect(mergeMorphMatch(m, prev, 'q')).toBe(prev)
+    expect(mergeMorphMatch(m, prev, 'q')).toMatchObject({ matchType: 'derived', distance: 0.6 })
     expect(replacesRecordHit({ matchType: 'sibling', score: 0.1 }, { matchType: 'lemma', score: 0.9 }, (a, b) => a.score - b.score)).toBe(false)
     expect(replacesRecordHit({ matchType: 'lemma', score: 0.9 }, { matchType: 'sibling', score: 0.1 }, (a, b) => a.score - b.score)).toBe(true)
+  })
+})
+
+describe('虛擬詞根的對稱：建置與查詢用同一個函式、同樣的條件', () => {
+  const MORPH = { cost: 0.1, minStem: 3, prefixes: [{ form: 'ma' }, { form: 'mu' }, { form: 'sa' }, { form: 'masa' }] }
+  const list = [rec('samian', 'word', 'samian'), rec('masamian', 'word', 'masamian'), rec('musamian', 'word', 'musamian'), rec('kamian', 'word', 'mumian')]
+  const data = JSON.parse(JSON.stringify(buildSearchIndex({ items: list.map((record) => ({ record, shard: 'all' })), groups: [], sourceIds: ['dict'], profile: { ...PAZEH_PROFILE, morphology: MORPH } })))
+  const graph = buildDerivationGraph(data)
+  const s = new SearchEngine({ ...data, derivations: graph })
+
+  /** 詞 → 它的虛擬詞根 @param {string} w */
+  const virtualOf = (w) => {
+    const terms = s.index.terms
+    const out = []
+    for (let k = 0, word = 0; k < graph.edges.length; k += 3) {
+      word += graph.edges[k]
+      const root = graph.edges[k + 1]
+      if (terms[word] === w && root >= terms.length) out.push(graph.virtual[root - terms.length])
+    }
+    return out
+  }
+
+  it('samian 是 masamian、musamian 的詞根，本身就是根：不再拆成 sa- ＋ 虛擬詞根 mian；mumian 不是根，照樣拆出 mian', () => {
+    expect(virtualOf('samian')).toEqual([])
+    expect(virtualOf('mumian')).toEqual(['mian'])
+  })
+
+  it('查 masamian：自動拆解已有 ma- ＋ samian，不再拆成 masa- ＋ mian 去找同根詞（mumian）', () => {
+    const res = s.search('masamian', { fields: ['native'] })
+    expect(res.entries.find((h) => h.doc.id === 'dict:samian')?.matchType).toBe('lemma')
+    expect(res.entries.some((h) => h.matchType === 'sibling')).toBe(false)
+  })
+})
+
+describe('搜尋方法：個別排除，並回報每種方法找得到幾筆', () => {
+  const p = engineOf([rec('sungut', 'word', 'sungut'), rec('sungutan', 'word', 'sungutan'), rec('s1', 'sentence', 'sungutan lia')], { cost: 0.3, minStem: 3, suffixes: [{ form: 'an' }] })
+
+  it('不看自動派生時，sungutan 改以原本的開頭相符出現（不會連它也消失）', () => {
+    const all = p.search('sungut', { fields: ['native'] })
+    expect(all.entries.find((h) => h.doc.id === 'dict:sungutan')?.matchType).toBe('derived')
+    expect(all.methods).toMatchObject({ exact: 1, derived: 2, prefix: 2 })
+    const noDerived = p.search('sungut', { fields: ['native'], exclude: ['derived'] })
+    expect(noDerived.entries.find((h) => h.doc.id === 'dict:sungutan')?.matchType).toBe('prefix')
+    expect(noDerived.occurrences.find((o) => o.doc.id === 'dict:s1')?.matchType).toBe('prefix')
+    // 數量不受排除影響（介面用來顯示每個方法有幾筆）
+    expect(noDerived.methods).toEqual(all.methods)
+  })
+
+  it('兩者都排除時就不出現', () => {
+    const none = p.search('sungut', { fields: ['native'], exclude: ['derived', 'prefix'] })
+    expect(none.entries.map((h) => h.doc.id)).toEqual(['dict:sungut'])
+    expect(none.occurrences).toEqual([])
+  })
+})
+
+describe('辭典的構詞關係：詞綴的條目不算同根；家族的排序仍以直接的命中為證據', () => {
+  /** @param {string} localId @param {string} text @param {{group: string, role?: string, parent?: string, unit?: string}} o */
+  const rg = (localId, text, o) =>
+    createRecord(
+      { source: 'dict', localId, unit: /** @type {any} */ (o.unit ?? 'word'), text, citation: createCitation(`dict ${localId}`) },
+      { senses: [createSense({ zh: text })], group: { id: `dict:${o.group}`, role: /** @type {any} */ (o.role ?? 'head'), parent: o.parent ? `dict:${o.parent}` : null, seq: 0 } },
+    )
+  const groups = [
+    createGroup({ source: 'dict', localId: 'in', type: 'entry', title: '<in>' }),
+    createGroup({ source: 'dict', localId: 'kawas', type: 'entry', title: 'kawas-' }),
+  ]
+  const list = [
+    // <in> 是中綴的條目：底下的詞是帶這個中綴的例子
+    rg('in', '<in>', { group: 'in', unit: 'affix' }),
+    rg('in-1', 'kinawas', { group: 'in', role: 'form' }),
+    rg('in-2', 'binaket', { group: 'in', role: 'form' }),
+    // kawas- 是詞根的條目
+    rg('kawas', 'kawas-', { group: 'kawas', unit: 'affix' }),
+    rg('kawas-1', 'mukawas', { group: 'kawas', role: 'form' }),
+    rg('kawas-2', 'kinawas', { group: 'kawas', role: 'form', parent: 'kawas-1' }),
+    rg('kawas-3', 'pakawas', { group: 'kawas', role: 'form' }),
+  ]
+  const data = JSON.parse(JSON.stringify(buildSearchIndex({ items: list.map((record) => ({ record, shard: 'all' })), groups, sourceIds: ['dict'], profile: { ...PAZEH_PROFILE, morphology: { cost: 0.2, minStem: 3, prefixes: [{ form: 'mu' }, { form: 'pa' }], infixes: [{ form: 'in' }] } } })))
+  const g = new SearchEngine({ ...data, derivations: buildDerivationGraph(data) })
+  const res = g.search('kinawas', { fields: ['native'] })
+  const kindOf = (/** @type {string} */ id) => res.entries.find((h) => h.doc.id === id)?.kind
+
+  it('<in> 是 kinawas 的確定拆解（上層），但它底下的 binaket 不是 kinawas 的同根；kawas- 條下的 pakawas 是', () => {
+    expect(kindOf('dict:in')).toBe('parent')
+    expect(kindOf('dict:in-2')).toBeUndefined()
+    expect(kindOf('dict:kawas-3')).toBe('sibling')
+  })
+
+  it('kawas- 同時是自動拆解與確定拆解：以確定拆解呈現，但仍算直接的命中（家族排序的證據）', () => {
+    const root = res.entries.find((h) => h.doc.id === 'dict:kawas')
+    expect(root).toMatchObject({ kind: 'parent', direct: true })
+    expect(res.entryGroups[0].root.doc.id).toBe('dict:kawas')
   })
 })

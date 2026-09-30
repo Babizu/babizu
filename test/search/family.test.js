@@ -144,14 +144,27 @@ describe('搜尋結果依詞條家族分組', () => {
     expect(res.totals.entryGroups).toBe(res.entryGroups.length)
   })
 
-  it('查 pinakita：沒有命中的上層（kita-、pakita）也列出來，看得出 pinakita 在哪裡', () => {
-    const [first] = engine.search('pinakita', { fuzziness: 'exact' }).entryGroups
+  it('查 pinakita：上層（kita-、pakita）是確定拆解，kita- 條下的其他詞是確定同根，都在同一個家族裡', () => {
+    const res = engine.search('pinakita', { fuzziness: 'exact' })
+    const kindOf = (/** @type {string} */ id) => res.entries.find((h) => h.doc.id === id)?.kind
+    expect(kindOf('dict:kita-f3')).toBe('head')
+    expect(kindOf('dict:kita-f2')).toBe('parent')
+    expect(kindOf('dict:kita')).toBe('parent')
+    expect(kindOf('dict:kita-f1')).toBe('sibling')
+    expect(res.entries.find((h) => h.doc.id === 'dict:kita-f1')).toMatchObject({ via: 'kita-', score: 0.3 })
+    const [first] = res.entryGroups
+    // 另立條目 pakita（同根）與 kita- 條下的 pakita 寫法相同，照舊併成一列
+    expect(outline(first.root).slice(0, 3)).toEqual(['dict:kita', '  dict:kita-f2 +dict:pakita', '    dict:kita-f3'])
+  })
+
+  it('不看確定拆解、確定同根時，上層記錄只當作位置照列（沒有命中）', () => {
+    const [first] = engine.search('pinakita', { fuzziness: 'exact', exclude: ['dictLemma', 'dictSibling'] }).entryGroups
     expect(outline(first.root)).toEqual(['dict:kita (上層)', '  dict:kita-f2 (上層)', '    dict:kita-f3'])
   })
 
-  it('篩選掉的來源不會出現，上層記錄仍然照列', () => {
+  it('篩選掉的來源不會出現：只看分類詞表時，只剩它標明衍生自 kita- 的 kitakita（確定同根）', () => {
     const res = engine.search('pinakita', { fuzziness: 'exact', filters: { sources: ['list'] } })
-    expect(res.entryGroups).toEqual([])
+    expect(res.entries.map((h) => `${h.doc.id}:${h.kind}`)).toEqual(['list:c1-2:sibling'])
   })
 })
 

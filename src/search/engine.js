@@ -16,10 +16,24 @@
  */
 
 import { createMorphSearch, FuzzyIndex, roundCost } from '../fuzzy/index.js'
-import { DerivationGraph, VIRTUAL_ROOT_PENALTY } from './derivations.js'
+import { DerivationGraph, isLexicalRoot, VIRTUAL_ROOT_PENALTY, virtualRoots } from './derivations.js'
 import { buildEntryGroups, collectHits, mergeSpellings } from './family.js'
 import { decodePosting, docAt, INDEX_FORMAT_VERSION } from './format.js'
-import { compareHits, compareOccurrences, MATCH_TYPE_RANK, MATCH_TYPES, mergeMorphMatch, recordScore, replacesRecordHit, ROLE_RANK, termScore } from './scoring.js'
+import {
+  alternativesOf,
+  compareHits,
+  compareOccurrences,
+  KIND_RANK,
+  MATCH_TYPE_RANK,
+  MATCH_TYPES,
+  mergeMorphMatch,
+  methodOf,
+  recordScore,
+  replacesRecordHit,
+  ROLE_RANK,
+  SEARCH_METHODS,
+  termScore,
+} from './scoring.js'
 import { createTextTools, detectQueryMode, glossTokens, zhNormalize } from './text.js'
 
 /**
@@ -58,6 +72,8 @@ export const FUZZINESS = Object.freeze({
  * @property {string[]} [fields] 要搜尋的部分：'native' 族語、'gloss' 釋義；預設兩者都搜
  * @property {number} [limit=500] 每個區塊最多回傳筆數
  * @property {number} [explainLimit=40] 為前幾筆模糊詞條附上對齊說明
+ * @property {import('./scoring.js').SearchMethod[]} [exclude] 不要的搜尋方法（見 scoring.js 的 SEARCH_METHODS）：
+ *   每筆記錄只在剩下的方法中挑最好的命中，被排除的方法不會壓在其他方法底下
  */
 
 /**
@@ -76,7 +92,10 @@ export const FUZZINESS = Object.freeze({
  * @property {number} distance 加權編輯距離；前綴／包含命中為 0
  * @property {number} score 排序用的等效距離（見 scoring.js）
  * @property {MatchType} matchType 以哪一種方式命中
- * @property {import('./format.js').MatchKind} kind
+ * @property {import('./format.js').MatchKind | 'parent' | 'sibling'} kind 詞與記錄的關係；root、parent、sibling 是辭典標註的構詞關係
+ *   （確定派生、確定拆解、確定同根，見 scoring.js 的 KIND_RANK）
+ * @property {string} [via] 確定同根時，兩者共同的上層（辭典中的詞形）
+ * @property {boolean} [direct] 這筆記錄有沒有被查詢直接命中（不只經由辭典的構詞關係）；家族的排序只把直接的命中算成證據
  * @property {AlignmentNote[] | null} alignment
  * @property {LemmaAnalysis | null} [analysis] 構詞分析：自動拆解（matchType 'lemma'）時是查詢的分析，
  *   自動派生（matchType 'derived'）時是命中詞的分析
@@ -131,8 +150,9 @@ export const FUZZINESS = Object.freeze({
  * @property {string} word 查詢詞
  * @property {string} term 查詢命中的詞庫詞（搜尋鍵）；kind 為 root 時是詞根，句中的詞在 token
  * @property {string} token 句中命中的詞（搜尋鍵）
- * @property {'token' | 'root'} kind token：句中的詞就是 term；root：句中的詞是辭典列在 term 條下的派生詞
- *   （查 usa，句中的 mukusa；見 _dictionaryDerivatives）
+ * @property {'token' | 'root' | 'parent' | 'sibling'} kind token：句中的詞就是 term；其他是辭典標註的構詞關係
+ *   （root：句中的詞是 term 的下層，查 usa 句中的 mukusa；parent：上層；sibling：同一個上層；見 _dictionaryRelations）
+ * @property {string} [via] 確定同根時，共同的上層
  * @property {MatchType} matchType
  * @property {number} distance
  * @property {AlignmentNote[] | null} alignment 模糊命中的對齊說明（只為前幾句計算）
@@ -156,6 +176,8 @@ export const FUZZINESS = Object.freeze({
  * @property {OccurrenceHit[]} occurrences
  * @property {GlossHit[]} glosses
  * @property {{entries: number, entryGroups: number, occurrences: number, glosses: number}} totals 截斷前的總數
+ * @property {Record<import('./scoring.js').SearchMethod, number>} methods 每種搜尋方法找得到幾筆記錄（詞條與例句；
+ *   不受 exclude 影響，介面用來顯示每個方法的數量）
  * @property {{elapsedMs: number, visitedNodes: number}} stats
  */
 
@@ -208,8 +230,10 @@ export class SearchEngine {
     this._listCache = null
     /** @type {WeakMap<LemmaAnalysis, () => MorphNote[]>} 構詞命中的音變說明（需要時才計算） */
     this._lazyNotes = new WeakMap()
-    /** @type {Map<string, Array<{term: string, depth: number, payloads: unknown[]}>>} 詞 → 辭典列在它條下的派生詞（_dictionaryDerivatives） */
-    this._derivatives = new Map()
+    /** @type {Map<string, Array<{doc: number, kind: 'root' | 'parent' | 'sibling', depth: number, via?: string}>>} 詞 → 辭典標註的構詞關係（_dictionaryRelations） */
+    this._relations = new Map()
+    /** @type {Set<string> | null} 構詞規格中的詞綴寫法（_isAffixEntry） */
+    this._affixForms = null
     /** 自動派生圖（查詞根找自動派生形，見 derivations.js） */
     this.derivations = derivations && this.morphSearch ? new DerivationGraph(derivations, this.index.terms) : null
   }
@@ -310,6 +334,7 @@ export class SearchEngine {
       fields = ['native', 'gloss'],
       limit = 500,
       explainLimit = 40,
+      exclude = [],
     } = options
     const searchNative = fields.includes('native')
     const searchGloss = fields.includes('gloss')
@@ -325,6 +350,7 @@ export class SearchEngine {
       occurrences: [],
       glosses: [],
       totals: { entries: 0, entryGroups: 0, occurrences: 0, glosses: 0 },
+      methods: /** @type {SearchResponse['methods']} */ (Object.fromEntries(SEARCH_METHODS.map((m) => [m, 0]))),
       stats: { elapsedMs: 0, visitedNodes: 0 },
     }
     if (!q) return response
@@ -335,6 +361,7 @@ export class SearchEngine {
       // 但加權編輯距離對中文沒有意義
       this._searchNative(q, FUZZINESS[fuzziness] ?? FUZZINESS.normal, accept, response, explainLimit, {
         fuzzy: mode === 'latin',
+        exclude: new Set(exclude),
       })
     }
     if (searchGloss) {
@@ -462,10 +489,10 @@ export class SearchEngine {
    * @param {(k: number) => boolean} accept
    * @param {SearchResponse} response
    * @param {number} explainLimit
-   * @param {{fuzzy?: boolean}} [mode] fuzzy=false 時只做前綴／包含比對
+   * @param {{fuzzy?: boolean, exclude?: Set<string>}} [mode] fuzzy=false 時只做前綴／包含比對；exclude 是不要的搜尋方法
    * @private
    */
-  _searchNative(q, level, accept, response, explainLimit, { fuzzy = true } = {}) {
+  _searchNative(q, level, accept, response, explainLimit, { fuzzy = true, exclude = new Set() } = {}) {
     const key = this.text.searchKey(q)
     if (!key) return
     const words = this.text.splitWords(q)
@@ -476,27 +503,69 @@ export class SearchEngine {
       .slice(0, 30)
       .map(({ term, distance }) => ({ term, distance }))
 
-    // 詞條：整個查詢對應詞庫詞
+    // 每種搜尋方法找得到哪些記錄（數量給介面顯示；不受 exclude 影響）
+    /** @type {Map<string, Set<number>>} */
+    const byMethod = new Map(SEARCH_METHODS.map((m) => [m, new Set()]))
+    /** 記下一個命中的方法，回傳是否保留（沒有被排除） @param {number} k @param {{matchType: MatchType, distance: number, kind?: string}} h */
+    const admit = (k, h) => {
+      const method = methodOf(h)
+      byMethod.get(method)?.add(k)
+      return !exclude.has(method)
+    }
+
+    // 詞條：整個查詢對應詞庫詞。每個詞依序試它的命中與被它取代的命中（alternativesOf），用第一個沒被排除的
     /** @type {Map<number, EntryHit>} */
     const entries = new Map()
     for (const t of fullTerms) {
       for (const code of /** @type {number[]} */ (t.payloads)) {
         const { doc: k, kind } = decodePosting(code)
-        if (kind === 'token' || !accept(k) || !usablePosting(t.matchType, kind)) continue
+        if (kind === 'token' || !accept(k)) continue
+        /** @type {TermMatch | null} */
+        let chosen = null
+        for (const c of alternativesOf(t)) {
+          if (!usablePosting(c.matchType, kind)) continue
+          if (admit(k, { matchType: c.matchType, distance: c.distance, kind }) && !chosen) chosen = c
+        }
+        if (!chosen) continue
         const prev = entries.get(k)
         /** @type {EntryHit} */
         const hit = {
           doc: prev?.doc ?? this.doc(k),
-          term: t.term,
-          distance: t.distance,
-          // 詞根 posting 是辭典標註的派生關係：排在詞本身之後（與例句的辭典派生詞同一條規則，scoring.js）
-          score: recordScore(termScore(t, key), kind === 'root' ? 1 : 0),
-          matchType: t.matchType,
+          term: chosen.term,
+          distance: chosen.distance,
+          // 詞根 posting 是辭典標註的派生關係：排在詞本身之後（與辭典的其他構詞關係同一條規則，scoring.js）
+          score: recordScore(termScore(chosen, key), kind === 'root' ? 1 : 0),
+          matchType: chosen.matchType,
           kind,
+          direct: kind !== 'root' || Boolean(prev?.direct),
           alignment: null,
-          analysis: t.analysis ?? null,
+          analysis: chosen.analysis ?? null,
         }
         if (replacesRecordHit(hit, prev, compareHits)) entries.set(k, hit)
+        else if (hit.direct && prev) prev.direct = true
+      }
+    }
+    // 辭典標註的構詞關係（確定拆解、派生、同根）：只從寫法與查詢相同的詞條展開（例句同一條規則，見 _searchOccurrences）
+    for (const t of fullTerms) {
+      if (t.matchType !== 'fuzzy' || t.distance > 0) continue
+      for (const r of this._dictionaryRelations(t)) {
+        if (!accept(r.doc) || !admit(r.doc, { matchType: 'fuzzy', distance: 0, kind: r.kind })) continue
+        const prev = entries.get(r.doc)
+        /** @type {EntryHit} */
+        const hit = {
+          doc: prev?.doc ?? this.doc(r.doc),
+          term: t.term,
+          distance: 0,
+          score: recordScore(termScore(t, key), r.depth),
+          matchType: 'fuzzy',
+          kind: r.kind,
+          ...(r.via ? { via: r.via } : {}),
+          // 經由辭典關係的命中不是獨立的證據；原本已經直接命中的（例如自動拆解到的詞根）仍算
+          direct: Boolean(prev?.direct),
+          alignment: null,
+          analysis: null,
+        }
+        if (replacesRecordHit(hit, prev, compareHits)) entries.set(r.doc, hit)
       }
     }
     response.entries = sortEntries([...entries.values()])
@@ -537,7 +606,10 @@ export class SearchEngine {
       if (shown >= explainLimit) break
     }
 
-    response.occurrences = this._searchOccurrences(key, words, fullTerms, level, accept, response, fuzzy).filter((o) => !entries.has(o.doc.index))
+    response.occurrences = this._searchOccurrences(key, words, fullTerms, level, accept, response, fuzzy, exclude, byMethod).filter(
+      (o) => !entries.has(o.doc.index),
+    )
+    for (const [m, docs] of byMethod) response.methods[/** @type {import('./scoring.js').SearchMethod} */ (m)] = docs.size
     // 例句的命中說明與詞條相同，也只為前幾句計算
     for (const o of response.occurrences.slice(0, explainLimit)) for (const m of o.matches) explainMatch(m.word, m)
   }
@@ -557,10 +629,12 @@ export class SearchEngine {
    * @param {(k: number) => boolean} accept
    * @param {SearchResponse} response 累加走訪統計
    * @param {boolean} fuzzy
+   * @param {Set<string>} exclude 不要的搜尋方法
+   * @param {Map<string, Set<number>>} byMethod 每種方法找得到的記錄（累加）
    * @returns {OccurrenceHit[]}
    * @private
    */
-  _searchOccurrences(key, words, fullTerms, level, accept, response, fuzzy) {
+  _searchOccurrences(key, words, fullTerms, level, accept, response, fuzzy, exclude, byMethod) {
     /** @type {Map<string, {terms: TermMatch[], visited: number}>} */
     const seen = new Map()
     const matchWord = (/** @type {string} */ word) => {
@@ -585,9 +659,13 @@ export class SearchEngine {
       const place = (payloads, score, match) => {
         const rank = MATCH_TYPE_RANK[match.matchType]
         const next = { matchType: match.matchType, score }
+        const method = methodOf(match)
+        const excluded = exclude.has(method)
         for (const code of /** @type {number[]} */ (payloads)) {
           const { doc: k, kind } = decodePosting(code)
           if (kind !== 'token' || !accept(k)) continue
+          byMethod.get(method)?.add(k)
+          if (excluded) continue
           const prev = found.get(k)
           const before = prev && { matchType: MATCH_TYPES[prev.rank], score: prev.score }
           // 只有自動同根命中的句子，遇到其他命中時整個換掉（高亮也只留那一種）；已有其他命中的句子不收自動同根
@@ -606,16 +684,20 @@ export class SearchEngine {
         }
       }
       for (const t of matchWord(word)) {
-        const score = termScore(t, word)
-        /** @type {OccurrenceMatch} 同一個物件由含這個詞的各句共用：說明只算一次，每一句都看得到 */
-        const match = { word, term: t.term, token: t.term, kind: 'token', matchType: t.matchType, distance: t.distance, alignment: null, analysis: t.analysis ?? null }
-        place(t.payloads, recordScore(score), match)
-        // 辭典列在條目下的派生詞只從「就是查詢那個詞」的詞條展開（搜尋鍵相同）。寫法相近的詞條已經是一層不確定
-        // （sungut 與 zenget 只差三條方言規則，卻是不同的詞），再加上派生就不是查詢的那個詞了；
+        // 同一個詞的命中與被它取代的命中都放上去：被排除的方法在 place 裡略過，每句仍取剩下的最好的一種
+        for (const c of alternativesOf(t)) {
+          /** @type {OccurrenceMatch} 同一個物件由含這個詞的各句共用：說明只算一次，每一句都看得到 */
+          const match = { word, term: c.term, token: c.term, kind: 'token', matchType: c.matchType, distance: c.distance, alignment: null, analysis: c.analysis ?? null }
+          place(c.payloads, recordScore(termScore(c, word)), match)
+        }
+        // 辭典標註的構詞關係只從「就是查詢那個詞」的詞條展開（搜尋鍵相同）。寫法相近的詞條已經是一層不確定
+        // （sungut 與 zenget 只差三條方言規則，卻是不同的詞），再加上辭典的關係就不是查詢的那個詞了；
         // 它們的派生詞仍可經由自動派生找到，分數照實加上寫法的差距
         if (t.matchType !== 'fuzzy' || t.distance > 0) continue
-        for (const d of this._dictionaryDerivatives(t)) {
-          place(d.payloads, recordScore(score, d.depth), { ...match, token: d.term, kind: 'root' })
+        const score = termScore(t, word)
+        const base = { word, term: t.term, matchType: /** @type {MatchType} */ ('fuzzy'), distance: 0, alignment: null, analysis: null }
+        for (const d of this._dictionaryTokens(t)) {
+          place(d.payloads, recordScore(score, d.depth), { ...base, token: d.term, kind: d.kind, ...(d.via ? { via: d.via } : {}) })
         }
       }
       if (combined === null) {
@@ -651,54 +733,114 @@ export class SearchEngine {
   }
 
   /**
-   * 辭典列在一個詞的條目下的派生詞（辭典標註的關係，不是演算法推定的）：
-   * 以這個詞為詞形的記錄在詞條家族中的所有下層詞（docs.parent：條目下的詞形、標明 < 這個詞的另立條目），
-   * 以及標明由它衍生、但接不上家族的記錄（詞根 posting，例如同形異義詞）。只收詞與詞綴，不收片語與例句。
-   * 查 usa：mukusa（p.204 另立條目「< usa」、usa 條下的詞形）。
+   * 辭典標註的構詞關係（不是演算法推定的）：以詞 t 為詞形的記錄（「自己」）在詞條家族（docs.parent）中的
+   * - 下層（root，確定派生）：條目下的詞形、標明 < t 的另立條目，以及標明由 t 衍生、但接不上家族的記錄（詞根 posting）；
+   * - 上層（parent，確定拆解）：自己所屬的條目、自己標明 < 的詞；
+   * - 同一個上層的其他詞（sibling，確定同根）：上層的所有下層，扣掉自己這一支。上層是詞綴的條目（<in>、mina-：
+   *   辭典把帶這個詞綴的詞列為例子）時不算：那是同一個詞綴，不是同一個詞根。詞綴由語言設定檔的構詞規格判斷（_isAffixEntry）。
+   * 層數：上層、下層各算一層，同根是往上的層數加往下的層數。只收詞與詞綴，不收片語與例句。
+   * 查 usa：mukusa（p.204 另立條目「< usa」、usa 條下的詞形）是下層；查 mukawas：kawas- 是上層，
+   * kawas- 條下的其他詞是同根。
    *
    * @param {TermMatch} t
-   * @returns {Array<{term: string, depth: number, payloads: unknown[]}>} 每個詞取最淺的一層
+   * @returns {Array<{doc: number, kind: 'root' | 'parent' | 'sibling', depth: number, via?: string}>} 每筆記錄取最淺的一種
    * @private
    */
-  _dictionaryDerivatives(t) {
-    const cached = this._derivatives.get(t.term)
+  _dictionaryRelations(t) {
+    const cached = this._relations.get(t.term)
     if (cached) return cached
     const docs = this.docs
-    /** @type {Map<string, {term: string, depth: number, payloads: unknown[]}>} */
-    const out = new Map()
-    /** @param {number} k @param {number} depth */
-    const add = (k, depth) => {
+    const isWord = (/** @type {number} */ k) => {
       const unit = docs.units[docs.unit[k]]
-      if (unit !== 'word' && unit !== 'affix') return
-      const term = this.text.searchKey(docs.text[k])
-      if (!term || term === t.term || term.includes(' ')) return
-      const prev = out.get(term)
-      if (prev && prev.depth <= depth) return
-      const payloads = this.index.lookup(term)
-      if (payloads) out.set(term, { term, depth, payloads })
+      return unit === 'word' || unit === 'affix'
     }
-    /** @type {Array<[number, number]>} 待走的（記錄, 層數），依層數由淺到深 */
-    const queue = []
-    const visited = new Set()
+    /** @type {Set<number>} 以 t 為詞形的記錄 */
+    const self = new Set()
+    /** @type {number[]} 標明由 t 衍生的記錄（詞根 posting） */
+    const marked = []
     for (const code of /** @type {number[]} */ (t.payloads)) {
       const { doc: k, kind } = decodePosting(code)
-      if (kind === 'token') continue
-      if (kind === 'root') add(k, 1)
-      queue.push([k, kind === 'root' ? 1 : 0])
+      if (kind === 'root') marked.push(k)
+      else if (kind !== 'token') self.add(k)
     }
-    queue.sort((a, b) => a[1] - b[1])
-    while (queue.length) {
-      const [k, depth] = /** @type {[number, number]} */ (queue.shift())
-      if (visited.has(k)) continue
-      visited.add(k)
-      for (const c of this._childrenOf(k)) {
-        add(c, depth + 1)
-        queue.push([c, depth + 1])
+    /** 由 starts 往下走，每筆記錄的最淺層數 @param {Array<[number, number]>} starts */
+    const below = (starts) => {
+      /** @type {Map<number, number>} */
+      const depth = new Map()
+      const queue = [...starts].sort((a, b) => a[1] - b[1])
+      while (queue.length) {
+        const [k, d] = /** @type {[number, number]} */ (queue.shift())
+        if (depth.has(k)) continue
+        depth.set(k, d)
+        for (const c of this._childrenOf(k)) queue.push([c, d + 1])
+      }
+      return depth
+    }
+    const down = below([...[...self].map((k) => /** @type {[number, number]} */ ([k, 0])), ...marked.map((k) => /** @type {[number, number]} */ ([k, 1]))])
+    /** @type {Map<number, number>} 上層與層數 */
+    const up = new Map()
+    for (const k of self) {
+      for (let p = docs.parent[k], d = 1; p !== -1 && !up.has(p); p = docs.parent[p], d++) up.set(p, d)
+    }
+    /** @type {Map<number, {doc: number, kind: 'root' | 'parent' | 'sibling', depth: number, via?: string}>} */
+    const out = new Map()
+    /** @param {number} k @param {'root' | 'parent' | 'sibling'} kind @param {number} depth @param {string} [via] */
+    const put = (k, kind, depth, via) => {
+      if (self.has(k) || !isWord(k)) return
+      const prev = out.get(k)
+      if (!prev || depth < prev.depth || (depth === prev.depth && KIND_RANK[kind] < KIND_RANK[prev.kind])) out.set(k, { doc: k, kind, depth, ...(via ? { via } : {}) })
+    }
+    for (const [k, d] of down) if (d > 0) put(k, 'root', d)
+    for (const [k, d] of up) put(k, 'parent', d)
+    for (const [a, u] of up) {
+      if (this._isAffixEntry(a)) continue
+      for (const [k, d] of below([[a, 0]])) {
+        if (d > 0 && !down.has(k) && !up.has(k)) put(k, 'sibling', u + d, docs.text[a])
       }
     }
     const list = [...out.values()]
-    this._derivatives.set(t.term, list)
+    this._relations.set(t.term, list)
     return list
+  }
+
+  /**
+   * 記錄是不是詞綴的條目：詞形（搜尋鍵）是語言設定檔構詞規格中的前綴、後綴、中綴或環綴的一側。
+   * 詞根的條目（kita-、kawas-）也常寫成帶連字號，要靠規格區分；沒有構詞規格時一律當成詞根。
+   * @param {number} k
+   * @private
+   */
+  _isAffixEntry(k) {
+    const spec = this.text.morphology?.spec
+    if (!spec) return false
+    if (!this._affixForms) {
+      this._affixForms = new Set([
+        ...spec.prefixes.map((a) => a.form),
+        ...spec.suffixes.map((a) => a.form),
+        ...spec.infixes.map((a) => a.form),
+        ...spec.circumfixes.flatMap((c) => [c.left, c.suffix].filter(Boolean)),
+      ])
+    }
+    return this._affixForms.has(this.text.searchKey(this.docs.text[k]))
+  }
+
+  /**
+   * 例句用：辭典構詞關係中的記錄換成它們的寫法（搜尋鍵）與 posting。同一個寫法取最淺的一種。
+   * @param {TermMatch} t
+   * @returns {Array<{term: string, kind: 'root' | 'parent' | 'sibling', depth: number, via?: string, payloads: unknown[]}>}
+   * @private
+   */
+  _dictionaryTokens(t) {
+    /** @type {Map<string, {term: string, kind: 'root' | 'parent' | 'sibling', depth: number, via?: string, payloads: unknown[]}>} */
+    const out = new Map()
+    for (const r of this._dictionaryRelations(t)) {
+      const term = this.text.searchKey(this.docs.text[r.doc])
+      if (!term || term === t.term || term.includes(' ')) continue
+      const prev = out.get(term)
+      if (prev && (prev.depth < r.depth || (prev.depth === r.depth && KIND_RANK[prev.kind] <= KIND_RANK[r.kind]))) continue
+      const payloads = this.index.lookup(term)
+      if (payloads) out.set(term, { term, kind: r.kind, depth: r.depth, ...(r.via ? { via: r.via } : {}), payloads })
+    }
+    return [...out.values()]
   }
 
   /**
@@ -774,7 +916,8 @@ export class SearchEngine {
         .filter((m) => level.derivedFromAll || (m.distance <= DIALECT_VARIANT_DISTANCE && this.explainNotes(key, m.term).every((s) => s.op === 'rule')))
       // 同一個詞有多種命中方式時的取捨見 scoring.js 的 mergeMorphMatch：開頭相符、包含的詞能自動拆解或派生時
       // 改以構詞命中呈現、分數取較好的；與模糊命中之間取分數較好的
-      for (const m of [...lemma, ...this._derivedTerms(key, variants, this._lemmaMax(key, level))]) {
+      const lemmaBest = Math.min(Infinity, ...lemma.map((m) => m.distance))
+      for (const m of [...lemma, ...this._derivedTerms(key, variants, this._lemmaMax(key, level), lemmaBest)]) {
         matches.set(m.term, mergeMorphMatch(m, matches.get(m.term), key))
       }
     }
@@ -791,10 +934,11 @@ export class SearchEngine {
    * @param {string} key
    * @param {TermMatch[]} variants 查詢的相近寫法（模糊命中的詞）
    * @param {number} maxPath 路徑成本的上限
+   * @param {number} [lemmaBest] 自動拆解在詞庫中最好的詞根的成本（虛擬詞根的條件 1，與建置時相同）
    * @returns {TermMatch[]}
    * @private
    */
-  _derivedTerms(key, variants, maxPath) {
+  _derivedTerms(key, variants, maxPath, lemmaBest = Infinity) {
     const graph = this.derivations
     if (!graph) return []
     /** @type {Array<{id: number, distance: number, term: string, split?: {cost: number, steps: any[]}}>} */
@@ -803,23 +947,22 @@ export class SearchEngine {
       const id = this.index.dawg.lookup(s.term)
       if (id !== -1) seeds.push({ id, distance: s.distance, term: s.term })
     }
-    // 虛擬詞根：查詢本身拆出的詞幹（構詞分析器，精確的列舉）若是虛擬詞根，由它往下找同根詞（見 derivations.js 檔頭）。
-    // 起點的距離是拆解的成本加上一次 VIRTUAL_ROOT_PENALTY；每個虛擬詞根取最便宜的拆法
+    // 虛擬詞根：以建置時同一個函式、同樣的條件拆查詢本身（virtualRoots；詞庫中最好的詞根取自動拆解的結果，
+    // 查詢是別的詞的詞根時不拆），拆出的虛擬詞根往下找同根詞（見 derivations.js 檔頭）。
+    // 起點的距離是拆解的成本加上一次 VIRTUAL_ROOT_PENALTY
+    const self = this.index.dawg.lookup(key)
     /** @type {typeof seeds} */
     const virtualSeeds = []
-    for (const a of /** @type {NonNullable<typeof this.text.morphology>} */ (this.text.morphology).analyze(key)) {
-      const id = graph.virtualIds.get(a.stem)
-      if (id === undefined || a.steps.length === 0) continue
-      const distance = roundCost(a.cost + VIRTUAL_ROOT_PENALTY)
-      const prev = virtualSeeds.find((x) => x.id === id)
-      if (!prev) virtualSeeds.push({ id, distance, term: a.stem, split: { cost: a.cost, steps: [...a.steps] } })
-      else if (distance < prev.distance) Object.assign(prev, { distance, split: { cost: a.cost, steps: [...a.steps] } })
+    if (!isLexicalRoot(this.index, self, (id) => graph.hasChildren(id))) {
+      for (const v of virtualRoots(key, /** @type {NonNullable<typeof this.text.morphology>} */ (this.text.morphology), this.index, lemmaBest)) {
+        const id = graph.virtualIds.get(v.stem)
+        if (id !== undefined) virtualSeeds.push({ id, distance: roundCost(v.cost + VIRTUAL_ROOT_PENALTY), term: v.stem, split: { cost: v.cost, steps: v.steps } })
+      }
     }
     // 分兩次走：先由查詢與它的相近寫法（與沒有虛擬詞根時完全相同），再由虛擬詞根，只補上第一次沒走到的詞。
     // 自動同根不取代其他命中（scoring.js 的 mergeMorphMatch），在圖上也一樣
     const direct = graph.descendants(seeds, maxPath).map((r) => ({ ...r, from: seeds[r.seed] }))
     const reached = new Set(direct.map((r) => r.word))
-    const self = this.index.dawg.lookup(key)
     const viaVirtual = virtualSeeds.length
       ? graph
           .descendants(virtualSeeds, maxPath)
@@ -970,7 +1113,8 @@ export class SearchEngine {
           term: terms[id],
           payloads: this.index.payloads[id],
           distance: 0,
-          matchType: /** @type {MatchType} */ (matchType),
+          // 以查詢結尾的另外標示為結尾相符（排序與包含相同，只是可以分開篩選）
+          matchType: matchType === 'substring' && terms[id].endsWith(key) ? 'suffix' : /** @type {MatchType} */ (matchType),
         })
       }
     }
@@ -1162,6 +1306,7 @@ export class SearchEngine {
  * - 自動拆解（lemma）：詞根本身，以及辭典標註的派生詞（root posting，排在詞根之後）。
  *   查 kinawas 得到詞根 kawas 時，mukawas、maakawas 等已標註的派生詞也要列出來
  * - 自動派生（derived）、自動同根（sibling）：不沿用 root posting，那是「派生詞的派生詞」
+ * - 其他（完全相符、相近拼寫、開頭相符、結尾相符、包含）：沿用，關係是確定派生（fuzzy）或以把握較小的那一種計（scoring.js 的 methodOf）
  * @param {MatchType} matchType
  * @param {import('./format.js').MatchKind} kind
  */

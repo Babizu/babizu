@@ -17,6 +17,7 @@ import MetaTag from '@/components/common/MetaTag.vue'
 import { t } from '@/i18n.js'
 import { displayHit } from '@/lib/entry-groups.js'
 import { recordRoute, unitLabel } from '@/lib/labels.js'
+import { DICTIONARY_KINDS } from '@babizu/search/scoring.js'
 import HitTags from './HitTags.vue'
 
 const props = defineProps({
@@ -27,7 +28,8 @@ const props = defineProps({
 
 const doc = computed(() => props.node.doc)
 const hit = computed(() => displayHit(props.node))
-const showTags = computed(() => hit.value !== null && hit.value.kind !== 'root')
+// 經由辭典構詞關係命中的子項目不加標籤：樹狀排列已經看得出關係
+const showTags = computed(() => hit.value !== null && !DICTIONARY_KINDS.has(hit.value.kind))
 const exact = computed(() => showTags.value && hit.value.matchType === 'fuzzy' && hit.value.distance === 0)
 const showUnit = computed(() => doc.value.unit !== 'word' && doc.value.unit !== 'sentence')
 </script>

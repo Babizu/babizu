@@ -7,6 +7,7 @@ import MatchExplanation from '@/components/common/MatchExplanation.vue'
 import MatchTypeTag from '@/components/common/MatchTypeTag.vue'
 import MetaTag from '@/components/common/MetaTag.vue'
 import MorphologyExplanation from '@/components/common/MorphologyExplanation.vue'
+import { DICTIONARY_KINDS } from '@babizu/search/scoring.js'
 import { matchKindHint, matchKindLabel } from '@/lib/labels.js'
 
 defineProps({
@@ -14,15 +15,19 @@ defineProps({
   hit: { type: Object, required: true },
   query: { type: String, default: '' },
   /**
-   * 是否標出「以詞根身分命中」：家族中的子項目不需要，樹狀排列已經看得出它衍生自哪個詞根
+   * 是否標出辭典的構詞關係（確定派生、拆解、同根）：家族中的子項目不需要，樹狀排列已經看得出關係
    */
   showRootKind: { type: Boolean, default: true },
 })
 </script>
 
 <template>
-  <MetaTag v-if="hit.kind && hit.kind !== 'head' && hit.kind !== 'token' && (showRootKind || hit.kind !== 'root')" variant="soft" :title="matchKindHint(hit.kind) || undefined">
-    {{ matchKindLabel(hit.kind) }} <span class="native-text font-medium">{{ hit.term }}</span>
+  <MetaTag
+    v-if="hit.kind && hit.kind !== 'head' && hit.kind !== 'token' && (showRootKind || !DICTIONARY_KINDS.has(hit.kind))"
+    variant="soft"
+    :title="matchKindHint(hit.kind) || undefined"
+  >
+    {{ matchKindLabel(hit.kind) }} <span class="native-text font-medium">{{ hit.kind === 'sibling' ? (hit.via ?? hit.term) : hit.term }}</span>
   </MetaTag>
   <span v-if="hit.analysis" class="relative z-10 inline-flex min-w-0">
     <MorphologyExplanation :analysis="hit.analysis" :match-type="hit.matchType" :query="query" :term="hit.term" />

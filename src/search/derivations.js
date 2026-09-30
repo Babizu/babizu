@@ -19,9 +19,12 @@
  *    （沒有詞庫詞根時一律成立）。所以原本的邊一條都不動，只在詞庫解釋不了的地方補上；
  * 2. **形狀像一個詞根**（`isVirtualRootShape`）：至少兩個元音、比 minStem 長，太短的詞幹容易巧合相同；
  * 3. **本身是「根」**：v 不能再拆出詞庫中的詞（mabaketan 拆出的 baketan、mabaket 只是 baket 加上一個詞綴，不算）；
- * 4. 只取這個詞成本最低的虛擬詞根（同分的都取）。
- * 查詢時再拆一次查詢本身，拆出的詞幹若是虛擬詞根，就由它往下走：找到的是與查詢推定同一個詞根的詞
- * （命中方式 sibling，介面標「自動同根」）。虛擬詞根本身不是結果，也不參與其他命中方式。
+ * 4. 只取這個詞成本最低的虛擬詞根（同分的都取）；
+ * 5. **w 本身不是別的詞的詞根**：自動派生圖中有詞以 w 為最好的詞根，或辭典標明某詞 < w 時，w 就是根，
+ *    不再往上拆（samian 是 masamian、musamian 的詞根，不拆成 sa- ＋ mian）。所以要先算完所有詞庫詞根的邊。
+ * 查詢時以**同一個函式、同樣的條件**拆查詢本身（`virtualRoots`，詞庫中最好的詞根取自動拆解的結果）：
+ * masamian 的自動拆解是 ma- ＋ samian，詞庫已經解釋得了，不再拆成 masa- ＋ mian。拆出的虛擬詞根往下走，
+ * 找到的是與查詢推定同一個詞根的詞（命中方式 sibling，介面標「自動同根」）。虛擬詞根本身不是結果。
  *
  * ## derivations.json
  * ```
@@ -36,6 +39,7 @@
  */
 
 import { createMorphSearch, EPSILON, FuzzyIndex, roundCost } from '../fuzzy/index.js'
+import { decodePosting } from './format.js'
 import { createTextTools } from './text.js'
 
 /** derivations.json 的格式版本（2：加上虛擬詞根） */
@@ -84,15 +88,18 @@ export function isVirtualRootShape(stem, spec) {
  */
 
 /**
- * 建立「求最好的詞根」的分析器：`analyze(from, to)` 對詞庫中編號在 [from, to) 的詞求邊。
- * 建置端可以切塊平行執行（src/site/derivations.js），各塊的結果依詞編號接起來，與一次算完相同。
+ * 建立「求最好的詞根」的分析器，分兩個階段：
+ * 1. `analyze(from, to)`：詞庫中編號在 [from, to) 的詞，BCDP 在詞庫中最好的詞根（每個詞各自算，可以切塊平行執行，
+ *    src/site/derivations.js；各塊的結果依詞編號接起來，與一次算完相同）；
+ * 2. `virtual(edges)`：拿第 1 階段全部的邊，求虛擬詞根的邊（條件 5 要知道哪些詞是別的詞的詞根）。
  * @param {{lexicon: import('../fuzzy/fuzzy-index.js').SerializedIndex, profile: import('../fuzzy/profile.js').LanguageProfile}} input
  */
 export function createDerivationAnalyzer({ lexicon, profile }) {
   const text = createTextTools(profile)
   const metric = text.createSearchMetric()
   const index = FuzzyIndex.deserialize(lexicon, metric)
-  const search = text.morphology ? createMorphSearch({ analyzer: text.morphology, metric, index }) : null
+  const analyzer = text.morphology
+  const search = analyzer ? createMorphSearch({ analyzer, metric, index }) : null
   return {
     /** 詞圖的詞數 */
     count: index.size,
@@ -101,27 +108,78 @@ export function createDerivationAnalyzer({ lexicon, profile }) {
      * @param {number} [to]
      * @returns {DerivationEdge[]} 依詞編號排序
      */
-    analyze: (from = 0, to = Infinity) =>
-      search && text.morphology ? analyzeRange(index, search, text.morphology, from, to) : [],
+    analyze: (from = 0, to = Infinity) => (search ? analyzeRange(index, search, from, to) : []),
+    /**
+     * @param {DerivationEdge[]} edges 第 1 階段全部的邊
+     * @returns {DerivationEdge[]} 虛擬詞根的邊，依詞編號排序
+     */
+    virtual: (edges) => (analyzer ? virtualEdges(index, analyzer, edges) : []),
   }
+}
+
+/**
+ * 詞 w（詞編號 id）是不是根：自動派生圖中有詞以它為最好的詞根，或辭典標明某詞由它衍生（詞根 posting）。
+ * @param {FuzzyIndex} index
+ * @param {number} id
+ * @param {(id: number) => boolean} hasChildren
+ */
+export function isLexicalRoot(index, id, hasChildren) {
+  if (id < 0) return false
+  if (hasChildren(id)) return true
+  return /** @type {number[]} */ (index.payloads[id] ?? []).some((code) => decodePosting(code).kind === 'root')
+}
+
+/**
+ * 第 2 階段：每個詞的虛擬詞根（條件見檔頭）。
+ * @param {FuzzyIndex} index
+ * @param {import('../fuzzy/morphology.js').Analyzer} analyzer
+ * @param {DerivationEdge[]} edges 詞庫詞根的邊
+ * @returns {DerivationEdge[]}
+ */
+function virtualEdges(index, analyzer, edges) {
+  /** @type {Map<number, number>} 詞 → 詞庫中最好的詞根的成本 */
+  const best = new Map()
+  /** @type {Set<number>} 是別的詞的詞根的詞 */
+  const roots = new Set()
+  for (const e of edges) {
+    if (typeof e.root !== 'number') continue
+    best.set(e.word, Math.min(best.get(e.word) ?? Infinity, e.analysis.cost))
+    roots.add(e.root)
+  }
+  /** @type {DerivationEdge[]} */
+  const out = []
+  index.terms.forEach((w, word) => {
+    if (isLexicalRoot(index, word, (id) => roots.has(id))) return
+    for (const v of virtualRoots(w, analyzer, index, best.get(word) ?? Infinity)) {
+      out.push({ word, root: v.stem, analysis: { cost: roundCost(v.cost), steps: v.steps, notes: [] } })
+    }
+  })
+  return out
+}
+
+/**
+ * 兩個階段的邊合在一起，依詞編號排序（同一個詞的邊保持原本的順序：詞庫詞根在前）。
+ * @param {DerivationEdge[]} lexical
+ * @param {DerivationEdge[]} virtual
+ */
+export function mergeEdges(lexical, virtual) {
+  return [...lexical, ...virtual].map((e, k) => ({ e, k })).sort((a, b) => a.e.word - b.e.word || a.k - b.k).map((x) => x.e)
 }
 
 /**
  * @param {FuzzyIndex} index
  * @param {ReturnType<typeof createMorphSearch>} search
- * @param {import('../fuzzy/morphology.js').Analyzer} analyzer
  * @param {number} from
  * @param {number} to
  */
-function analyzeRange(index, search, analyzer, from, to) {
+function analyzeRange(index, search, from, to) {
   const terms = index.terms
   /** @type {DerivationEdge[]} */
   const out = []
   for (let word = from; word < Math.min(to, terms.length); word++) {
     const w = terms[word]
     const length = Array.from(w).length
-    // 1. 詞庫中的詞根：BCDP 成本最低的（同分全收），詞根比詞短
-    let best = Infinity
+    // 詞庫中的詞根：BCDP 成本最低的（同分全收），詞根比詞短
     const prepared = search.prepare(w, DERIVATION_MAX_COST)
     const hits = prepared ? search.finish(prepared, index.searchChannels(search.seed(prepared).channels), DERIVATION_MAX_COST) : []
     for (const hit of hits) {
@@ -129,10 +187,7 @@ function analyzeRange(index, search, analyzer, from, to) {
       if (Array.from(hit.term).length >= length) continue
       const notes = search.notesOf(/** @type {NonNullable<typeof prepared>} */ (prepared), hit)
       out.push({ word, root: index.dawg.lookup(hit.term), analysis: { cost: roundCost(hit.distance), steps: hit.steps, notes } })
-      best = Math.min(best, hit.distance)
     }
-    // 2. 虛擬詞根：詞庫解釋不了（或解釋得差很多）時，構詞分析器拆出的詞庫外詞幹（見檔頭）
-    for (const v of virtualRoots(w, analyzer, index, best)) out.push({ word, root: v.stem, analysis: { cost: roundCost(v.cost), steps: v.steps, notes: [] } })
   }
   return out
 }
@@ -217,7 +272,8 @@ export function encodeDerivations(edges, count) {
  */
 export function buildDerivationGraph({ lexicon, profile }) {
   const analyzer = createDerivationAnalyzer({ lexicon, profile })
-  return encodeDerivations(analyzer.analyze(), analyzer.count)
+  const lexical = analyzer.analyze()
+  return encodeDerivations(mergeEdges(lexical, analyzer.virtual(lexical)), analyzer.count)
 }
 
 /**
@@ -276,6 +332,11 @@ export class DerivationGraph {
   /** 節點是不是虛擬詞根 @param {number} id */
   isVirtual(id) {
     return id >= this.terms.length
+  }
+
+  /** 有沒有詞以這個節點為詞根 @param {number} id */
+  hasChildren(id) {
+    return (this.children.get(id)?.length ?? 0) > 0
   }
 
   /**

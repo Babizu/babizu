@@ -205,6 +205,7 @@ function refTemplate(vowels) {
       const m = re(`(${c}*)(${v})`).exec(base)
       return m ? m[1] + m[2] + m[2] : null
     }
+    if (pattern === 'CVN') return re(`${c}*${v}{2,}`).exec(base)?.[0] ?? null
     if (pattern === 'CVCV') return re(`${c}*${v}+${c}+${v}+`).exec(base)?.[0] ?? null
     if (pattern === 'CVCVC') return re(`${c}*${v}+${c}+${v}+${c}*`).exec(base)?.[0] ?? null
     throw new RangeError(`未知的重疊型式 ${pattern}`)

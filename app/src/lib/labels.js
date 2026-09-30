@@ -56,21 +56,26 @@ export const STATUS_LABELS = { unreviewed: msg('未校對'), reviewed: msg('初�
 export const statusLabel = (code) => labelOf(STATUS_LABELS, code)
 
 /**
- * 詞在記錄中出現的身分（見 babizu/search 的 MatchKind）。這些都是**資料來源寫明的**關係；
- * 演算法推定的關係是命中方式（MATCH_TYPES 的自動拆解、自動派生），名稱都帶「自動」，兩者不混用。
+ * 詞在記錄中出現的身分（見 babizu/search 的 EntryHit.kind）。這些都是**資料來源寫明的**關係：
+ * 確定派生、確定拆解、確定同根來自辭典的條目結構（詞條家族、`<` 標註）；
+ * 演算法推定的關係是命中方式（MATCH_TYPES 的自動拆解、自動派生、自動同根），名稱都帶「自動」，兩者不混用。
  */
 export const MATCH_KIND_LABELS = {
   head: msg('詞形'),
   alt: msg('其他寫法'),
   variant: msg('變體'),
-  root: msg('辭典：衍生自'),
+  root: msg('確定派生'),
+  parent: msg('確定拆解'),
+  sibling: msg('確定同根'),
   token: msg('句中'),
 }
 /** @param {string} kind */
 export const matchKindLabel = (kind) => labelOf(MATCH_KIND_LABELS, kind)
 /** 身分標籤的說明（滑鼠停留時顯示） */
 export const MATCH_KIND_HINTS = {
-  root: msg('辭典標明這個詞由它衍生，或把這個詞列在它的條目下；不是演算法推定的'),
+  root: msg('辭典標明這個詞由後面的詞衍生，或把這個詞列在它的條目下；不是演算法推定的'),
+  parent: msg('辭典標明後面的詞由這個詞衍生，或把後面的詞列在這個詞的條目下；不是演算法推定的'),
+  sibling: msg('這個詞與你輸入的詞在辭典中列在同一個詞（後面的詞）底下；不是演算法推定的'),
 }
 /** @param {string} kind */
 export const matchKindHint = (kind) => (kind in MATCH_KIND_HINTS ? t(MATCH_KIND_HINTS[/** @type {keyof typeof MATCH_KIND_HINTS} */ (kind)]) : '')
@@ -88,15 +93,58 @@ export const opLabel = (op) => labelOf(OP_LABELS, op)
 
 /**
  * 命中方式的名稱與說明（見 babizu/search 的 MatchType；fuzzy 沒有標籤）。
- * 演算法推定的構詞關係一律冠上「自動」，與資料來源寫明的關係（MATCH_KIND_LABELS 的「辭典：衍生自」）區分。
+ * 演算法推定的構詞關係一律冠上「自動」，與資料來源寫明的關係（MATCH_KIND_LABELS 的「確定…」）區分。
  */
 export const MATCH_TYPES = {
   prefix: { label: msg('開頭相符'), hint: msg('這個詞以你輸入的字串開頭') },
+  suffix: { label: msg('結尾相符'), hint: msg('這個詞以你輸入的字串結尾') },
   substring: { label: msg('包含'), hint: msg('這個詞裡面含有你輸入的字串') },
   lemma: { label: msg('自動拆解'), hint: msg('演算法自動去掉詞綴後得到這個詞；是推定的結果，不是確定的分析') },
   derived: { label: msg('自動派生'), hint: msg('演算法推定這個詞由你輸入的詞加上詞綴而來；是推定的結果，不是辭典的標註') },
   sibling: { label: msg('自動同根'), hint: msg('演算法推定這個詞與你輸入的詞來自同一個詞根（詞庫中沒有這個詞根）；是推定的結果，不是辭典的標註') },
 }
+/**
+ * 搜尋篩選的「搜尋方法」（babizu/search 的 SEARCH_METHODS），分成四組：
+ * 拼寫、部分符合、確定（辭典標註的構詞關係）、自動（演算法推定的構詞關係）。
+ */
+export const SEARCH_METHOD_GROUPS = [
+  {
+    key: 'spelling',
+    label: msg('拼寫'),
+    methods: [
+      { id: 'exact', label: msg('完全相符'), hint: msg('拼寫正規化後與你輸入的相同') },
+      { id: 'fuzzy', label: msg('相近拼寫'), hint: msg('方言的語音對應或少量拼寫差異（依模糊程度）') },
+    ],
+  },
+  {
+    key: 'partial',
+    label: msg('部分符合'),
+    methods: [
+      { id: 'prefix', label: msg('開頭', '搜尋方法'), hint: msg('這個詞以你輸入的字串開頭') },
+      { id: 'suffix', label: msg('結尾', '搜尋方法'), hint: msg('這個詞以你輸入的字串結尾') },
+      { id: 'substring', label: msg('包含'), hint: msg('這個詞裡面含有你輸入的字串') },
+    ],
+  },
+  {
+    key: 'dictionary',
+    label: msg('確定（辭典標註）'),
+    methods: [
+      { id: 'dictLemma', label: msg('拆解'), hint: msg('辭典中你輸入的詞所屬的上層詞條（詞根）') },
+      { id: 'dictDerived', label: msg('派生'), hint: msg('辭典列在你輸入的詞底下、或標明由它衍生的詞') },
+      { id: 'dictSibling', label: msg('同根'), hint: msg('辭典中與你輸入的詞列在同一個詞底下的其他詞') },
+    ],
+  },
+  {
+    key: 'automatic',
+    label: msg('自動（演算法推定）'),
+    methods: [
+      { id: 'lemma', label: msg('拆解'), hint: msg('演算法自動去掉詞綴後得到的詞根') },
+      { id: 'derived', label: msg('派生'), hint: msg('演算法推定由你輸入的詞加上詞綴而來的詞') },
+      { id: 'sibling', label: msg('同根'), hint: msg('演算法推定與你輸入的詞來自同一個詞庫外的詞根') },
+    ],
+  },
+]
+
 /** @param {string} type */
 export const matchTypeLabel = (type) => (type in MATCH_TYPES ? t(MATCH_TYPES[/** @type {keyof typeof MATCH_TYPES} */ (type)].label) : type)
 /** @param {string} type */

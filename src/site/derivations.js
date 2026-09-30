@@ -12,7 +12,7 @@ import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { availableParallelism } from 'node:os'
 import { join } from 'node:path'
 import { Worker } from 'node:worker_threads'
-import { encodeDerivations } from '../search/derivations.js'
+import { createDerivationAnalyzer, encodeDerivations, mergeEdges } from '../search/derivations.js'
 
 /** 每次領取的詞數：小塊讓各執行緒的工作量平均 */
 const CHUNK = 250
@@ -36,8 +36,10 @@ export async function buildDerivations({ lexicon, profile, count, cacheDir }) {
   } catch {
     // 沒有快取
   }
-  const edges = profile.morphology ? await analyzeParallel(lexicon, profile, count) : []
-  const data = encodeDerivations(edges, count)
+  // 第 1 階段（詞庫中的詞根）平行計算；第 2 階段（虛擬詞根）要看全部的邊，只用構詞分析器，在這裡算
+  const lexical = profile.morphology ? await analyzeParallel(lexicon, profile, count) : []
+  const virtual = profile.morphology ? createDerivationAnalyzer({ lexicon, profile }).virtual(lexical) : []
+  const data = encodeDerivations(mergeEdges(lexical, virtual), count)
   await mkdir(cacheDir, { recursive: true })
   for (const name of await readdir(cacheDir)) if (name.startsWith('derivations-')) await rm(join(cacheDir, name), { force: true })
   await writeFile(file, JSON.stringify(data))

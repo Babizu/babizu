@@ -114,7 +114,8 @@ describe('自動派生（查詞根 → 找到衍生詞）', () => {
     const res = withMorphology.search('daux', { fields: ['native'] })
     const occ = res.occurrences.find((h) => h.doc.id === 'dict:s1')
     expect(occ?.matchType).toBe('derived')
-    expect(without.search('daux', { fields: ['native'] }).occurrences.find((h) => h.doc.id === 'dict:s1')?.matchType).toBe('substring')
+    // mudaux 以 daux 結尾：沒有構詞規格時是結尾相符
+    expect(without.search('daux', { fields: ['native'] }).occurrences.find((h) => h.doc.id === 'dict:s1')?.matchType).toBe('suffix')
   })
 })
 

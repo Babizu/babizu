@@ -90,6 +90,8 @@ export function randomMorphSetup(random) {
     spec.circumfixes.push({ prefix: `m${infix}`, stemInitial: 'V', ...suffix, cost: 0.3 }, { prefix: 'm', infix, ...suffix, cost: 0.3 })
   }
   if (extra() < 0.3) spec.circumfixes.push({ prefix: 'sa', reduplication: 'CV', cost: 0.3 })
+  // 元音核有兩個元音的詞根（CVN 重疊 ria~riak 才適用），同樣用另一個亂數產生器
+  if (extra() < 0.6) roots.push(pick(extra, consonants) + pick(extra, ['ia', 'ua', 'ai', 'iu']) + pick(extra, consonants))
   const metric = metricFor(cleaned, spec)
   const analyzer = createAnalyzer(spec)
   return { metric, spec: analyzer.spec, analyzer, roots, alphabet, glottal, merge }
