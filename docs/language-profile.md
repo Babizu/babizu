@@ -121,6 +121,7 @@
 | `maxSteps`                        | 3         | 前綴、後綴各自最多幾個（見[步數預算](#步數預算)），整數 0–10                            |
 | `lemmaSpread`                     | 0.6       | 自動拆解只保留成本在「最佳 ＋ lemmaSpread」之內的詞幹，控制候選數                       |
 | `vowels`                          | `aeiouéə` | 元音字母，決定首輔音、中綴的位置與重疊模板                                              |
+| `glides`                          | `''`      | 可以當滑音的元音（`vowels` 的子集，巴宰語是 `iu`）；重疊型式 CGV、CVG 要用到，框架不預設 |
 | `prefixes`、`suffixes`、`infixes` | —         | 詞綴清單，見[詞綴](#詞綴)                                                               |
 | `reduplication`                   | —         | 重疊型式，見[重疊](#重疊)                                                               |
 | `circumfixes`                     | —         | 環綴與包覆單位（幾個部分一起算一個步驟），見[環綴](#環綴)                               |
@@ -196,7 +197,8 @@
 | `Ca`      | 首輔音（群）＋ a；元音開頭的詞幹只有 a      | `da~dius`、`la~luzuk`、`a~alep` |
 | `CV`      | 首輔音＋第一個元音                          | `ki~kiliw`、`du~dusa`           |
 | `CVV`     | 首輔音＋第一個元音，元音加長                | `dee~depex`、`kii~kita`         |
-| `CVN`     | 首輔音＋第一個元音核（至少兩個元音）        | `ria~riak`、`tia~tianak`、`ziu~ziux` |
+| `CGV`     | 含前滑音的音節：首輔音＋兩個元音，第一個是滑音 | `ria~riak`、`tia~tianak`、`ziu~ziux` |
+| `CVG`     | 含後滑音的音節：首輔音＋兩個元音，第二個是滑音 | `bai~bair`、`tau~taukua`、`heu~heul` |
 | `CVCV`    | 從頭到第二個元音核為止（兩音節、去韻尾）    | `kipu~kipud-i`、`luba~lubahing` |
 | `CVCVC`   | CVCV 再加上其後連續的輔音（兩音節、含韻尾） | `maa-kudung~kudung`             |
 | `full`    | 整個詞幹                                    | `saw~saw`                       |
@@ -204,8 +206,8 @@
 模板的細節：
 
 - **首輔音**是第一個元音之前的所有字元，可以是空的，也可以是輔音群。
-- **元音核**是連續的元音字母，`aa`、`iu` 都算一個。所以 `ziux` 只有一個元音核，CVCV 不適用，CVN 重疊整個元音核（`ziu~ziux`）；如果這個語言的元音連續其實分屬兩個音節，目前的模板描述不到（[bcdp.md](bcdp.md) 第 15 節的已知限制）。
-- **CVN 與 CV 是同一種重疊**，只是詞根的第一個元音核有兩個元音時整個重疊（riak → ria~riak，不是 ri~riak）。元音核只有一個元音時 CVN 不適用（那就是 CV），所以兩者可以並列而不重複。巴宰語的設定檔也為 CVN 加上與 CV 相同的組合規則（UVL.PROG.CVN 等：`ria~riak-an`）。
+- **元音核**是連續的元音字母，`aa`、`iu` 都算一個。所以 `ziux` 只有一個元音核，CVCV 不適用；如果這個語言的元音連續其實分屬兩個音節，目前的模板描述不到（[bcdp.md](bcdp.md) 第 15 節的已知限制）。
+- **CGV、CVG 是含滑音的 CV**：元音核有兩個不同的元音、其中一個念成滑音時，使用者心理上把它當成一個音節整個重疊（riak /rjak/ → ria~riak，不是 ri~riak；bair /bajr/ → bai~bair）。哪些元音會念成滑音是語言的知識，在 `glides` 宣告（巴宰語 `iu`），沒有宣告就不能用這兩個型式。第一個元音是滑音的是 CGV（ria、tia、rua），否則第二個是滑音的是 CVG（bai、tau、heu）；兩個都是滑音的（ziu /zju/、lui）歸 CGV，所以兩個模板不會同時適用。元音核不是正好兩個元音時都不適用（一個元音時那就是 CV），所以它們可以與 CV 並列而不重複。巴宰語的設定檔也為兩者加上與 CV 相同的組合規則（UVL.PROG.CGV 等：`ria~riak-an`）。單音節詞根的完整重疊（baibai、lialia）是 `full`，不是這兩個型式。
 - 不在 `vowels` 中的字元都算輔音，包括滑音 `y`、`w` 與喉塞音 `'`：`CVCV` 套在 `zizay` 上得到 `ziza`，韻尾的 y 去掉了。
 - **模板只看詞幹，不看後綴**：`kipu~kipud-i` 的重疊部分由 `kipud` 產生。
 - **重疊部分複製查詢的形式**：噶哈巫語 `maa-tono~tono` 的重疊部分跟著噶哈巫語的元音，詞幹 `tono` 再以方言規則對應到詞根。
@@ -258,7 +260,7 @@
 
 AF.PFV 的四個形式都有證據（m<in>-、m<in>u-、m<in>i-、m<in>e-），所以引用 AF；AF.IRR 只有 m<a>-…-ay，所以引用只有 m 的 AF.m（見[編寫技巧](#編寫技巧依-bcdp-的運作原理)）。
 
-文法寫法與平面清單寫法（`prefixes`…`circumfixes`）二選一；`cost`、`minStem`、`maxSteps`、`lemmaSpread`、`vowels`、`alternations` 兩種共用。
+文法寫法與平面清單寫法（`prefixes`…`circumfixes`）二選一；`cost`、`minStem`、`maxSteps`、`lemmaSpread`、`vowels`、`glides`、`alternations` 兩種共用。
 
 **怎麼寫**：
 

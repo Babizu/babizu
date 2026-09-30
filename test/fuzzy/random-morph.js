@@ -49,6 +49,8 @@ export function randomMorphSetup(random) {
     maxSteps: 2,
     lemmaSpread: 100,
     vowels: 'aiu',
+    // 可以當滑音的元音：CGV、CVG 重疊要用到
+    glides: 'iu',
     // 各兩個詞綴、maxSteps 2：鏈的合併（第 2 層）照樣測到，窮舉的組合數（7 × 7）才不會太多
     prefixes: [...affixes(1, 2), { form: pick(random, ['ta', 'ku', 'ma']) }],
     suffixes: [{ form: pick(random, ['an', ...affixes(1, 2).map((a) => a.form)]) }, { form: pick(random, ['aw', 'i']) }],
@@ -90,8 +92,13 @@ export function randomMorphSetup(random) {
     spec.circumfixes.push({ prefix: `m${infix}`, stemInitial: 'V', ...suffix, cost: 0.3 }, { prefix: 'm', infix, ...suffix, cost: 0.3 })
   }
   if (extra() < 0.3) spec.circumfixes.push({ prefix: 'sa', reduplication: 'CV', cost: 0.3 })
-  // 元音核有兩個元音的詞根（CVN 重疊 ria~riak 才適用），同樣用另一個亂數產生器
-  if (extra() < 0.6) roots.push(pick(extra, consonants) + pick(extra, ['ia', 'ua', 'ai', 'iu']) + pick(extra, consonants))
+  // 第一個音節含滑音的詞根（CGV 的 ria~riak、CVG 的 bai~bair 才適用），同樣用另一個亂數產生器
+  if (extra() < 0.8) {
+    roots.push(pick(extra, consonants) + pick(extra, ['ia', 'ua', 'iu']) + pick(extra, consonants))
+    roots.push(pick(extra, consonants) + pick(extra, ['ai', 'au']) + pick(extra, consonants))
+    // 主要的亂數序列很少抽到這兩個模板，另外偶爾加一個
+    if (extra() < 0.5) spec.reduplication.push({ pattern: pick(extra, ['CGV', 'CVG']) })
+  }
   const metric = metricFor(cleaned, spec)
   const analyzer = createAnalyzer(spec)
   return { metric, spec: analyzer.spec, analyzer, roots, alphabet, glottal, merge }
@@ -127,7 +134,11 @@ export function randomDerived(random, { spec, analyzer, roots, alphabet, glottal
     const head = analyzer.onset(w)
     w = head + spec.infixes[0].form + w.slice(head.length)
   } else if (spec.reduplication.length && random() < 0.4) {
-    const red = analyzer.reduplicant(pick(random, spec.reduplication).pattern, w) ?? ''
+    const pattern = pick(random, spec.reduplication).pattern
+    // 型式不適用於這個詞根時（CGV、CVG 只適用於含滑音的詞根），改用適用的詞根；不多用亂數，序列不變
+    const fit = roots.filter((r) => analyzer.reduplicant(pattern, r) !== null)
+    if (analyzer.reduplicant(pattern, w) === null && fit.length) w = fit[w.length % fit.length]
+    const red = analyzer.reduplicant(pattern, w) ?? ''
     w = red + (glottal && random() < 0.3 && 'aiu'.includes(w[0]) ? "'" : '') + w
   }
   // 詞根以元音結尾時，常挑同一個元音開頭的後綴（元音合併）

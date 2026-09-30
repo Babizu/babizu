@@ -67,6 +67,20 @@ export const MUTANTS = [
     why: '詞幹剛好等於模板長度時漏掉；reduplicantStems 的性質測試',
   },
   {
+    name: 'CVG 不檢查第一個元音是不是滑音（ziu 同時是 CGV 與 CVG）',
+    file: 'src/fuzzy/morphology.js',
+    find: "const ok = pattern === 'CGV' ? onglide : !onglide && glides.has(chars[v1 + 1])",
+    replace: "const ok = pattern === 'CGV' ? onglide : glides.has(chars[v1 + 1])",
+    why: 'CVG(ziux) 應該不適用；morphology.test.js 的模板表與參考實作的隨機仲裁',
+  },
+  {
+    name: 'CGV、CVG 的元音核可以超過兩個元音',
+    file: 'src/fuzzy/morphology.js',
+    find: 'if (k - v1 !== 2 || chars[v1] === chars[v1 + 1]) return null',
+    replace: 'if (k - v1 < 2 || chars[v1] === chars[v1 + 1]) return null',
+    why: '穩定引理與 reduplicantStems 的逐一檢查（uia… 開頭的詞幹）、參考實作的隨機仲裁',
+  },
+  {
     name: '剪枝過度（上限少 0.05）',
     file: 'src/fuzzy/fuzzy-index.js',
     find: 'const pruned = endEdge > firstEdge && lowerBound > bound + EPSILON',

@@ -44,13 +44,16 @@ import { expandGrammar, isGrammarSpec, validateGrammar } from './grammar.js'
  */
 
 /**
- * @typedef {'Ca' | 'CV' | 'CVV' | 'CVN' | 'CVCV' | 'CVCVC' | 'full'} ReduplicationPattern
+ * @typedef {'Ca' | 'CV' | 'CVV' | 'CGV' | 'CVG' | 'CVCV' | 'CVCVC' | 'full'} ReduplicationPattern
  * 重疊的型式（docs/bcdp.md 1.6）。重疊部分放在詞幹前面，由詞幹 base 依模板產生：
  * - Ca：首輔音（群）＋ a（`da~dius`、`la~luzuk`）
  * - CV：首輔音＋第一個元音（`ki~kiliw`、`du~dusa`）
  * - CVV：首輔音＋第一個元音重複兩次，即元音加長（`dee~depex`、`kii~kita`）
- * - CVN：首輔音＋第一個元音核，元音核至少兩個元音（`ria~riak`、`tia~tianak`、`ziu~ziux`）；
- *   元音核只有一個元音時不適用（那就是 CV）
+ * - CGV、CVG：首輔音＋含滑音的第一個元音核，也就是一個帶滑音的音節（使用者心理上的一個 CV）。元音核正好兩個元音、
+ *   兩者不同，其中一個是規格 `glides` 列出的可當滑音的元音：
+ *   - CGV（前滑音）：第一個元音是滑音（`ria~riak` /rja/、`tia~tianak`、`rua~ruaday`）；兩個都是滑音的也歸這裡（`ziu~ziux` /zju/）
+ *   - CVG（後滑音）：第二個元音是滑音、第一個不是（`bai~bair` /baj/、`tau~taukua`、`heu~heul`）
+ *   元音核只有一個元音時不適用（那就是 CV）；兩個模板不會同時適用
  * - CVCV：base 從頭到第二個元音核為止，即「兩音節、去掉韻尾」（`kipu~kipud-i`、`luba~lubahing`）
  * - CVCVC：CVCV 再加上其後連續的輔音，即「兩音節、含韻尾」（噶哈巫語 `kudung~kudung`）
  * - full：整個詞幹重疊
@@ -60,7 +63,9 @@ import { expandGrammar, isGrammarSpec, validateGrammar } from './grammar.js'
  */
 
 /** 支援的重疊型式 */
-export const REDUPLICATION_PATTERNS = Object.freeze(['Ca', 'CV', 'CVV', 'CVN', 'CVCV', 'CVCVC', 'full'])
+export const REDUPLICATION_PATTERNS = Object.freeze(['Ca', 'CV', 'CVV', 'CGV', 'CVG', 'CVCV', 'CVCVC', 'full'])
+/** 要用到 `glides`（可當滑音的元音）的重疊型式 */
+export const GLIDE_PATTERNS = Object.freeze(['CGV', 'CVG'])
 
 /**
  * @typedef {object} ReduplicationSpec
@@ -104,6 +109,8 @@ export const REDUPLICATION_PATTERNS = Object.freeze(['Ca', 'CV', 'CVV', 'CVN', '
  * @property {number} [maxSteps=3] 前綴、後綴各自最多幾個（另加至多一個包覆單位：中綴、重疊或環綴；見 docs/bcdp.md 1.6）
  * @property {number} [lemmaSpread=0.6] 構詞命中只保留成本在「最佳 ＋ lemmaSpread」之內的詞，控制候選數
  * @property {string} [vowels='aeiouéə'] 元音字母（決定「首輔音」「首元音」與中綴位置）
+ * @property {string} [glides=''] 可以當滑音的元音（`vowels` 的子集；巴宰語是 `iu`）。重疊型式 CGV、CVG 要用到，
+ *   框架不預設：哪些元音會念成滑音是語言的知識
  * @property {AffixSpec[]} [prefixes]
  * @property {AffixSpec[]} [suffixes]
  * @property {AffixSpec[]} [infixes] 插在詞幹首輔音（群）之後、首元音之前；元音開頭的詞幹則在最前面
@@ -158,7 +165,7 @@ const MAX_ANALYSES = 64
 const ANALYZE_MEMO_LIMIT = 4096
 
 /** 規格頂層允許的欄位（拼錯的欄位會被默默忽略，所以列為錯誤） */
-const SPEC_KEYS = new Set(['cost', 'minStem', 'maxSteps', 'lemmaSpread', 'vowels', 'prefixes', 'suffixes', 'infixes', 'reduplication', 'circumfixes', 'alternations'])
+const SPEC_KEYS = new Set(['cost', 'minStem', 'maxSteps', 'lemmaSpread', 'vowels', 'glides', 'prefixes', 'suffixes', 'infixes', 'reduplication', 'circumfixes', 'alternations'])
 /** 各種項目允許的欄位；ref（出處）與 note（說明）供語言設定檔記錄依據，搜尋不使用 */
 const ENTRY_KEYS = {
   affix: new Set(['form', 'gloss', 'cost', 'ref', 'note']),
@@ -203,6 +210,15 @@ export function validateMorphology(spec) {
     errors.push(`morphology.maxSteps 必須是 0–${MAX_STEPS_LIMIT} 的整數`)
   }
   if (s.vowels !== undefined && (typeof s.vowels !== 'string' || !s.vowels || hasSpace(s.vowels))) errors.push('morphology.vowels 必須是不含空白的非空字串')
+  if (s.glides !== undefined) {
+    const vowels = typeof s.vowels === 'string' ? s.vowels : DEFAULTS.vowels
+    if (typeof s.glides !== 'string' || hasSpace(s.glides)) errors.push('morphology.glides 必須是不含空白的字串')
+    else if (Array.from(s.glides).some((c) => !vowels.includes(c))) errors.push(`morphology.glides 必須是 vowels 的子集（${vowels}）`)
+  }
+  /** 用到 CGV、CVG 而沒有宣告滑音 @param {unknown} pattern @param {string} path */
+  const needsGlides = (pattern, path) => {
+    if (GLIDE_PATTERNS.includes(/** @type {any} */ (pattern)) && !s.glides) errors.push(`${path} 用到 ${pattern}，要在 morphology.glides 宣告可以當滑音的元音（例如 "iu"）`)
+  }
 
   for (const key of ['prefixes', 'suffixes', 'infixes']) {
     if (s[key] === undefined) continue
@@ -224,6 +240,7 @@ export function validateMorphology(spec) {
       s.reduplication.forEach((/** @type {any} */ r, /** @type {number} */ i) => {
         const path = `morphology.reduplication[${i}]`
         if (!REDUPLICATION_PATTERNS.includes(r?.pattern)) errors.push(`${path}.pattern 必須是 ${REDUPLICATION_PATTERNS.join('、')} 之一`)
+        else needsGlides(r.pattern, path)
         if (r?.cost !== undefined && !isCost(r.cost)) errors.push(`${path}.cost 必須是非負的有限數`)
         unknownKeys(r, ENTRY_KEYS.reduplication, path)
       })
@@ -244,6 +261,7 @@ export function validateMorphology(spec) {
           if (typeof c[k] !== 'string' || !c[k]) errors.push(`${path}.${k} 必須是非空字串`)
           else if (hasSpace(c[k])) errors.push(`${path}.${k} 不能含空白（詞綴不跨越詞邊界）`)
         }
+        if (c?.reduplication !== undefined) needsGlides(c.reduplication, path)
         if (c?.reduplication !== undefined && !REDUPLICATION_PATTERNS.includes(c.reduplication)) {
           errors.push(`${path}.reduplication 必須是 ${REDUPLICATION_PATTERNS.join('、')} 之一`)
         }
@@ -321,6 +339,7 @@ export function createAnalyzer(spec, normalize = (s) => s) {
   const maxSteps = spec.maxSteps ?? DEFAULTS.maxSteps
   const lemmaSpread = spec.lemmaSpread ?? DEFAULTS.lemmaSpread
   const vowels = new Set(Array.from(normalize(spec.vowels ?? DEFAULTS.vowels)))
+  const glides = new Set(Array.from(normalize(spec.glides ?? '')))
 
   /** 說明複製一份再凍結：分析結果（有備忘）會引用它，但不能凍結呼叫端自己的物件 @param {Gloss | undefined} g */
   const glossOf = (g) => (g == null ? null : typeof g === 'string' ? g : Object.freeze({ ...g }))
@@ -453,7 +472,13 @@ export function createAnalyzer(spec, normalize = (s) => s) {
     if (pattern === 'CVV') return { end: v1 + 1, extra: chars[v1] }
     let k = v1
     while (k < n && vowels.has(chars[k])) k++ // 第一個元音核結束
-    if (pattern === 'CVN') return k - v1 >= 2 ? { end: k, extra: '' } : null
+    if (pattern === 'CGV' || pattern === 'CVG') {
+      // 含滑音的音節：元音核正好兩個不同的元音；CGV 第一個是滑音，CVG 第二個是滑音而第一個不是
+      if (k - v1 !== 2 || chars[v1] === chars[v1 + 1]) return null
+      const onglide = glides.has(chars[v1])
+      const ok = pattern === 'CGV' ? onglide : !onglide && glides.has(chars[v1 + 1])
+      return ok ? { end: k, extra: '' } : null
+    }
     // CVCV／CVCVC：第一個元音核之後，跳過輔音，找第二個元音核
     while (k < n && !vowels.has(chars[k])) k++ // 第二個音節的首輔音
     if (k >= n) return null // 只有一個音節
@@ -469,7 +494,8 @@ export function createAnalyzer(spec, normalize = (s) => s) {
    * 位置 |w| 停下，不論那裡是字串結尾還是另一類字元（元音串、輔音串在兩種情況下都結束）——所以
    * L ≥ |w| 時 reduplicant(pattern, rest[0..L)) ＝ w（穩定引理，以 test/fuzzy/morphology.test.js 的
    * 性質測試檢查）。只有 L < |w| 需要逐一計算；
-   * w 為 null（沒有元音，或只有一個音節）時，較短的開頭也一定是 null。
+   * w 為 null（沒有元音，或只有一個音節）時，較短的開頭也一定是 null；例外是 CGV、CVG：元音核有三個以上的元音時
+   *   不適用，但截在第二個元音之後的開頭（L ＝ 第一個元音的位置 ＋ 2）元音核正好兩個，可能適用，另外檢查這一個長度。
    * full 的重疊部分就是詞幹本身，只可能是 L ＝ |red|。
    * @param {ReduplicationPattern} pattern
    * @param {string[]} rest
@@ -482,7 +508,13 @@ export function createAnalyzer(spec, normalize = (s) => s) {
       return l <= rest.length && rest.slice(0, l).join('') === red ? [l] : []
     }
     const whole = reduplicant(pattern, rest.join(''))
-    if (whole === null) return []
+    if (whole === null) {
+      if (!GLIDE_PATTERNS.includes(pattern)) return []
+      let v1 = 0
+      while (v1 < rest.length && !vowels.has(rest[v1])) v1++
+      const l = v1 + 2
+      return l <= rest.length && reduplicant(pattern, rest.slice(0, l).join('')) === red ? [l] : []
+    }
     const stable = len(whole)
     /** @type {number[]} */
     const out = []
@@ -693,6 +725,7 @@ export function createAnalyzer(spec, normalize = (s) => s) {
       maxSteps,
       lemmaSpread,
       vowels: [...vowels].join(''),
+      glides: [...glides].join(''),
       prefixes: Object.freeze(prefixes),
       suffixes: Object.freeze(suffixes),
       infixes: Object.freeze(infixes),

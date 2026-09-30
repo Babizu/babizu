@@ -139,7 +139,7 @@ m-、mu-、mi-、me- 則各自是獨立的前綴，看不出它們是同一個�
 
 ## 3. 寫法
 
-文法寫法與平面清單寫法二選一，不能混用。`cost`、`minStem`、`maxSteps`、`lemmaSpread`、`vowels`、`alternations` 兩種寫法共用，意思相同。
+文法寫法與平面清單寫法二選一，不能混用。`cost`、`minStem`、`maxSteps`、`lemmaSpread`、`vowels`、`glides`、`alternations` 兩種寫法共用，意思相同。
 
 ```json
 "morphology": {
@@ -167,7 +167,7 @@ m-、mu-、mi-、me- 則各自是獨立的前綴，看不出它們是同一個�
 | `id` | 識別碼，組合規則以它引用；不能重複 |
 | `type` | `prefix`、`suffix`、`infix`、`reduplication` |
 | `form` 或 `forms` | 形式（恰好寫一個）。`forms` 是同一個詞素的幾個形式（同位詞素），只是字串清單，**沒有條件**：用了哪一個由查詢本身決定 |
-| `pattern` | 重疊型式（只用於重疊，取代 `form`）：`Ca`、`CV`、`CVV`、`CVN`、`CVCV`、`CVCVC`、`full` |
+| `pattern` | 重疊型式（只用於重疊，取代 `form`）：`Ca`、`CV`、`CVV`、`CGV`、`CVG`、`CVCV`、`CVCVC`、`full`（CGV、CVG 要宣告 `glides`） |
 | `gloss` | 說明，字串或依語系的物件 |
 | `cost` | 單獨出現時的步驟成本，預設取頂層的 `cost` |
 | `free` | `false`：只出現在組合規則裡，不能單獨分析（例如只與 -i、-aw 一起出現的勸說 ta-） |

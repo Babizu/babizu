@@ -35,7 +35,7 @@
  * 都用到組合規則時，才依組合規則的順序選——與原本的 BCDP 在平面清單上的行為相同。
  */
 
-import { REDUPLICATION_PATTERNS, validateMorphology } from './morphology.js'
+import { GLIDE_PATTERNS, REDUPLICATION_PATTERNS, validateMorphology } from './morphology.js'
 
 /** @typedef {import('./morphology.js').Gloss} Gloss */
 /** @typedef {import('./morphology.js').MorphologySpec} MorphologySpec */
@@ -54,7 +54,7 @@ export const MAX_EXPANDED = 5000
 const TYPES = new Set(['prefix', 'suffix', 'infix', 'reduplication'])
 /** 文法寫法的頂層欄位；與平面清單共用的欄位（cost、alternations…）由 validateMorphology 檢查 */
 const GRAMMAR_KEYS = new Set(['morphemes', 'constructions'])
-const SHARED_KEYS = new Set(['cost', 'minStem', 'maxSteps', 'lemmaSpread', 'vowels', 'alternations'])
+const SHARED_KEYS = new Set(['cost', 'minStem', 'maxSteps', 'lemmaSpread', 'vowels', 'glides', 'alternations'])
 const MORPHEME_KEYS = new Set(['id', 'type', 'form', 'forms', 'pattern', 'gloss', 'cost', 'free', 'ref', 'note'])
 const CONSTRUCTION_KEYS = new Set(['id', 'sequence', 'gloss', 'cost', 'ref', 'note'])
 const hasSpace = (/** @type {string} */ s) => /\s/u.test(s)
@@ -102,6 +102,7 @@ export function validateGrammar(spec) {
     if (!TYPES.has(m.type)) errors.push(`${path}.type 必須是 prefix、suffix、infix、reduplication 之一`)
     else if (m.type === 'reduplication') {
       if (!REDUPLICATION_PATTERNS.includes(m.pattern)) errors.push(`${path}.pattern 必須是 ${REDUPLICATION_PATTERNS.join('、')} 之一`)
+      else if (GLIDE_PATTERNS.includes(m.pattern) && !spec.glides) errors.push(`${path} 用到 ${m.pattern}，要在 morphology.glides 宣告可以當滑音的元音（例如 "iu"）`)
       if (m.form !== undefined || m.forms !== undefined) errors.push(`${path}：重疊寫 pattern，不寫 form`)
     } else {
       if (m.pattern !== undefined) errors.push(`${path}.pattern 只用於重疊`)

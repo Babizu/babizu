@@ -77,6 +77,7 @@ describe('BCDP 的步驟', () => {
       const letters = ['a', 'i', 'u', 'b', 'd', 'k', 'n', 't']
       const spec = {
         vowels: 'aiu',
+        glides: 'iu',
         minStem: 2,
         maxSteps: 2,
         prefixes: Array.from({ length: 3 }, () => ({ form: randomString(random, letters, 1, 2) })),

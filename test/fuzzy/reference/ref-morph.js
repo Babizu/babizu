@@ -39,7 +39,7 @@ export function refMorph(ctx, { query, lexicon, spec, maxDistance, why }) {
   if (n < spec.minStem + 1) return best
   const isB = (/** @type {string} */ ch) => ctx.boundaries.has(ch)
   const vowels = new Set(Array.from(spec.vowels))
-  const reduplicant = refTemplate(spec.vowels)
+  const reduplicant = refTemplate(spec.vowels, spec.glides ?? '')
   // 交界上只動查詢的規則：target 為空、不限詞尾（重疊部分與詞幹之間也是交界）
   const inserts = [...new Set(ctx.rules.filter((r) => r.target.length === 0 && r.source.length > 0 && r.position !== 'final').map((r) => r.source.join('')))]
 
@@ -192,7 +192,7 @@ export function refMorph(ctx, { query, lexicon, spec, maxDistance, why }) {
  * @param {string} vowels
  * @returns {(pattern: string, base: string) => string | null}
  */
-function refTemplate(vowels) {
+function refTemplate(vowels, glides = '') {
   // 字元類別中有特殊意義的 \ ] ^ - 要跳脫
   const v = `[${Array.from(vowels).map((ch) => (/[\\\]^-]/.test(ch) ? `\\${ch}` : ch)).join('')}]`
   const c = `[^${v.slice(1, -1)}]`
@@ -205,7 +205,13 @@ function refTemplate(vowels) {
       const m = re(`(${c}*)(${v})`).exec(base)
       return m ? m[1] + m[2] + m[2] : null
     }
-    if (pattern === 'CVN') return re(`${c}*${v}{2,}`).exec(base)?.[0] ?? null
+    if (pattern === 'CGV' || pattern === 'CVG') {
+      // 元音核正好兩個不同的元音（後面不是元音）；CGV 第一個是滑音，CVG 第二個是滑音而第一個不是
+      const m = re(`(${c}*)(${v})(${v})(?!${v})`).exec(base)
+      if (!m || m[2] === m[3]) return null
+      const g1 = glides.includes(m[2])
+      return (pattern === 'CGV' ? g1 : !g1 && glides.includes(m[3])) ? m[0] : null
+    }
     if (pattern === 'CVCV') return re(`${c}*${v}+${c}+${v}+`).exec(base)?.[0] ?? null
     if (pattern === 'CVCVC') return re(`${c}*${v}+${c}+${v}+${c}*`).exec(base)?.[0] ?? null
     throw new RangeError(`未知的重疊型式 ${pattern}`)

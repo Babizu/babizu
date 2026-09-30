@@ -157,7 +157,7 @@ describe('固定案例', () => {
   const collapse = (/** @type {string} */ s) => s.replace(/\s+/gu, ' ').trim()
   /** 固定的小規格：prefix mu-、suffix -an */
   const fixed = (/** @type {any} */ extra = {}, /** @type {RuleSet} */ rules = new RuleSet(), normalize = (/** @type {string} */ s) => s) => {
-    const spec = { minStem: 2, maxSteps: 2, lemmaSpread: 100, vowels: 'aiu', prefixes: [{ form: 'mu' }], suffixes: [{ form: 'an' }], ...extra }
+    const spec = { minStem: 2, maxSteps: 2, lemmaSpread: 100, vowels: 'aiu', glides: 'iu', prefixes: [{ form: 'mu' }], suffixes: [{ form: 'an' }], ...extra }
     const metric = metricFor(rules, spec, normalize)
     const analyzer = createAnalyzer(spec)
     return { metric, analyzer, spec: analyzer.spec }

@@ -106,7 +106,8 @@ $$
    - Ca：`da~dius`、`la~luzuk`
    - CV：`ki~kiliw`、`du~dusa`
    - CVV（元音加長）：`dee~depex`、`kii~kita`
-   - CVN（首輔音＋整個元音核，元音核有兩個元音）：`ria~riak`（riariakan、kaariariak）、`tia~tianak`、`ziu~ziux`
+   - CGV、CVG（含滑音的音節，使用者心理上的一個 CV）：CGV 前滑音 `ria~riak`（/rja/；riariakan、kaariariak）、`tia~tianak`、`ziu~ziux`（/zju/）；
+     CVG 後滑音 `bai~bair`（/baj/；kabaibair）、`tau~taukua`。哪些元音可以當滑音由規格的 `glides` 宣告
    - CVCV，兩音節去韻尾（巴宰語的完整重疊）：`kipu~kipud-i`、`mi-kita~kita`、`luba~lubahing`
    - CVCVC，兩音節含韻尾（噶哈巫語）：`maa-kudung~kudung`
    - full，整個詞幹（單音節詞根）：`saw~saw`
@@ -392,7 +393,7 @@ binubuer ＝ b‹in›ubuer（完成貌），mabubuer ＝ ma- ＋ bubuer（靜�
   這個方法主要作用在查詢不在詞庫中的時候（binubuer）。
 - 前四個條件的效果（虛擬詞根連到兩個以上的詞庫詞的個數）：只要求不在詞庫中 451 個 → 加上形狀 243 → 加上要好 0.1 45 → 加上 v 本身是根 34。
 - 加上條件 5 與查詢端的對稱之後，1,402 個凍結的查詢中有自動同根的由 26 個降到 4 個（binubuer、riariakan、kali'angidan、kulusu；
-  不含 CVN 重疊時量的，見 minubizu 研究紀錄 U.16）。維護者確認的四個巧合（maxatulala → tualay、kulusu → malusu、
+  不含 CGV、CVG 重疊時量的，見 minubizu 研究紀錄 U.16）。維護者確認的四個巧合（maxatulala → tualay、kulusu → malusu、
   manamanam → ma'aamay、iminiyan → aiyan）去掉了三個；kulusu、malusu 共同的 lusu 只有 4 個字元，
   但同樣長度的虛擬詞根中另外六組（depe、hini、tubi、zemu、baya、béya）都像真的同根，所以不提高長度門檻。
 

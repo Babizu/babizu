@@ -128,7 +128,7 @@ describe('環綴：一個步驟，緊貼詞幹', () => {
 
 describe('重疊模板（docs/bcdp.md 1.6 第 2 項）', () => {
   // 例子取自 Lim & Zeitoun (2024) §51.3.2.2 的歸類，詞見公開資料集
-  const red = createAnalyzer({ vowels: 'aeiou' }).reduplicant
+  const red = createAnalyzer({ vowels: 'aeiou', glides: 'iu' }).reduplicant
   it.each(/** @type {Array<[any, string, string | null]>} */ ([
     ['Ca', 'dius', 'da'],
     ['Ca', 'luzuk', 'la'],
@@ -136,11 +136,20 @@ describe('重疊模板（docs/bcdp.md 1.6 第 2 項）', () => {
     ['CV', 'kiliw', 'ki'],
     ['CVV', 'depex', 'dee'],
     ['CVV', 'kita', 'kii'],
-    // CVN：首輔音＋整個第一個元音核（至少兩個元音）；只有一個元音時不適用
-    ['CVN', 'riak', 'ria'],
-    ['CVN', 'tianak', 'tia'],
-    ['CVN', 'ziux', 'ziu'],
-    ['CVN', 'kita', null],
+    // CGV、CVG：含滑音的音節（i、u 當滑音）。CGV 第一個是滑音（ria /rja/），兩個都是滑音的也歸 CGV（ziu /zju/）；
+    // CVG 第二個是滑音（bai /baj/）；元音核只有一個元音、兩個相同或沒有滑音時不適用
+    ['CGV', 'riak', 'ria'],
+    ['CGV', 'tianak', 'tia'],
+    ['CGV', 'ziux', 'ziu'],
+    ['CGV', 'luis', 'lui'],
+    ['CGV', 'bair', null],
+    ['CGV', 'kita', null],
+    ['CVG', 'bair', 'bai'],
+    ['CVG', 'taukua', 'tau'],
+    ['CVG', 'heul', 'heu'],
+    ['CVG', 'riak', null],
+    ['CVG', 'ziux', null],
+    ['CVG', 'baaket', null],
     ['CVCV', 'kiput', 'kipu'],
     ['CVCV', 'lubahing', 'luba'],
     ['CVCV', 'kudung', 'kudu'],
@@ -161,7 +170,7 @@ describe('重疊模板（docs/bcdp.md 1.6 第 2 項）', () => {
   })
 
   it('穩定引理：L ≥ |w| 時，模板套用在 base 開頭 L 個字元上的結果仍是 w；reduplicantStems 等於逐一檢查', () => {
-    const analyzer = createAnalyzer({ vowels: 'aiu' })
+    const analyzer = createAnalyzer({ vowels: 'aiu', glides: 'iu' })
     let seed = 7
     const rnd = (/** @type {number} */ n) => (seed = (seed * 16807) % 2147483647) % n
     const letters = 'aiubdkn y'
@@ -202,6 +211,7 @@ describe('generate：還原詞綴', () => {
   it('每個分析都能還原成原詞形（隨機詞形的性質測試，含所有重疊型式）', () => {
     const everyPattern = createAnalyzer({
       ...SPEC,
+      glides: 'iu',
       reduplication: REDUPLICATION_PATTERNS.map((pattern) => ({ pattern })),
       circumfixes: [{ prefix: 'ta', suffix: 'aw' }, { infix: 'in', suffix: 'an' }, { reduplication: 'CV', suffix: 'en' }],
     })
