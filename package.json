@@ -1,6 +1,6 @@
 {
   "name": "babizu",
-  "version": "0.5.5",
+  "version": "0.5.6",
   "description": "多語言、可溯源的辭典網站框架：跨方言加權模糊搜尋、標準語料格式、多語系介面、靜態部署",
   "type": "module",
   "license": "MIT",
