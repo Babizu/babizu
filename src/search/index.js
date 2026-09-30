@@ -10,7 +10,15 @@
 export * from './format.js'
 export * from './text.js'
 export { buildSearchIndex } from './build.js'
-export { buildDerivationGraph, createDerivationAnalyzer, DerivationGraph, DERIVATIONS_FORMAT_VERSION, encodeDerivations } from './derivations.js'
+export {
+  buildDerivationGraph,
+  createDerivationAnalyzer,
+  DerivationGraph,
+  DERIVATIONS_FORMAT_VERSION,
+  encodeDerivations,
+  isVirtualRootShape,
+  VIRTUAL_ROOT_PENALTY,
+} from './derivations.js'
 export { SearchEngine, FUZZINESS } from './engine.js'
 export { buildEntryGroups, collectHits, computeParents, mergeSpellings, spellingOf } from './family.js'
 export { Checklist, classify } from './checklist.js'

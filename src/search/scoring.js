@@ -4,13 +4,13 @@
  * 分數是「等效距離」，越小越前面，分兩層：
  *
  * 1. **詞的分數**（`termScore`）：查詢詞以什麼方式命中詞庫中的一個詞。
- *    完全相同 0、跨方言變體 0.1–0.3、開頭相符 0.35 起、自動拆解與自動派生 0.4 ＋ 構詞成本、包含 0.9 起。
+ *    完全相同 0、跨方言變體 0.1–0.3、開頭相符 0.35 起、自動拆解、自動派生與自動同根 0.4 ＋ 構詞成本、包含 0.9 起。
  * 2. **記錄的分數**（`recordScore`）：那個詞和這一筆記錄的關係。詞就是記錄的詞形（或在句中出現）時不加；
  *    經由**辭典標註**的派生關係（詞根 posting、例句中辭典列在詞條下的派生詞）時，每一層加 `DERIVATIVE_PENALTY`，
  *    排在詞本身之後、其他命中方式之前。
  *
  * 辭典標註的關係與演算法推定的關係分開計算、分開標示：前者是 kind（`root`：衍生自），
- * 後者是命中方式（`lemma` 自動拆解、`derived` 自動派生）。
+ * 後者是命中方式（`lemma` 自動拆解、`derived` 自動派生、`sibling` 自動同根）。
  */
 
 /**
@@ -19,12 +19,13 @@
  * - prefix：詞庫中的詞以查詢開頭（查 pihi → pihilut）
  * - lemma：自動拆解，查詢去詞綴後的詞幹命中詞庫的詞（查 mudaux → daux；BCDP）
  * - derived：自動派生，詞庫的詞由查詢加上詞綴而來（查 baket → binaket；自動派生圖，見 derivations.js）
+ * - sibling：自動同根，詞庫的詞與查詢推定來自同一個詞庫外的詞根（查 binubuer → mabubuer，共同的虛擬詞根 bubuer）
  * - substring：詞庫中的詞包含查詢（查 k → 所有含 k 的詞與句子）
- * lemma 與 derived 只在語言設定檔有 `morphology` 時出現。
+ * lemma、derived、sibling 只在語言設定檔有 `morphology` 時出現。
  */
-export const MATCH_TYPES = /** @type {const} */ (['fuzzy', 'prefix', 'lemma', 'derived', 'substring'])
+export const MATCH_TYPES = /** @type {const} */ (['fuzzy', 'prefix', 'lemma', 'derived', 'sibling', 'substring'])
 /** @typedef {typeof MATCH_TYPES[number]} MatchType */
-export const MATCH_TYPE_RANK = { fuzzy: 0, prefix: 1, lemma: 2, derived: 3, substring: 4 }
+export const MATCH_TYPE_RANK = { fuzzy: 0, prefix: 1, lemma: 2, derived: 3, sibling: 4, substring: 5 }
 
 /** 詞在記錄中的身分（依重要性排序，見 format.js 的 MATCH_KINDS） */
 export const KIND_RANK = { head: 0, alt: 1, variant: 2, root: 3, token: 4 }
@@ -56,7 +57,7 @@ const EPSILON = 1e-9
  */
 export function rankScore(matchType, distance, extraLength) {
   if (matchType === 'fuzzy') return distance
-  if (matchType === 'lemma' || matchType === 'derived') return MORPHOLOGY_BASE_SCORE + distance
+  if (matchType === 'lemma' || matchType === 'derived' || matchType === 'sibling') return MORPHOLOGY_BASE_SCORE + distance
   const base = matchType === 'prefix' ? 0.35 : 0.9
   return base + Math.min(extraLength, 12) * 0.05
 }
@@ -84,9 +85,11 @@ export function recordScore(score, depth = 0) {
 }
 
 /**
- * 同一個詞同時有構詞命中 m（自動拆解、自動派生）與原本的命中 prev 時，留下哪一個。
+ * 同一個詞同時有構詞命中 m（自動拆解、自動派生、自動同根）與原本的命中 prev 時，留下哪一個。
  *
  * - 原本是開頭相符或包含：一律改以構詞命中呈現（附上拆解或派生的說明），分數取兩者較好的。
+ * - 自動同根只補上原本沒有的詞，不取代其他命中（模糊、自動拆解、自動派生）：它經過詞庫中沒有的詞根，
+ *   是把握最小的一種；加上它之後，原本的結果一筆都不變。
  *   開頭相符只看字串，BCDP 在模糊程度之內也分析得出來時，說明比「開頭相符」有用，名次也不該因此變差。
  * - 原本是模糊命中：取分數較好的一種；同分時模糊命中優先（直接相符）。
  *   不能只看命中方式：詞根落在模糊門檻內時（查 parazem，razem 的模糊距離 1.2 在門檻 1.25 內），
@@ -103,7 +106,25 @@ export function mergeMorphMatch(m, prev, key) {
   const a = termScore(m, key)
   const b = termScore(prev, key)
   if (prev.matchType === 'prefix' || prev.matchType === 'substring') return { ...m, score: Math.min(a, b) }
+  if (m.matchType === 'sibling') return prev
   return a < b - EPSILON ? m : prev
+}
+
+/**
+ * 同一筆記錄（詞條或例句）有好幾個命中時，新的命中 hit 是否取代原本的 prev。
+ * 自動同根只用在沒有其他命中的記錄上（與 mergeMorphMatch 同一個原則：它不取代其他命中）；
+ * 其他情形依 compare（詞條用 compareHits，例句比分數）。
+ * @template {{matchType: MatchType}} H
+ * @param {H} hit
+ * @param {H | undefined} prev
+ * @param {(a: H, b: H) => number} compare
+ */
+export function replacesRecordHit(hit, prev, compare) {
+  if (!prev) return true
+  const a = hit.matchType === 'sibling'
+  const b = prev.matchType === 'sibling'
+  if (a !== b) return b
+  return compare(hit, prev) < 0
 }
 
 /**

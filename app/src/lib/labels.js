@@ -95,6 +95,7 @@ export const MATCH_TYPES = {
   substring: { label: msg('包含'), hint: msg('這個詞裡面含有你輸入的字串') },
   lemma: { label: msg('自動拆解'), hint: msg('演算法自動去掉詞綴後得到這個詞；是推定的結果，不是確定的分析') },
   derived: { label: msg('自動派生'), hint: msg('演算法推定這個詞由你輸入的詞加上詞綴而來；是推定的結果，不是辭典的標註') },
+  sibling: { label: msg('自動同根'), hint: msg('演算法推定這個詞與你輸入的詞來自同一個詞根（詞庫中沒有這個詞根）；是推定的結果，不是辭典的標註') },
 }
 /** @param {string} type */
 export const matchTypeLabel = (type) => (type in MATCH_TYPES ? t(MATCH_TYPES[/** @type {keyof typeof MATCH_TYPES} */ (type)].label) : type)

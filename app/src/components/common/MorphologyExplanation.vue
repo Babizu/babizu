@@ -8,6 +8,8 @@
  *   （例如 takitaw 的 aa → a 跨越詞幹與後綴的交界）
  * - 自動派生經過其他詞時（上一層本身也是自動派生的），逐層列出上面幾層
  * - 由查詢的相近寫法出發時（寬鬆查 sugut，經 sungut），列出兩者的差異
+ * - 自動同根（查 binubuer 找到 mabubuer）：兩個詞推定來自同一個詞庫外的詞根（bubuer），
+ *   分別列出查詢怎麼拆到它、這個詞怎麼由它衍生，以及「詞庫外的詞根」的代價
  */
 import { computed } from 'vue'
 import { Badge } from '@/components/ui/badge'
@@ -36,11 +38,15 @@ const props = defineProps({
   term: { type: String, default: '' },
 })
 
-const summary = computed(() => morphSummary(props.analysis))
+/** 自動同根：查詢拆出的虛擬詞根與拆法（見 babizu/search 的 LemmaAnalysis.sibling） */
+const sibling = computed(() => /** @type {{root: string, steps: any[], cost: number, penalty: number} | null} */ (props.analysis.sibling ?? null))
+const summary = computed(() => (sibling.value ? sibling.value.root : morphSummary(props.analysis)))
 const intro = computed(() =>
   props.matchType === 'lemma'
     ? t('{query} → {stem}', { query: props.query, stem: props.analysis.stem })
-    : t('{term} → {stem}', { term: props.term, stem: props.analysis.stem }),
+    : sibling.value
+      ? t('{query}、{term} → {stem}', { query: props.query, term: props.term, stem: sibling.value.root })
+      : t('{term} → {stem}', { term: props.term, stem: props.analysis.stem }),
 )
 /** 整個詞的音變（只為前幾筆結果計算，其餘為 null） */
 const notes = computed(() => /** @type {Array<{op: string, source: string, target: string, cost: number, category: string | null, where: string}>} */ (props.analysis.notes ?? []))
@@ -49,8 +55,14 @@ const soundCost = computed(() => notes.value.reduce((sum, n) => sum + n.cost, 0)
 const stepCost = (steps) => steps.reduce((sum, s) => sum + s.cost, 0)
 /** 自動派生經過的上層（由起點往下；不含最後一層，那一層就是 stem、steps） */
 const chain = computed(() => /** @type {Array<{term: string, stem: string, steps: any[], cost: number}>} */ (props.analysis.chain ?? []))
-/** 這一層本身的成本：總成本扣掉起點的距離與上面幾層 */
-const ownCost = computed(() => props.analysis.cost - (props.analysis.variantDistance ?? 0) - chain.value.reduce((sum, c) => sum + c.cost, 0))
+/** 這一層本身的成本：總成本扣掉起點的距離（相近寫法、自動同根的拆解與代價）與上面幾層 */
+const ownCost = computed(
+  () =>
+    props.analysis.cost -
+    (props.analysis.variantDistance ?? 0) -
+    (sibling.value ? sibling.value.cost + sibling.value.penalty : 0) -
+    chain.value.reduce((sum, c) => sum + c.cost, 0),
+)
 /** 任何一層有音變，或起點是查詢的相近寫法 */
 const hasSoundChange = computed(
   () =>
@@ -64,11 +76,14 @@ const root = computed(() => chain.value[0]?.stem ?? props.analysis.stem)
 const derived = computed(() => props.matchType === 'derived')
 /**
  * 實驗室重現同一個計算：自動拆解是「查詢 → 詞根」；自動派生的最後一層是「這個詞 → 上一層」
- * （建置時就是這樣對每個詞跑 BCDP，求得最好的詞根）
+ * （建置時就是這樣對每個詞跑 BCDP，求得最好的詞根）。自動同根的詞根不在詞庫中，實驗室重現不了
  */
-const lab = computed(() =>
-  derived.value ? (props.term ? { q: props.term, t: props.analysis.stem } : null) : props.query && props.term ? { q: props.query, t: props.term } : null,
-)
+const lab = computed(() => {
+  if (sibling.value) return null
+  if (derived.value) return props.term ? { q: props.term, t: props.analysis.stem } : null
+  return props.query && props.term ? { q: props.query, t: props.term } : null
+})
+const title = computed(() => (sibling.value ? t('自動同根的說明') : derived.value ? t('自動派生的說明') : t('自動拆解的說明')))
 /** 步驟的名稱：由幾個詞素構成的（構詞文法的組合規則）顯示「組合規則」，其他依類型 @param {any} step */
 const stepLabel = (step) => morphStepLabel(step.parts?.length > 1 ? 'construction' : step.type)
 /** 詞素的寫法（組合規則展開的每一個詞素） @param {{type: string, form: string}} part @param {number} k */
@@ -93,7 +108,7 @@ const partLabel = (part, k) => (part.type === 'prefix' ? `${part.form}-` : part.
       </Badge>
     </PopoverTrigger>
     <PopoverContent class="w-72 text-sm" align="start" @click.stop>
-      <p class="font-medium">{{ derived ? t('自動派生的說明') : t('自動拆解的說明') }}</p>
+      <p class="font-medium">{{ title }}</p>
       <!-- 查詢 → 詞根，接著說明這是演算法推定的結果，不是分析標註 -->
       <p class="native-text mt-1.5 text-base leading-tight">{{ intro }}</p>
       <div v-if="analysis.variantOf" class="text-muted-foreground mt-1 text-xs">
@@ -102,6 +117,23 @@ const partLabel = (part, k) => (part.type === 'prefix' ? `${part.form}-` : part.
           <code v-for="(n, k) in analysis.variantNotes" :key="k" class="bg-muted native-text rounded px-1">{{ formatStep(n) }}</code>
           <span class="font-mono tabular-nums">+{{ formatDistance(analysis.variantDistance) }}</span>
         </p>
+      </div>
+      <!-- 自動同根：詞根不在詞庫中；先列出查詢怎麼拆到它，下面是這個詞怎麼由它衍生 -->
+      <div v-if="sibling" class="mt-1 text-xs">
+        <p class="text-muted-foreground">
+          {{ t('兩個詞推定來自同一個詞根「{root}」。這個詞根不在詞庫中，是演算法由詞形拆出來的。', { root: sibling.root }) }}
+        </p>
+        <ul class="border-border mt-1.5 ml-1 space-y-0.5 border-l pl-2">
+          <li class="flex items-baseline justify-between gap-3">
+            <span class="native-text min-w-0">{{ query }} ＝ {{ morphSummary({ stem: sibling.root, steps: sibling.steps }) }}</span>
+            <span class="text-muted-foreground font-mono tabular-nums">+{{ formatDistance(sibling.cost) }}</span>
+          </li>
+          <li class="flex items-baseline justify-between gap-3">
+            <span class="text-muted-foreground min-w-0">{{ t('詞庫外的詞根') }}</span>
+            <span class="text-muted-foreground font-mono tabular-nums">+{{ formatDistance(sibling.penalty) }}</span>
+          </li>
+        </ul>
+        <p class="text-muted-foreground mt-2">{{ t('「{term}」由「{root}」衍生：', { term, root: sibling.root }) }}</p>
       </div>
       <!-- 經過其他衍生詞：先列出上面幾層（由詞根往下），下面的步驟是最後一層 -->
       <div v-if="chain.length" class="mt-2">
@@ -145,9 +177,11 @@ const partLabel = (part, k) => (part.type === 'prefix' ? `${part.form}-` : part.
       </ul>
       <p class="text-muted-foreground mt-1 text-xs leading-relaxed">
         {{
-          derived
-            ? t('此為演算法推定這個詞由上面的詞加上詞綴而來，不是辭典的標註，僅用於方便檢索。您需要自行判斷正確性。')
-            : t('此為演算法自動去除詞綴後所得到的結果，僅用於方便檢索，並非確定的分析標註。您需要自行判斷正確性。')
+          sibling
+            ? t('此為演算法推定兩個詞來自同一個詞根，不是辭典的標註，僅用於方便檢索。您需要自行判斷正確性。')
+            : derived
+              ? t('此為演算法推定這個詞由上面的詞加上詞綴而來，不是辭典的標註，僅用於方便檢索。您需要自行判斷正確性。')
+              : t('此為演算法自動去除詞綴後所得到的結果，僅用於方便檢索，並非確定的分析標註。您需要自行判斷正確性。')
         }}
       </p>
       <!-- 兩個方向都是構詞搜尋（BCDP）算出來的：連到實驗室的構詞分頁逐步觀察 -->

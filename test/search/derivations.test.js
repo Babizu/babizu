@@ -5,7 +5,8 @@
 
 import { describe, expect, it } from 'vitest'
 import { createCitation, createRecord, createSense } from '../../src/schema/index.js'
-import { buildDerivationGraph, buildSearchIndex, createDerivationAnalyzer, DerivationGraph, SearchEngine } from '../../src/search/index.js'
+import { buildDerivationGraph, buildSearchIndex, createDerivationAnalyzer, DerivationGraph, isVirtualRootShape, SearchEngine, VIRTUAL_ROOT_PENALTY } from '../../src/search/index.js'
+import { mergeMorphMatch, replacesRecordHit } from '../../src/search/scoring.js'
 import { PAZEH_PROFILE } from '../fixtures/pazeh.js'
 
 const MORPHOLOGY = {
@@ -45,7 +46,9 @@ const edges = (() => {
   const out = []
   for (let k = 0, word = 0; k < derivations.edges.length; k += 3) {
     word += derivations.edges[k]
-    out.push(`${terms[word]} → ${terms[derivations.edges[k + 1]]} ${derivations.analyses[derivations.edges[k + 2]][0]}`)
+    const root = derivations.edges[k + 1]
+    const name = root < terms.length ? terms[root] : `*${derivations.virtual[root - terms.length]}`
+    out.push(`${terms[word]} → ${name} ${derivations.analyses[derivations.edges[k + 2]][0]}`)
   }
   return out
 })()
@@ -69,7 +72,8 @@ describe('建置：每個詞連到 BCDP 求得的最好詞根', () => {
     const analyzed = analyzer.analyze()
     expect(analyzed.length).toBe(edges.length)
     for (const { word, root, analysis } of analyzed) {
-      expect(Array.from(terms[root]).length).toBeLessThan(Array.from(terms[word]).length)
+      // 詞庫中的詞根是詞編號，虛擬詞根是詞幹字串；都比詞短
+      expect(Array.from(typeof root === 'string' ? root : terms[root]).length).toBeLessThan(Array.from(terms[word]).length)
       // 成本＝步驟成本＋音變說明的成本（說明與成本一致）
       const sum = analysis.steps.reduce((s, x) => s + x.cost, 0) + analysis.notes.reduce((s, x) => s + x.cost, 0)
       expect(sum).toBeCloseTo(analysis.cost, 9)
@@ -219,5 +223,66 @@ describe('開頭相符又能自動派生的詞：附上派生的說明，分數�
     expect(hit?.matchType).toBe('derived')
     expect(hit?.analysis?.steps.map((s) => s.form)).toEqual(['an'])
     expect(hit?.score).toBeCloseTo(0.45, 9)
+  })
+})
+
+describe('虛擬詞根與自動同根：共同的詞根不在詞庫中（查 binubuer 找到 mabubuer）', () => {
+  const MORPH = {
+    cost: 0.2,
+    minStem: 3,
+    prefixes: [{ form: 'ma' }, { form: 'ka' }],
+    infixes: [{ form: 'in' }],
+    suffixes: [{ form: 'an' }],
+    reduplication: [{ pattern: 'CV' }],
+    alternations: [{ underlying: 't', surface: 'd', position: 'final', cost: 0.05 }],
+  }
+  const list = [
+    rec('mabubuer', 'word', 'mabubuer'), // ma- ＋ bubuer（bubuer 不在詞庫中）
+    rec('s1', 'sentence', 'mabubuer lia'),
+    rec('karaw', 'word', 'karaw'), // ka- ＋ raw：只有一個元音，形狀不像詞根，不建虛擬詞根
+    rec('baket', 'word', 'baket'),
+    rec('mabaketan', 'word', 'mabaketan'), // 詞庫中有 baket，不必另建虛擬詞根
+    rec('dakut', 'word', 'dakut'),
+    rec('dakudan', 'word', 'dakudan'), // dakut ＋ -an（t → d，0.25）；虛擬的 dakud ＋ -an 是 0.2，沒有便宜到 0.1 以上
+  ]
+  const data = JSON.parse(JSON.stringify(buildSearchIndex({ items: list.map((record) => ({ record, shard: 'all' })), groups: [], sourceIds: ['dict'], profile: { ...PAZEH_PROFILE, morphology: MORPH } })))
+  const graph = buildDerivationGraph(data)
+  const v = new SearchEngine({ ...data, derivations: graph })
+
+  it('只在詞庫解釋不了時建立、形狀要像詞根、本身是根：bubuer 有，raw（一個音節）與 baketan、mabaket（再拆得出 baket）沒有', () => {
+    expect(graph.virtual).toContain('bubuer')
+    expect(graph.virtual).not.toContain('raw')
+    // mabaketan 拆出的 baketan、mabaket 本身還能拆出詞庫中的 baket，不是「根」
+    // dakudan 的 dakud 只比詞庫的 dakut 便宜 0.05，不到 VIRTUAL_ROOT_PENALTY
+    expect(graph.virtual).toEqual(['bubuer'])
+    expect(isVirtualRootShape('bubuer', { minStem: 3, vowels: 'aeiou' })).toBe(true)
+    expect(isVirtualRootShape('raw', { minStem: 3, vowels: 'aeiou' })).toBe(false)
+  })
+
+  it('查 binubuer（詞庫中沒有）：拆出 bubuer（<in>），找到同根的 mabubuer，標為自動同根', () => {
+    const res = v.search('binubuer', { fields: ['native'] })
+    const hit = res.entries.find((h) => h.doc.id === 'dict:mabubuer')
+    expect(hit?.matchType).toBe('sibling')
+    expect(hit?.analysis).toMatchObject({ stem: 'bubuer', sibling: { root: 'bubuer', cost: 0.2, penalty: VIRTUAL_ROOT_PENALTY } })
+    expect(hit?.analysis?.sibling?.steps.map((st) => `${st.type}:${st.form}`)).toEqual(['infix:in'])
+    expect(hit?.analysis?.steps.map((st) => st.form)).toEqual(['ma'])
+    // 0.4 ＋ 拆解 0.2 ＋ 詞庫外的詞根 0.1 ＋ 往下 0.2
+    expect(hit?.score).toBeCloseTo(0.9, 9)
+    // 例句也找得到
+    expect(res.occurrences.find((o) => o.doc.id === 'dict:s1')?.matches[0]).toMatchObject({ matchType: 'sibling', token: 'mabubuer' })
+  })
+
+  it('查詢本身就是那個詞時不算自己；沒有虛擬詞根的圖（舊版）沒有自動同根', () => {
+    expect(v.search('mabubuer', { fields: ['native'] }).entries.some((h) => h.matchType === 'sibling')).toBe(false)
+    const plain = new SearchEngine({ ...data, derivations: { ...graph, virtual: [], edges: graph.edges.filter((_, k) => k % 3 !== 1 || graph.edges[k] < data.lexicon.count) } })
+    expect(plain.search('binubuer', { fields: ['native'] }).entries).toEqual([])
+  })
+
+  it('自動同根不取代其他命中：同一個詞已有自動派生時保留原本的', () => {
+    const m = { term: 'x', distance: 0.3, matchType: /** @type {const} */ ('sibling') }
+    const prev = { term: 'x', distance: 0.6, matchType: /** @type {const} */ ('derived') }
+    expect(mergeMorphMatch(m, prev, 'q')).toBe(prev)
+    expect(replacesRecordHit({ matchType: 'sibling', score: 0.1 }, { matchType: 'lemma', score: 0.9 }, (a, b) => a.score - b.score)).toBe(false)
+    expect(replacesRecordHit({ matchType: 'lemma', score: 0.9 }, { matchType: 'sibling', score: 0.1 }, (a, b) => a.score - b.score)).toBe(true)
   })
 })

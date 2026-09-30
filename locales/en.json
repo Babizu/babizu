@@ -434,5 +434,13 @@
   "查詢「{query}」與詞庫中的「{root}」寫法相近，由「{root}」自動派生。": "The query “{query}” is spelled like “{root}” in the lexicon; the forms are auto-derived from “{root}”.",
   "「{stem}」本身也是由「{root}」自動派生：": "“{stem}” is itself auto-derived from “{root}”:",
   "衍生自": "Derived from",
-  "自動拆解（演算法推定）找得到辭典中的詞根，多半是詞根條目底下沒有列出的加綴形式。": "Auto-split (an algorithmic inference) finds a dictionary root; most likely an affixed form not listed under the root entry."
+  "自動拆解（演算法推定）找得到辭典中的詞根，多半是詞根條目底下沒有列出的加綴形式。": "Auto-split (an algorithmic inference) finds a dictionary root; most likely an affixed form not listed under the root entry.",
+  "自動同根": "Auto: same root",
+  "演算法推定這個詞與你輸入的詞來自同一個詞根（詞庫中沒有這個詞根）；是推定的結果，不是辭典的標註": "The algorithm infers that this word and yours come from the same root (a root not in the lexicon); an inference, not a dictionary annotation",
+  "{query}、{term} → {stem}": "{query}, {term} → {stem}",
+  "自動同根的說明": "How the shared root was inferred",
+  "兩個詞推定來自同一個詞根「{root}」。這個詞根不在詞庫中，是演算法由詞形拆出來的。": "Both words are inferred to come from the root “{root}”. This root is not in the lexicon; the algorithm split it out of the word forms.",
+  "詞庫外的詞根": "Root not in the lexicon",
+  "「{term}」由「{root}」衍生：": "“{term}” derives from “{root}”:",
+  "此為演算法推定兩個詞來自同一個詞根，不是辭典的標註，僅用於方便檢索。您需要自行判斷正確性。": "The algorithm inferred that both words share a root. This is not a dictionary annotation and is meant only to help searching; please judge it yourself."
 }

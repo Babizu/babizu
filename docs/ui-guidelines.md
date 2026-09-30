@@ -96,6 +96,7 @@
 |---|---|---|
 | 自動拆解：mu- ＋ daux | 演算法（BCDP）去掉詞綴 | `MorphologyExplanation`（彈出框標題「自動拆解的說明」） |
 | 自動派生：p‹a›u- ＋ sungut ＋ -ay | 演算法推定由查詢加上詞綴而來 | `MorphologyExplanation`（彈出框標題「自動派生的說明」） |
+| 自動同根 bubuer | 演算法推定與查詢來自同一個詞庫外的詞根 | `MorphologyExplanation`（彈出框分列查詢的拆解、詞庫外的詞根、這個詞的衍生；沒有實驗室連結） |
 | 辭典：衍生自 usa | 辭典標明衍生自、或列在條目下 | `MetaTag`，`title` 說明不是演算法推定的 |
 | 另立條目、詞條家族的縮排 | 辭典的條目結構 | `EntryRow`、`EntryTree` |
 

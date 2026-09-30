@@ -15,11 +15,11 @@
  * 除了詞圖之外，其餘索引都在第一次用到時才建立（lazy）。
  */
 
-import { createMorphSearch, FuzzyIndex } from '../fuzzy/index.js'
-import { DerivationGraph } from './derivations.js'
+import { createMorphSearch, FuzzyIndex, roundCost } from '../fuzzy/index.js'
+import { DerivationGraph, VIRTUAL_ROOT_PENALTY } from './derivations.js'
 import { buildEntryGroups, collectHits, mergeSpellings } from './family.js'
 import { decodePosting, docAt, INDEX_FORMAT_VERSION } from './format.js'
-import { compareHits, compareOccurrences, MATCH_TYPE_RANK, MATCH_TYPES, mergeMorphMatch, recordScore, ROLE_RANK, termScore } from './scoring.js'
+import { compareHits, compareOccurrences, MATCH_TYPE_RANK, MATCH_TYPES, mergeMorphMatch, recordScore, replacesRecordHit, ROLE_RANK, termScore } from './scoring.js'
 import { createTextTools, detectQueryMode, glossTokens, zhNormalize } from './text.js'
 
 /**
@@ -99,6 +99,9 @@ export const FUZZINESS = Object.freeze({
  *   自動派生經過其他詞時，由起點往下的每一層（不含最後一層，那一層就是 stem、steps）：
  *   查 sungut 找到 pausunguday，chain 是 [pusungut ＝ pu- ＋ sungut]，stem 是 pusungut
  * @property {MorphNote[] | null} [notes] 整個詞的音變說明（自動拆解只為前幾筆結果計算）
+ * @property {{root: string, steps: Array<import('../fuzzy/morph-search.js').MorphStepHit>, cost: number, penalty: number}} [sibling]
+ *   自動同根（matchType 'sibling'）：查詢拆出的虛擬詞根 root（詞庫中沒有）與拆法；stem、steps、chain 是這個詞往上到 root 的路。
+ *   查 binubuer：root 是 bubuer（b<in>ubuer），這個詞 mabubuer ＝ ma- ＋ bubuer
  */
 
 /** @typedef {import('./scoring.js').MatchType} MatchType */
@@ -493,7 +496,7 @@ export class SearchEngine {
           alignment: null,
           analysis: t.analysis ?? null,
         }
-        if (!prev || compareHits(hit, prev) < 0) entries.set(k, hit)
+        if (replacesRecordHit(hit, prev, compareHits)) entries.set(k, hit)
       }
     }
     response.entries = sortEntries([...entries.values()])
@@ -581,14 +584,19 @@ export class SearchEngine {
       /** 句中的一個詞落在含它的各句上 @param {unknown[]} payloads @param {number} score @param {OccurrenceMatch} match */
       const place = (payloads, score, match) => {
         const rank = MATCH_TYPE_RANK[match.matchType]
+        const next = { matchType: match.matchType, score }
         for (const code of /** @type {number[]} */ (payloads)) {
           const { doc: k, kind } = decodePosting(code)
           if (kind !== 'token' || !accept(k)) continue
           const prev = found.get(k)
-          if (!prev) found.set(k, { distance: match.distance, score, rank, terms: [match.token], matches: [match] })
+          const before = prev && { matchType: MATCH_TYPES[prev.rank], score: prev.score }
+          // 只有自動同根命中的句子，遇到其他命中時整個換掉（高亮也只留那一種）；已有其他命中的句子不收自動同根
+          if (!prev || (before?.matchType === 'sibling' && match.matchType !== 'sibling')) {
+            found.set(k, { distance: match.distance, score, rank, terms: [match.token], matches: [match] })
+          } else if (match.matchType === 'sibling' && before?.matchType !== 'sibling') continue
           else {
             prev.terms.push(match.token)
-            if (score < prev.score) {
+            if (replacesRecordHit(next, before, (a, b) => a.score - b.score)) {
               prev.rank = rank
               prev.score = score
               prev.distance = match.distance
@@ -789,39 +797,74 @@ export class SearchEngine {
   _derivedTerms(key, variants, maxPath) {
     const graph = this.derivations
     if (!graph) return []
-    /** @type {Array<{term: string, distance: number}>} */
-    const starts = [{ term: key, distance: 0 }, ...variants]
-    /** @type {Array<{id: number, distance: number, term: string}>} */
+    /** @type {Array<{id: number, distance: number, term: string, split?: {cost: number, steps: any[]}}>} */
     const seeds = []
-    for (const s of starts) {
+    for (const s of [{ term: key, distance: 0 }, ...variants]) {
       const id = this.index.dawg.lookup(s.term)
       if (id !== -1) seeds.push({ id, distance: s.distance, term: s.term })
     }
-    const terms = this.index.terms
+    // 虛擬詞根：查詢本身拆出的詞幹（構詞分析器，精確的列舉）若是虛擬詞根，由它往下找同根詞（見 derivations.js 檔頭）。
+    // 起點的距離是拆解的成本加上一次 VIRTUAL_ROOT_PENALTY；每個虛擬詞根取最便宜的拆法
+    /** @type {typeof seeds} */
+    const virtualSeeds = []
+    for (const a of /** @type {NonNullable<typeof this.text.morphology>} */ (this.text.morphology).analyze(key)) {
+      const id = graph.virtualIds.get(a.stem)
+      if (id === undefined || a.steps.length === 0) continue
+      const distance = roundCost(a.cost + VIRTUAL_ROOT_PENALTY)
+      const prev = virtualSeeds.find((x) => x.id === id)
+      if (!prev) virtualSeeds.push({ id, distance, term: a.stem, split: { cost: a.cost, steps: [...a.steps] } })
+      else if (distance < prev.distance) Object.assign(prev, { distance, split: { cost: a.cost, steps: [...a.steps] } })
+    }
+    // 分兩次走：先由查詢與它的相近寫法（與沒有虛擬詞根時完全相同），再由虛擬詞根，只補上第一次沒走到的詞。
+    // 自動同根不取代其他命中（scoring.js 的 mergeMorphMatch），在圖上也一樣
+    const direct = graph.descendants(seeds, maxPath).map((r) => ({ ...r, from: seeds[r.seed] }))
+    const reached = new Set(direct.map((r) => r.word))
+    const self = this.index.dawg.lookup(key)
+    const viaVirtual = virtualSeeds.length
+      ? graph
+          .descendants(virtualSeeds, maxPath)
+          .map((r) => ({ ...r, from: virtualSeeds[r.seed] }))
+          // 查詢本身也在詞庫中時不算自己；整條（拆解 ＋ 往下）也不超過同一個上限
+          .filter((r) => !reached.has(r.word) && r.word !== self && r.cost - VIRTUAL_ROOT_PENALTY <= maxPath + 1e-9)
+      : []
+    const nodes = graph.nodes
     /** @type {Map<number, AlignmentNote[]>} 查詢 → 起點的對齊說明（每個起點算一次） */
     const variantNotes = new Map()
-    return graph.descendants(seeds, maxPath).map((r) => {
-      const seed = seeds[r.seed]
+    /** @type {TermMatch[]} */
+    const out = []
+    for (const r of [...direct, ...viaVirtual]) {
+      const seed = r.from
       const last = /** @type {(typeof r.path)[number]} */ (r.path.at(-1))
       /** @type {LemmaAnalysis} */
       const analysis = {
-        stem: terms[last.root],
+        stem: nodes[last.root],
         steps: last.analysis.steps,
         cost: r.cost,
         notes: /** @type {MorphNote[]} */ (last.analysis.notes),
         ...(r.path.length > 1
           ? {
-              chain: r.path.slice(0, -1).map((e) => ({ term: terms[e.word], stem: terms[e.root], steps: e.analysis.steps, cost: e.analysis.cost })),
+              chain: r.path.slice(0, -1).map((e) => ({ term: nodes[e.word], stem: nodes[e.root], steps: e.analysis.steps, cost: e.analysis.cost })),
             }
           : {}),
-        ...(seed.distance > 0 ? { variantOf: key, variantDistance: seed.distance } : {}),
       }
-      if (seed.distance > 0) {
-        if (!variantNotes.has(r.seed)) variantNotes.set(r.seed, this.explainNotes(key, seed.term))
-        analysis.variantNotes = variantNotes.get(r.seed)
+      if (seed.split) {
+        // 自動同根：查詢拆出的詞根就是這個詞往上的詞根（詞庫中沒有這個詞）
+        analysis.sibling = { root: seed.term, steps: seed.split.steps, cost: seed.split.cost, penalty: VIRTUAL_ROOT_PENALTY }
+      } else if (seed.distance > 0) {
+        analysis.variantOf = key
+        analysis.variantDistance = seed.distance
+        if (!variantNotes.has(seed.id)) variantNotes.set(seed.id, this.explainNotes(key, seed.term))
+        analysis.variantNotes = variantNotes.get(seed.id)
       }
-      return { term: terms[r.word], payloads: this.index.payloads[r.word], distance: r.cost, matchType: /** @type {MatchType} */ ('derived'), analysis }
-    })
+      out.push({
+        term: this.index.terms[r.word],
+        payloads: this.index.payloads[r.word],
+        distance: r.cost,
+        matchType: /** @type {MatchType} */ (seed.split ? 'sibling' : 'derived'),
+        analysis,
+      })
+    }
+    return out
   }
 
   /**
@@ -1118,12 +1161,12 @@ export class SearchEngine {
  * 哪些 posting 可以跟哪種命中方式搭配：
  * - 自動拆解（lemma）：詞根本身，以及辭典標註的派生詞（root posting，排在詞根之後）。
  *   查 kinawas 得到詞根 kawas 時，mukawas、maakawas 等已標註的派生詞也要列出來
- * - 自動派生（derived）：不沿用 root posting，那是「派生詞的派生詞」
+ * - 自動派生（derived）、自動同根（sibling）：不沿用 root posting，那是「派生詞的派生詞」
  * @param {MatchType} matchType
  * @param {import('./format.js').MatchKind} kind
  */
 function usablePosting(matchType, kind) {
-  if (matchType === 'derived') return kind !== 'root'
+  if (matchType === 'derived' || matchType === 'sibling') return kind !== 'root'
   return true
 }
 
