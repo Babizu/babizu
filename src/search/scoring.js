@@ -146,6 +146,17 @@ export function alternativesOf(m) {
  */
 export const SEARCH_METHODS = /** @type {const} */ (['exact', 'fuzzy', 'prefix', 'suffix', 'substring', 'dictLemma', 'dictDerived', 'dictSibling', 'lemma', 'derived', 'sibling'])
 /** @typedef {typeof SEARCH_METHODS[number]} SearchMethod */
+/**
+ * 搜尋方法的四組（介面的篩選面板依這個分組）：拼寫、部分符合、確定（辭典標註的構詞關係）、自動（演算法推定的構詞關係）。
+ * 一筆記錄可能同時屬於好幾種方法，所以一組的筆數不是組內各方法相加（見 SearchResponse.methodGroups）。
+ */
+export const SEARCH_METHOD_GROUPS = /** @type {const} */ ({
+  spelling: ['exact', 'fuzzy'],
+  partial: ['prefix', 'suffix', 'substring'],
+  dictionary: ['dictLemma', 'dictDerived', 'dictSibling'],
+  automatic: ['lemma', 'derived', 'sibling'],
+})
+/** @typedef {keyof typeof SEARCH_METHOD_GROUPS} SearchMethodGroup */
 
 /**
  * 一個命中屬於哪一種搜尋方法。經過好幾種關係時取把握最小的一種：自動 ＞ 部分符合 ＞ 確定 ＞ 拼寫

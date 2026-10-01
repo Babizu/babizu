@@ -104,8 +104,9 @@ export const MATCH_TYPES = {
   sibling: { label: msg('自動同根'), hint: msg('演算法推定這個詞與你輸入的詞來自同一個詞根（詞庫中沒有這個詞根）；是推定的結果，不是辭典的標註') },
 }
 /**
- * 搜尋篩選的「搜尋方法」（babizu/search 的 SEARCH_METHODS），分成四組：
+ * 搜尋篩選的「搜尋方法」（babizu/search 的 SEARCH_METHODS），分成四組（key 與 SEARCH_METHOD_GROUPS 相同）：
  * 拼寫、部分符合、確定（辭典標註的構詞關係）、自動（演算法推定的構詞關係）。
+ * note 是組名旁的次要說明（構詞關係的來源），與結果中的標籤用語一致。
  */
 export const SEARCH_METHOD_GROUPS = [
   {
@@ -127,7 +128,8 @@ export const SEARCH_METHOD_GROUPS = [
   },
   {
     key: 'dictionary',
-    label: msg('確定（辭典標註）'),
+    label: msg('確定'),
+    note: msg('辭典標註'),
     methods: [
       { id: 'dictLemma', label: msg('拆解'), hint: msg('辭典中你輸入的詞所屬的上層詞條（詞根）') },
       { id: 'dictDerived', label: msg('派生'), hint: msg('辭典列在你輸入的詞底下、或標明由它衍生的詞') },
@@ -136,7 +138,8 @@ export const SEARCH_METHOD_GROUPS = [
   },
   {
     key: 'automatic',
-    label: msg('自動（演算法推定）'),
+    label: msg('自動'),
+    note: msg('演算法推定'),
     methods: [
       { id: 'lemma', label: msg('拆解'), hint: msg('演算法自動去掉詞綴後得到的詞根') },
       { id: 'derived', label: msg('派生'), hint: msg('演算法推定由你輸入的詞加上詞綴而來的詞') },

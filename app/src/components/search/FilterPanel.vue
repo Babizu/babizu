@@ -7,7 +7,8 @@
  * 所以同一份標記在 15rem 的側欄裡是一欄、在抽屜裡自動變成兩三欄，
  * 不必為兩個位置各寫一套。
  */
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
+import { ChevronDownIcon } from '@lucide/vue'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Slider } from '@/components/ui/slider'
@@ -30,6 +31,8 @@ const model = defineModel({ type: Object, required: true })
 const props = defineProps({
   /** 每種搜尋方法找得到幾筆（搜尋回應的 methods；還沒有結果時為 null） */
   counts: { type: Object, default: null },
+  /** 每一組搜尋方法找得到幾筆（搜尋回應的 methodGroups，組內各方法的聯集） */
+  groupCounts: { type: Object, default: null },
 })
 const { sources } = useSources()
 
@@ -52,6 +55,8 @@ const nested = site.varieties.filter((v) => v.parent)
 const GRID = 'grid gap-x-4 grid-cols-[repeat(auto-fill,minmax(7rem,1fr))]'
 const GRID_WIDE = 'grid gap-x-4 grid-cols-[repeat(auto-fill,minmax(11rem,1fr))]'
 const OPTION = 'hover:bg-muted flex min-h-10 cursor-pointer items-center gap-2.5 rounded-md px-2 -mx-2'
+/** 搜尋方法的個別選項：收在組底下，比一般選項矮一點 */
+const SUBOPTION = OPTION.replace('min-h-10', 'min-h-9')
 
 const fuzzinessIndex = computed({
   get: () => [Math.max(0, FUZZINESS_STEPS.indexOf(model.value.fuzziness))],
@@ -72,6 +77,21 @@ const included = (id) => !model.value.exclude.includes(id)
 const groupState = (g) => {
   const n = g.methods.filter((m) => included(m.id)).length
   return n === g.methods.length ? true : n === 0 ? false : 'indeterminate'
+}
+/** 組名（含來源說明），供整組勾選框的無障礙名稱 @param {{label: string, note?: string}} g */
+const groupName = (g) => (g.note ? t('{label}（{note}）', { label: t(g.label), note: t(g.note) }) : t(g.label))
+/** 組內被排除的方法名稱（收合時寫在組名下面） @param {{methods: Array<{id: string, label: string}>}} g */
+const excludedIn = (g) => g.methods.filter((m) => !included(m.id)).map((m) => t(m.label))
+/**
+ * 展開的組：預設收合，只顯示整組的勾選與筆數。一開始就有部分排除的組（例如網址帶 x=）展開，讀者看得到排除了哪幾個。
+ * @type {import('vue').Ref<Set<string>>}
+ */
+const expanded = ref(new Set(SEARCH_METHOD_GROUPS.filter((g) => groupState(g) === 'indeterminate').map((g) => g.key)))
+/** @param {string} key */
+const toggleExpanded = (key) => {
+  const next = new Set(expanded.value)
+  if (!next.delete(key)) next.add(key)
+  expanded.value = next
 }
 /** @param {string[]} exclude */
 const setExclude = (exclude) => (model.value = { ...model.value, exclude })
@@ -161,7 +181,10 @@ function reset() {
       </p>
     </section>
 
-    <!-- 搜尋方法：四組，可以整組或個別顯示、排除；數字是這個方法找得到幾筆（不受排除影響） -->
+    <!--
+      搜尋方法：四組。每組一列（整組勾選、組名與來源、整組筆數、展開鈕），個別的方法收在底下，預設收合。
+      筆數不受排除影響：排除掉的方法有多少仍看得到。
+    -->
     <fieldset>
       <legend class="mb-1 flex w-full items-baseline justify-between gap-2 font-medium">
         <span>{{ t('搜尋方法') }}</span>
@@ -169,17 +192,52 @@ function reset() {
           {{ t('全部顯示') }}
         </button>
       </legend>
-      <div v-for="g in SEARCH_METHOD_GROUPS" :key="g.key" class="mt-2">
-        <label class="text-muted-foreground hover:text-foreground -mx-2 flex min-h-8 cursor-pointer items-center gap-2.5 rounded-md px-2 text-xs">
-          <Checkbox :model-value="groupState(g)" :aria-label="t('整組：{group}', { group: t(g.label) })" @update:model-value="() => toggleGroup(g)" />
-          <span>{{ t(g.label) }}</span>
-        </label>
-        <div :class="GRID" class="pl-3">
-          <label v-for="m in g.methods" :key="m.id" :class="[OPTION, props.counts && !props.counts[m.id] && 'text-muted-foreground']" :title="t(m.hint)">
-            <Checkbox :model-value="included(m.id)" @update:model-value="(v) => toggleMethod(m.id, v)" />
-            <span class="min-w-0 flex-1 truncate">{{ t(m.label) }}</span>
-            <span v-if="props.counts" class="text-muted-foreground text-xs tabular-nums">{{ formatCount(props.counts[m.id] ?? 0) }}</span>
+      <div v-for="g in SEARCH_METHOD_GROUPS" :key="g.key">
+        <div class="-mx-2 flex items-center gap-1">
+          <label class="hover:bg-muted flex min-h-10 min-w-0 flex-1 cursor-pointer items-center gap-2.5 rounded-md px-2 transition-colors">
+            <Checkbox :model-value="groupState(g)" :aria-label="t('整組：{group}', { group: groupName(g) })" @update:model-value="() => toggleGroup(g)" />
+            <span class="flex min-w-0 flex-1 flex-col py-1.5 leading-tight">
+              <span class="flex items-baseline gap-1.5">
+                <span :class="groupState(g) === false && 'text-muted-foreground'">{{ t(g.label) }}</span>
+                <span v-if="g.note" class="text-muted-foreground truncate text-xs">{{ t(g.note) }}</span>
+              </span>
+              <span v-if="!expanded.has(g.key) && groupState(g) === 'indeterminate'" class="text-muted-foreground mt-0.5 truncate text-xs">
+                {{ t('不含 {methods}', { methods: excludedIn(g).join(t('、')) }) }}
+              </span>
+            </span>
+            <span v-if="props.groupCounts" class="text-muted-foreground text-xs tabular-nums">{{ formatCount(props.groupCounts[g.key] ?? 0) }}</span>
           </label>
+          <button
+            type="button"
+            class="text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-ring/50 grid size-8 shrink-0 place-items-center rounded-md transition-colors outline-none focus-visible:ring-[3px]"
+            :aria-expanded="expanded.has(g.key)"
+            :aria-controls="`filter-methods-${g.key}`"
+            :aria-label="t('{group}的個別方法', { group: groupName(g) })"
+            @click="toggleExpanded(g.key)"
+          >
+            <ChevronDownIcon class="size-4 transition-transform duration-200 motion-reduce:transition-none" :class="expanded.has(g.key) && 'rotate-180'" aria-hidden="true" />
+          </button>
+        </div>
+        <!--
+          收合用 grid-template-rows 0fr ↔ 1fr 做高度動畫。收合時 inert（鍵盤不會跳進看不見的選項），
+          動畫結束後 visibility: hidden（visibility 的轉場在結束時才切換），輔助技術也不會讀到
+        -->
+        <div
+          :id="`filter-methods-${g.key}`"
+          class="grid transition-[grid-template-rows] duration-200 ease-out motion-reduce:transition-none"
+          :class="expanded.has(g.key) ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'"
+          :inert="!expanded.has(g.key)"
+        >
+          <div class="overflow-hidden transition-[visibility] duration-200 motion-reduce:transition-none" :class="!expanded.has(g.key) && 'invisible'">
+            <!-- 右邊留出展開鈕的寬度（size-8 ＋ gap-1），個別方法的筆數與整組的筆數對齊 -->
+            <div :class="GRID" class="border-border mr-9 mb-1 ml-[0.4375rem] border-l pl-3.5">
+              <label v-for="m in g.methods" :key="m.id" :class="[SUBOPTION, props.counts && !props.counts[m.id] && 'text-muted-foreground']" :title="t(m.hint)">
+                <Checkbox :model-value="included(m.id)" @update:model-value="(v) => toggleMethod(m.id, v)" />
+                <span class="min-w-0 flex-1 truncate">{{ t(m.label) }}</span>
+                <span v-if="props.counts" class="text-muted-foreground text-xs tabular-nums">{{ formatCount(props.counts[m.id] ?? 0) }}</span>
+              </label>
+            </div>
+          </div>
         </div>
       </div>
     </fieldset>

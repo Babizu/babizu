@@ -12,6 +12,7 @@
  *   分別列出查詢怎麼拆到它、這個詞怎麼由它衍生，以及「詞庫外的詞根」的代價
  */
 import { computed } from 'vue'
+import { InfoIcon } from '@lucide/vue'
 import { Badge } from '@/components/ui/badge'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { t } from '@/i18n.js'
@@ -97,7 +98,7 @@ const partLabel = (part, k) => (part.type === 'prefix' ? `${part.form}-` : part.
         as="button"
         type="button"
         size="tag"
-        variant="soft"
+        variant="inferred"
         class="max-w-full cursor-pointer"
         :aria-label="t('{label}：{summary}，查看說明', { label: matchTypeLabel(matchType), summary })"
         @click.stop.prevent
@@ -108,7 +109,10 @@ const partLabel = (part, k) => (part.type === 'prefix' ? `${part.form}-` : part.
       </Badge>
     </PopoverTrigger>
     <PopoverContent class="w-72 text-sm" align="start" @click.stop>
-      <p class="font-medium">{{ title }}</p>
+      <div class="flex items-center justify-between gap-2">
+        <p class="font-medium">{{ title }}</p>
+        <Badge size="tag" variant="inferred" class="shrink-0">{{ t('演算法推定') }}</Badge>
+      </div>
       <!-- 查詢 → 詞根，接著說明這是演算法推定的結果，不是分析標註 -->
       <p class="native-text mt-1.5 text-base leading-tight">{{ intro }}</p>
       <div v-if="analysis.variantOf" class="text-muted-foreground mt-1 text-xs">
@@ -175,14 +179,21 @@ const partLabel = (part, k) => (part.type === 'prefix' ? `${part.form}-` : part.
           <span class="text-muted-foreground font-mono text-xs tabular-nums">+{{ formatDistance(soundCost) }}</span>
         </li>
       </ul>
-      <p class="text-muted-foreground mt-1 text-xs leading-relaxed">
+      <!-- 合計：上面各項（含相近寫法、上面幾層、詞庫外的詞根）加起來就是排序用的成本 -->
+      <div class="border-border mt-2 flex items-baseline justify-between gap-3 border-t pt-1.5 text-xs">
+        <span class="text-muted-foreground">{{ t('合計') }}</span>
+        <span class="font-mono font-medium tabular-nums">{{ formatDistance(analysis.cost) }}</span>
+      </div>
+      <p class="text-muted-foreground bg-muted/60 mt-3 flex gap-1.5 rounded-md px-2 py-1.5 text-xs leading-relaxed">
+        <InfoIcon class="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+        <span>
         {{
           sibling
             ? t('此為演算法推定兩個詞來自同一個詞根，不是辭典的標註，僅用於方便檢索。您需要自行判斷正確性。')
             : derived
               ? t('此為演算法推定這個詞由上面的詞加上詞綴而來，不是辭典的標註，僅用於方便檢索。您需要自行判斷正確性。')
               : t('此為演算法自動去除詞綴後所得到的結果，僅用於方便檢索，並非確定的分析標註。您需要自行判斷正確性。')
-        }}
+        }}</span>
       </p>
       <!-- 兩個方向都是構詞搜尋（BCDP）算出來的：連到實驗室的構詞分頁逐步觀察 -->
       <RouterLink

@@ -31,6 +31,7 @@ import {
   recordScore,
   replacesRecordHit,
   ROLE_RANK,
+  SEARCH_METHOD_GROUPS,
   SEARCH_METHODS,
   termScore,
 } from './scoring.js'
@@ -178,6 +179,8 @@ export const FUZZINESS = Object.freeze({
  * @property {{entries: number, entryGroups: number, occurrences: number, glosses: number}} totals 截斷前的總數
  * @property {Record<import('./scoring.js').SearchMethod, number>} methods 每種搜尋方法找得到幾筆記錄（詞條與例句；
  *   不受 exclude 影響，介面用來顯示每個方法的數量）
+ * @property {Record<import('./scoring.js').SearchMethodGroup, number>} methodGroups 每一組搜尋方法（SEARCH_METHOD_GROUPS）找得到幾筆記錄：
+ *   組內各方法的聯集，一筆記錄同時屬於組內好幾種方法時只算一次；同樣不受 exclude 影響
  * @property {{elapsedMs: number, visitedNodes: number}} stats
  */
 
@@ -351,6 +354,7 @@ export class SearchEngine {
       glosses: [],
       totals: { entries: 0, entryGroups: 0, occurrences: 0, glosses: 0 },
       methods: /** @type {SearchResponse['methods']} */ (Object.fromEntries(SEARCH_METHODS.map((m) => [m, 0]))),
+      methodGroups: /** @type {SearchResponse['methodGroups']} */ (Object.fromEntries(Object.keys(SEARCH_METHOD_GROUPS).map((g) => [g, 0]))),
       stats: { elapsedMs: 0, visitedNodes: 0 },
     }
     if (!q) return response
@@ -610,6 +614,10 @@ export class SearchEngine {
       (o) => !entries.has(o.doc.index),
     )
     for (const [m, docs] of byMethod) response.methods[/** @type {import('./scoring.js').SearchMethod} */ (m)] = docs.size
+    for (const [g, ms] of Object.entries(SEARCH_METHOD_GROUPS)) {
+      const union = new Set(ms.flatMap((m) => [.../** @type {Set<number>} */ (byMethod.get(m))]))
+      response.methodGroups[/** @type {import('./scoring.js').SearchMethodGroup} */ (g)] = union.size
+    }
     // 例句的命中說明與詞條相同，也只為前幾句計算
     for (const o of response.occurrences.slice(0, explainLimit)) for (const m of o.matches) explainMatch(m.word, m)
   }

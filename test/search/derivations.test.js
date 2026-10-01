@@ -333,6 +333,16 @@ describe('搜尋方法：個別排除，並回報每種方法找得到幾筆', (
     expect(noDerived.occurrences.find((o) => o.doc.id === 'dict:s1')?.matchType).toBe('prefix')
     // 數量不受排除影響（介面用來顯示每個方法有幾筆）
     expect(noDerived.methods).toEqual(all.methods)
+    // 每一組是組內各方法的聯集：sungutan 與例句同時是開頭相符與自動派生，各組各算一次
+    expect(all.methodGroups).toEqual({ spelling: 1, partial: 2, dictionary: 0, automatic: 2 })
+    expect(noDerived.methodGroups).toEqual(all.methodGroups)
+  })
+
+  it('一組的筆數是聯集：同一句同時以開頭與結尾相符命中，部分符合只算一筆', () => {
+    const q = engineOf([rec('sungut', 'word', 'sungut'), rec('s2', 'sentence', 'kasungut lia sunguttu')], { cost: 0.3, minStem: 3, suffixes: [{ form: 'an' }] })
+    const res = q.search('sungut', { fields: ['native'] })
+    expect(res.methods).toMatchObject({ prefix: 1, suffix: 1 })
+    expect(res.methodGroups.partial).toBe(1)
   })
 
   it('兩者都排除時就不出現', () => {

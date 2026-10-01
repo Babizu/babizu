@@ -458,9 +458,7 @@
   "確定同根": "Confirmed: same root",
   "確定拆解": "Confirmed: split",
   "確定派生": "Confirmed: derived",
-  "確定（辭典標註）": "Confirmed (dictionary)",
   "結尾相符": "Ends with",
-  "自動（演算法推定）": "Automatic (algorithm)",
   "調整模糊程度與搜尋方法，或限定來源、方言、語言單位。": "Adjust fuzziness and search methods, or limit sources, dialects and units.",
   "辭典中你輸入的詞所屬的上層詞條（詞根）": "The entry (root) your word is listed under in the dictionary",
   "辭典中與你輸入的詞列在同一個詞底下的其他詞": "Other words listed under the same word as yours in the dictionary",
@@ -469,5 +467,13 @@
   "辭典標明這個詞由後面的詞衍生，或把這個詞列在它的條目下；不是演算法推定的": "The dictionary marks this word as derived from the following word, or lists it under that entry; not inferred by the algorithm",
   "這個詞以你輸入的字串結尾": "This word ends with what you typed",
   "這個詞與你輸入的詞在辭典中列在同一個詞（後面的詞）底下；不是演算法推定的": "The dictionary lists this word and yours under the same word (the following one); not inferred by the algorithm",
-  "部分符合": "Partial match"
+  "部分符合": "Partial match",
+  "{group}的個別方法": "Individual methods in {group}",
+  "{label}（{note}）": "{label} ({note})",
+  "不含 {methods}": "Excluding {methods}",
+  "演算法推定": "algorithm",
+  "確定": "Confirmed",
+  "自動": "Automatic",
+  "辭典標註": "dictionary",
+  "合計": "Total"
 }

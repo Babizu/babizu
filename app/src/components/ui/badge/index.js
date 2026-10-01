@@ -18,6 +18,8 @@ export const badgeVariants = cva(
         quiet: 'text-muted-foreground [button&]:hover:bg-muted',
         /** 說明性的標記（語音規則、構詞）：淡主色底 */
         soft: 'border-transparent bg-accent text-accent-foreground [button&]:hover:bg-accent/70',
+        /** 演算法推定的關係（自動拆解、派生、同根）：虛線外框，與辭典標註的實心底（soft）一眼分得出來 */
+        inferred: 'border-dashed border-primary/40 bg-transparent text-accent-foreground [button&]:hover:bg-accent/60',
         /** 中性的底色（未知的語言變體） */
         muted: 'border-transparent bg-muted text-muted-foreground',
         /** 語言變體：顏色由 .variety-<代碼> 提供 */

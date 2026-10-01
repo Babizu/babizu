@@ -204,7 +204,7 @@ const filterSheetOpen = ref(false)
               <SheetDescription>{{ t('調整模糊程度與搜尋方法，或限定來源、方言、語言單位。') }}</SheetDescription>
             </SheetHeader>
             <div class="px-4 pb-6">
-              <FilterPanel v-model="filters" :counts="response?.methods ?? null" />
+              <FilterPanel v-model="filters" :counts="response?.methods ?? null" :group-counts="response?.methodGroups ?? null" />
             </div>
           </SheetContent>
         </Sheet>
@@ -214,7 +214,7 @@ const filterSheetOpen = ref(false)
     <div class="grid gap-8 lg:grid-cols-[15rem_minmax(0,1fr)]">
       <aside class="hidden lg:block">
         <div class="sticky top-36">
-          <FilterPanel v-model="filters" :counts="response?.methods ?? null" />
+          <FilterPanel v-model="filters" :counts="response?.methods ?? null" :group-counts="response?.methodGroups ?? null" />
         </div>
       </aside>
 

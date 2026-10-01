@@ -3,6 +3,7 @@
  * 命中的說明標籤：比對身分（變體、其他寫法…）、命中方式或構詞分析、模糊命中的距離。
  * 詞條結果列（EntryHitItem）、家族中的子項目（EntryRow）與例句（OccurrenceHitItem）共用，標籤才會一致。
  */
+import { BookOpenIcon } from '@lucide/vue'
 import MatchExplanation from '@/components/common/MatchExplanation.vue'
 import MatchTypeTag from '@/components/common/MatchTypeTag.vue'
 import MetaTag from '@/components/common/MetaTag.vue'
@@ -27,6 +28,7 @@ defineProps({
     variant="soft"
     :title="matchKindHint(hit.kind) || undefined"
   >
+    <BookOpenIcon v-if="DICTIONARY_KINDS.has(hit.kind)" class="size-3 shrink-0 opacity-70" aria-hidden="true" />
     {{ matchKindLabel(hit.kind) }} <span class="native-text font-medium">{{ hit.kind === 'sibling' ? (hit.via ?? hit.term) : hit.term }}</span>
   </MetaTag>
   <span v-if="hit.analysis" class="relative z-10 inline-flex min-w-0">
