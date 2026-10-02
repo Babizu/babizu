@@ -21,6 +21,7 @@
     "./schema/json/*": "./src/schema/json/*",
     "./search": "./src/search/index.js",
     "./search/text": "./src/search/text.js",
+    "./pattern": "./src/pattern/index.js",
     "./pipeline": "./src/pipeline/index.js",
     "./pipeline/spreadsheet": "./src/pipeline/spreadsheet.js",
     "./pipeline/docx": "./src/pipeline/docx.js",

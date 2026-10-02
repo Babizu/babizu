@@ -24,6 +24,8 @@ import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { marked } from 'marked'
 import { validateProfile } from '../fuzzy/index.js'
+import { PatternError } from '../pattern/errors.js'
+import { parsePattern } from '../pattern/parser.js'
 import { extractMessages } from './extract-messages.js'
 import { BUILTIN_LOCALE_NAMES, BUILTIN_LOCALES, FRAMEWORK_ROOT, SOURCE_LOCALE, loadBuiltinMessages } from './paths.js'
 
@@ -59,6 +61,7 @@ import { BUILTIN_LOCALE_NAMES, BUILTIN_LOCALES, FRAMEWORK_ROOT, SOURCE_LOCALE, l
  * @property {Record<string, Localized>} [writingSystems] 書寫系統代碼 → 顯示名稱（記錄 altTexts 使用）
  * @property {string[]} [specialChars] 搜尋框的特殊字元快捷鍵
  * @property {Array<{q: string, note?: Localized}>} [examples] 首頁的搜尋範例
+ * @property {Array<{q: string, note?: Localized}>} [patternExamples] 「關於」頁句型搜尋說明的例子（句型查詢，建置時檢查寫法；docs/pattern-query.md）
  * @property {Localized} [about] 「關於」頁內容：Markdown 檔路徑（可依語系分開）
  * @property {Localized} [footer] 頁尾文字
  * @property {{pairs?: Array<[string, string]>, words?: string, morph?: {examples?: Array<[string, string]>, failures?: Array<[string, string]>}}} [lab]
@@ -183,6 +186,20 @@ export async function loadSiteConfig(siteDir) {
     for (const e of validateProfile(profile)) errors.push(`語言設定檔：${e}`)
   }
 
+  // 句型搜尋的例子：寫法要剖析得過（構詞樣式的詞綴要等到搜尋時才依構詞規格解析）
+  for (const [k, e] of (input.patternExamples ?? []).entries()) {
+    if (typeof e?.q !== 'string' || !e.q.trim()) {
+      errors.push(`patternExamples[${k}].q 必須是非空字串`)
+      continue
+    }
+    try {
+      parsePattern(e.q)
+    } catch (err) {
+      if (!(err instanceof PatternError)) throw err
+      errors.push(`patternExamples[${k}]「${e.q}」不是合法的句型（${err.code}，位置 ${err.start}–${err.end}）`)
+    }
+  }
+
   // 演算法實驗室的構詞例子
   const morphLab = input.lab?.morph
   if (morphLab !== undefined) {
@@ -284,6 +301,7 @@ export async function loadSiteConfig(siteDir) {
       ),
       specialChars: input.specialChars ?? [],
       examples: (input.examples ?? []).map((e) => ({ q: e.q, note: localize(e.note, locales, defaultLocale) })),
+      patternExamples: (input.patternExamples ?? []).map((e) => ({ q: e.q, note: localize(e.note, locales, defaultLocale) })),
       about,
       lab: {
         pairs: input.lab?.pairs ?? [],

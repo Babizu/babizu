@@ -41,6 +41,7 @@ npx babizu dev        # 在有 babizu.config.js 的目錄
 | [i18n.md](docs/i18n.md) | 多語言介面：語系、覆寫字串、新增語系 |
 | [fuzzy-search.md](docs/fuzzy-search.md) | 模糊搜尋演算法：遞推式、剪枝正確性、DAWG、複雜度、API |
 | [bcdp.md](docs/bcdp.md) | 音變與構詞聯合搜尋 BCDP：模型、推導、正確性證明、實測 |
+| [pattern-query.md](docs/pattern-query.md) | 句型搜尋：依詞序與構詞找例句的查詢寫法、語意、與 BCDP 的對稱 |
 | [morph-grammar.md](docs/morph-grammar.md) | 構詞文法：詞素、組合規則與包覆單位，展開成詞綴清單的編譯原理 |
 | [ui-guidelines.md](docs/ui-guidelines.md) | 介面設計規範 |
 | [lab-design.md](docs/lab-design.md) | 演算法實驗室的設計規格 |
@@ -87,6 +88,7 @@ npm run zoo               # 錯誤解法動物園：每個具名突變都必須�
 │   ├── fuzzy/         加權編輯距離、DAWG、語言設定檔（零依賴）
 │   ├── schema/        標準資料格式：JSON Schema、代碼表、輔助函式
 │   ├── search/        搜尋鍵、索引建置、查詢引擎（建置端與瀏覽器共用）
+│   ├── pattern/       句型搜尋：剖析、比對器、構詞樣式（docs/pattern-query.md）
 │   ├── pipeline/      轉接器工具、exportDataset
 │   ├── site/          站台設定、網站資料準備、Vite 建置
 │   └── dataset.js     資料集讀寫與驗證

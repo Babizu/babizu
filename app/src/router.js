@@ -71,6 +71,8 @@ export const router = createRouter({
   ],
   scrollBehavior(to, from, saved) {
     if (saved) return saved
+    // 頁內的錨點（例如關於頁的 #pattern 句型搜尋說明）：捲到那一節，留出頂端固定列的高度
+    if (to.hash) return { el: to.hash, top: 72 }
     // 同一頁只改查詢參數（例如切換篩選）時不捲回頂端
     if (to.path === from.path) return false
     return { top: 0 }

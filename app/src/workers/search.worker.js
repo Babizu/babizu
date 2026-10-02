@@ -61,6 +61,8 @@ function checklistFor({ lexicalSources }) {
 const methods = {
   /** @param {{query: string, options?: object}} p */
   search: (p) => requireEngine().search(p.query, p.options),
+  /** @param {{query: string, options?: object}} p 句型搜尋 */
+  searchPattern: (p) => requireEngine().searchPattern(p.query, p.options),
   /** @param {{id: string, options?: object}} p */
   neighbors: (p) => requireEngine().neighbors(p.id, p.options),
   /** @param {{id: string}} p */

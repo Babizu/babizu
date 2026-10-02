@@ -320,6 +320,10 @@ export class DerivationGraph {
     }
     /** @type {Map<number, number>} */
     this._length = new Map()
+    /** @type {Map<number, Map<number, DerivedReach>> | null} 詞根 → 往下走到的詞（reachFrom 的快取） */
+    this._reach = null
+    /** @type {Map<number, number[]> | null} 詞 → 它的詞根（ancestors 用，第一次用到時建立） */
+    this._parents = null
   }
 
   /** @param {number} id */
@@ -397,5 +401,67 @@ export class DerivationGraph {
       out.push({ word, cost: b.cost, seed: b.seed, path })
     }
     return out.sort((a, b) => a.cost - b.cost || a.word - b.word)
+  }
+
+  /**
+   * 由一個詞根往下能走到的每個詞與它的最短路徑：就是 `descendants([{id: root, distance: 0}])`，
+   * 路徑上限是 DERIVATION_MAX_COST（建圖的上限），依詞編號查詢。每個詞根第一次用到時計算後快取。
+   *
+   * 句型搜尋的兩個方向都經過這裡（docs/pattern-query.md 第 4 節）：
+   * - 往下（寫出詞根的構詞樣式 `pa-kita`）：kita 的 reachFrom；
+   * - 往上（詞根是 … 的構詞樣式 `pa-…`）：ancestors(w) 對每個可能的詞根 u 取 reachFrom(u) 中 w 的那一條。
+   * 兩個方向用的是同一條路徑（同一個函式、同樣的同分規則），所以「由 kita 往下找到 w」與「由 w 往上找到 kita」一定一致。
+   *
+   * @param {number} root 節點編號（詞庫中的詞或虛擬詞根）
+   * @returns {Map<number, DerivedReach>}
+   */
+  reachFrom(root) {
+    if (!this._reach) this._reach = new Map()
+    let map = this._reach.get(root)
+    if (!map) {
+      map = new Map(this.descendants([{ id: root, distance: 0 }], DERIVATION_MAX_COST).map((r) => [r.word, r]))
+      this._reach.set(root, map)
+    }
+    return map
+  }
+
+  /**
+   * 詞 → 由它往上能走到的每個詞根（直接的詞根、詞根的詞根…，含虛擬詞根），以及那個詞根往下到這個詞的路徑。
+   * 路徑一律取 reachFrom(詞根) 中的那一條，與往下的方向相同。
+   * @param {number} word 詞編號
+   * @returns {Array<{root: number, reach: DerivedReach}>} 依路徑成本排序（同分依詞根編號）
+   */
+  ancestors(word) {
+    if (!this._parents) {
+      /** @type {Map<number, number[]>} 詞 → 它的詞根（每條邊的反向） */
+      const parents = new Map()
+      for (const [root, list] of this.children) {
+        for (const c of list) {
+          const ps = parents.get(c.word)
+          if (ps) ps.push(root)
+          else parents.set(c.word, [root])
+        }
+      }
+      this._parents = parents
+    }
+    // 往上收集所有可能的詞根（邊一定由短指向長，不會有環），再逐一取它往下的路徑
+    /** @type {Set<number>} */
+    const seen = new Set()
+    const stack = [word]
+    while (stack.length) {
+      const x = /** @type {number} */ (stack.pop())
+      for (const p of this._parents.get(x) ?? []) {
+        if (seen.has(p)) continue
+        seen.add(p)
+        stack.push(p)
+      }
+    }
+    /** @type {Array<{root: number, reach: DerivedReach}>} */
+    const out = []
+    for (const root of seen) {
+      const reach = this.reachFrom(root).get(word)
+      if (reach) out.push({ root, reach })
+    }
+    return out.sort((a, b) => a.reach.cost - b.reach.cost || a.root - b.root)
   }
 }

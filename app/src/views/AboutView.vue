@@ -9,6 +9,7 @@
  */
 import { AudioLinesIcon, BookMarkedIcon, LayersIcon, WavesIcon } from '@lucide/vue'
 import { computed } from 'vue'
+import PatternGuide from '@/components/pattern/PatternGuide.vue'
 import { useSources } from '@/composables/useSources.js'
 import { useI18n } from '@/i18n.js'
 import { formatCount, site } from '@/lib/labels.js'
@@ -90,5 +91,8 @@ const content = computed(() => (site.about ? tr(site.about) : ''))
     <!-- 站台自己的說明（Markdown） -->
     <!-- eslint-disable-next-line vue/no-v-html -- 內容來自站台自己的儲存庫，建置時轉成 HTML -->
     <div v-if="content" class="site-content mt-10" v-html="content" />
+
+    <!-- 句型搜尋的寫法與例子（搜尋頁的「句型的寫法」連到這裡） -->
+    <PatternGuide />
   </div>
 </template>

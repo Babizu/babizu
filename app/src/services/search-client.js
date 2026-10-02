@@ -77,6 +77,17 @@ export class SearchClient {
   }
 
   /**
+   * 句型搜尋（babizu/pattern；docs/pattern-query.md）。
+   * @param {string} query
+   * @param {object} [options] 見 babizu/pattern 的 PatternSearchOptions
+   * @returns {Promise<any>} PatternResponse
+   */
+  async searchPattern(query, options) {
+    await this.ready()
+    return this._call('searchPattern', { query, options })
+  }
+
+  /**
    * @param {string} id
    * @param {object} [options]
    * @returns {Promise<NeighborHits>}

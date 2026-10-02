@@ -16,6 +16,7 @@
  */
 
 import { createMorphSearch, FuzzyIndex, roundCost } from '../fuzzy/index.js'
+import { PatternSearch } from '../pattern/search.js'
 import { DerivationGraph, isLexicalRoot, VIRTUAL_ROOT_PENALTY, virtualRoots } from './derivations.js'
 import { buildEntryGroups, collectHits, mergeSpellings } from './family.js'
 import { decodePosting, docAt, INDEX_FORMAT_VERSION } from './format.js'
@@ -239,6 +240,27 @@ export class SearchEngine {
     this._affixForms = null
     /** 自動派生圖（查詞根找自動派生形，見 derivations.js） */
     this.derivations = derivations && this.morphSearch ? new DerivationGraph(derivations, this.index.terms) : null
+    /** @type {PatternSearch | null} 句型搜尋（第一次用到時建立，見 babizu/pattern） */
+    this._pattern = null
+  }
+
+  /**
+   * 句型搜尋：依詞序與構詞搜尋記錄（docs/pattern-query.md）。
+   * @param {string} query 句型查詢，例如 `yaku ka _* isiw`、`pa-… ki _`
+   * @param {import('../pattern/search.js').PatternSearchOptions} [options]
+   * @returns {import('../pattern/search.js').PatternResponse}
+   */
+  searchPattern(query, options = {}) {
+    if (!this._pattern) this._pattern = new PatternSearch(this)
+    return this._pattern.search(query, options)
+  }
+
+  /**
+   * 模糊程度的設定（不認得的名稱當成標準）。
+   * @param {Fuzziness | string} fuzziness
+   */
+  _level(fuzziness) {
+    return FUZZINESS[/** @type {Fuzziness} */ (fuzziness)] ?? FUZZINESS.normal
   }
 
   /**
@@ -919,9 +941,7 @@ export class SearchEngine {
     if (morphology) {
       // 查詢的相近寫法也當作詞根去找自動派生形：標準只用方言變體（純規則、距離不大；查 daux 也找得到 minudox），
       // 寬鬆用所有模糊命中（查 sugut 經 sungut 找到 pausunguday）
-      const variants = [...matches.values()]
-        .filter((m) => m.matchType === 'fuzzy' && m.distance > 0)
-        .filter((m) => level.derivedFromAll || (m.distance <= DIALECT_VARIANT_DISTANCE && this.explainNotes(key, m.term).every((s) => s.op === 'rule')))
+      const variants = [...matches.values()].filter((m) => m.matchType === 'fuzzy' && this._isDerivationVariant(key, level, m))
       // 同一個詞有多種命中方式時的取捨見 scoring.js 的 mergeMorphMatch：開頭相符、包含的詞能自動拆解或派生時
       // 改以構詞命中呈現、分數取較好的；與模糊命中之間取分數較好的
       const lemmaBest = Math.min(Infinity, ...lemma.map((m) => m.distance))
@@ -930,6 +950,76 @@ export class SearchEngine {
       }
     }
     return [...matches.values()]
+  }
+
+  /**
+   * 查詢的相近寫法 m 能不能也當自動派生的起點：標準只用方言變體（距離不大、全由方言規則構成；查 daux 也找得到 minudox），
+   * 寬鬆用所有模糊命中（查 sugut 經 sungut 找到 pausunguday）。句型搜尋寫出詞根的構詞樣式用同一條規則（derivationSeeds）。
+   * @param {string} key
+   * @param {typeof FUZZINESS[Fuzziness]} level
+   * @param {{term: string, distance: number}} m 模糊命中（距離 0 的是查詢本身，不算）
+   */
+  _isDerivationVariant(key, level, m) {
+    if (m.distance <= 0) return false
+    return level.derivedFromAll || (m.distance <= DIALECT_VARIANT_DISTANCE && this.explainNotes(key, m.term).every((s) => s.op === 'rule'))
+  }
+
+  /**
+   * 自動派生的起點：查詢本身（在詞庫中時）與它可以當起點的相近寫法（_isDerivationVariant），附上與查詢的距離。
+   * 與一般搜尋的自動派生用同一組起點；句型搜尋的 `pa-kita`、`@kita` 由這裡取得 kita 的起點。
+   * @param {string} key
+   * @param {Fuzziness} fuzziness
+   * @returns {Array<{id: number, distance: number, term: string}>}
+   */
+  derivationSeeds(key, fuzziness = 'normal') {
+    const level = FUZZINESS[fuzziness] ?? FUZZINESS.normal
+    const scratch = /** @type {SearchResponse} */ (/** @type {unknown} */ ({ stats: { visitedNodes: 0 } }))
+    const { results } = this._fuzzyTerms(key, level, scratch)
+    /** @type {Array<{id: number, distance: number, term: string}>} */
+    const seeds = []
+    for (const s of [{ term: key, distance: 0 }, ...results.filter((m) => this._isDerivationVariant(key, level, m))]) {
+      const id = this.index.dawg.lookup(s.term)
+      if (id !== -1 && !seeds.some((x) => x.id === id)) seeds.push({ id, distance: s.distance, term: s.term })
+    }
+    return seeds
+  }
+
+  /**
+   * 自動派生圖上一條路徑的分析（LemmaAnalysis）：最後一層是 stem、steps，上面幾層在 chain；
+   * 起點是查詢的相近寫法時記下 variantOf（說明「由相近寫法出發」），經過虛擬詞根時記下 sibling。
+   * 一般搜尋的自動派生與句型搜尋共用，兩邊的說明一致。
+   * @param {string} key 查詢（或句型中寫出的詞根）
+   * @param {import('./derivations.js').DerivedReach} r 路徑
+   * @param {{term: string, distance: number, split?: {cost: number, steps: any[]}}} seed 起點
+   * @param {number} cost 總分（起點距離＋路徑成本，經過虛擬詞根時另加代價）
+   * @param {Map<string, AlignmentNote[]>} [variantNotes] 查詢 → 起點的對齊說明（同一次搜尋共用）
+   * @returns {LemmaAnalysis}
+   */
+  _reachAnalysis(key, r, seed, cost, variantNotes = new Map()) {
+    const nodes = /** @type {DerivationGraph} */ (this.derivations).nodes
+    const last = /** @type {(typeof r.path)[number]} */ (r.path.at(-1))
+    /** @type {LemmaAnalysis} */
+    const analysis = {
+      stem: nodes[last.root],
+      steps: last.analysis.steps,
+      cost,
+      notes: /** @type {MorphNote[]} */ (last.analysis.notes),
+      ...(r.path.length > 1
+        ? {
+            chain: r.path.slice(0, -1).map((e) => ({ term: nodes[e.word], stem: nodes[e.root], steps: e.analysis.steps, cost: e.analysis.cost })),
+          }
+        : {}),
+    }
+    if (seed.split) {
+      // 自動同根：查詢拆出的詞根就是這個詞往上的詞根（詞庫中沒有這個詞）
+      analysis.sibling = { root: seed.term, steps: seed.split.steps, cost: seed.split.cost, penalty: VIRTUAL_ROOT_PENALTY }
+    } else if (seed.distance > 0) {
+      analysis.variantOf = key
+      analysis.variantDistance = seed.distance
+      if (!variantNotes.has(seed.term)) variantNotes.set(seed.term, this.explainNotes(key, seed.term))
+      analysis.variantNotes = variantNotes.get(seed.term)
+    }
+    return analysis
   }
 
   /**
@@ -978,35 +1068,13 @@ export class SearchEngine {
           // 查詢本身也在詞庫中時不算自己；整條（拆解 ＋ 往下）也不超過同一個上限
           .filter((r) => !reached.has(r.word) && r.word !== self && r.cost - VIRTUAL_ROOT_PENALTY <= maxPath + 1e-9)
       : []
-    const nodes = graph.nodes
-    /** @type {Map<number, AlignmentNote[]>} 查詢 → 起點的對齊說明（每個起點算一次） */
+    /** @type {Map<string, AlignmentNote[]>} 查詢 → 起點的對齊說明（每個起點算一次） */
     const variantNotes = new Map()
     /** @type {TermMatch[]} */
     const out = []
     for (const r of [...direct, ...viaVirtual]) {
       const seed = r.from
-      const last = /** @type {(typeof r.path)[number]} */ (r.path.at(-1))
-      /** @type {LemmaAnalysis} */
-      const analysis = {
-        stem: nodes[last.root],
-        steps: last.analysis.steps,
-        cost: r.cost,
-        notes: /** @type {MorphNote[]} */ (last.analysis.notes),
-        ...(r.path.length > 1
-          ? {
-              chain: r.path.slice(0, -1).map((e) => ({ term: nodes[e.word], stem: nodes[e.root], steps: e.analysis.steps, cost: e.analysis.cost })),
-            }
-          : {}),
-      }
-      if (seed.split) {
-        // 自動同根：查詢拆出的詞根就是這個詞往上的詞根（詞庫中沒有這個詞）
-        analysis.sibling = { root: seed.term, steps: seed.split.steps, cost: seed.split.cost, penalty: VIRTUAL_ROOT_PENALTY }
-      } else if (seed.distance > 0) {
-        analysis.variantOf = key
-        analysis.variantDistance = seed.distance
-        if (!variantNotes.has(seed.id)) variantNotes.set(seed.id, this.explainNotes(key, seed.term))
-        analysis.variantNotes = variantNotes.get(seed.id)
-      }
+      const analysis = this._reachAnalysis(key, r, seed, r.cost, variantNotes)
       out.push({
         term: this.index.terms[r.word],
         payloads: this.index.payloads[r.word],

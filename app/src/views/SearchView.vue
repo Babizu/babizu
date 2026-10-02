@@ -10,6 +10,9 @@
  *   辭典確認屬於同一個詞條的命中排在一起（詞條家族，EntryGroupItem）
  * - 例句：查詢詞出現在其中的例句與語料句
  * - 釋義：中文、英文、臺語釋義相符
+ *
+ * 查詢用到句型專用的寫法（`_`、`…`、引號、`|`、`&`…）時改用句型搜尋（babizu/pattern 的 looksLikePattern；
+ * docs/pattern-query.md），結果改成句子、對照、頻率三個分頁（PatternResults）。網址的 m=plain／m=pattern 強制模式。
  */
 import { useDebounceFn } from '@vueuse/core'
 import { SearchXIcon } from '@lucide/vue'
@@ -17,6 +20,8 @@ import { computed, ref, shallowRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import StateMessage from '@/components/common/StateMessage.vue'
 import EntryGroupItem from '@/components/search/EntryGroupItem.vue'
+import PatternError from '@/components/pattern/PatternError.vue'
+import PatternResults from '@/components/pattern/PatternResults.vue'
 import FilterPanel from '@/components/search/FilterPanel.vue'
 import GlossHitItem from '@/components/search/GlossHitItem.vue'
 import OccurrenceHitItem from '@/components/search/OccurrenceHitItem.vue'
@@ -29,6 +34,7 @@ import { useRecentSearches } from '@/composables/useRecentSearches.js'
 import { useSearchIndex } from '@/composables/useSearchIndex.js'
 import { useI18n } from '@/i18n.js'
 import { formatCount, formatDistance, site } from '@/lib/labels.js'
+import { isPatternQuery, looksLikePattern } from '@babizu/pattern/detect.js'
 
 const route = useRoute()
 const router = useRouter()
@@ -71,10 +77,29 @@ const filters = computed({
       x: f.exclude.join(',') || undefined,
     }),
 })
+/** 一般搜尋的分頁（網址上是句型搜尋的分頁時當成「全部」） */
+const PLAIN_TABS = ['all', 'entries', 'occurrences', 'glosses']
 const tab = computed({
-  get: () => String(route.query.tab ?? 'all'),
+  get: () => (PLAIN_TABS.includes(String(route.query.tab)) ? String(route.query.tab) : 'all'),
   set: (t) => updateQuery({ tab: t === 'all' ? undefined : t }),
 })
+
+// ---- 句型搜尋 ----
+/** 這個查詢要不要以句型搜尋：網址的 m 優先，否則依寫法自動判斷 */
+const patternMode = computed(() => isPatternQuery(String(route.query.q ?? ''), /** @type {string | undefined} */ (route.query.m)))
+/** 查詢有句型的寫法、但被強制以一般搜尋：提示可以切回來 */
+const forcedPlain = computed(() => route.query.m === 'plain' && looksLikePattern(String(route.query.q ?? '')).pattern)
+const PATTERN_TABS = ['sentences', 'kwic', 'frequency']
+const patternTab = computed({
+  get: () => (PATTERN_TABS.includes(String(route.query.tab)) ? String(route.query.tab) : 'sentences'),
+  set: (t) => updateQuery({ tab: t === 'sentences' ? undefined : t }),
+})
+const kwicSort = computed({
+  get: () => String(route.query.ks ?? 'position'),
+  set: (k) => updateQuery({ ks: k === 'position' ? undefined : k }),
+})
+/** @param {'plain' | 'pattern' | undefined} m */
+const setMode = (m) => updateQuery({ m, tab: undefined, ks: undefined })
 const activeFilterCount = computed(
   () =>
     filters.value.sources.length +
@@ -94,8 +119,9 @@ function updateQuery(patch, mode = 'replace') {
   return mode === 'push' ? router.push({ query: next }) : router.replace({ query: next })
 }
 
+// 換了查詢就回到自動判斷（m）與第一個分頁
 const syncQueryToUrl = useDebounceFn((/** @type {string} */ q) => {
-  if (q.trim() !== String(route.query.q ?? '')) updateQuery({ q: q.trim() || undefined, tab: undefined })
+  if (q.trim() !== String(route.query.q ?? '')) updateQuery({ q: q.trim() || undefined, tab: undefined, m: undefined, ks: undefined })
 }, 300)
 watch(query, (q) => syncQueryToUrl(q))
 watch(
@@ -110,24 +136,29 @@ function onSubmit(q) {
   if (!q) return
   query.value = q
   remember(q)
-  updateQuery({ q, tab: undefined }, 'push')
+  updateQuery({ q, tab: undefined, m: undefined, ks: undefined }, 'push')
 }
 
 // ---- 搜尋 ----
 /** @type {import('vue').ShallowRef<import('@/services/search-client.js').SearchResponse | null>} */
 const response = shallowRef(null)
+/** @type {import('vue').ShallowRef<any>} 句型搜尋的回應（babizu/pattern 的 PatternResponse） */
+const patternResponse = shallowRef(null)
 const searching = ref(false)
 const searchError = ref(/** @type {string | null} */ (null))
 const limits = ref({ entries: PAGE_SIZE, occurrences: PAGE_SIZE, glosses: PAGE_SIZE })
 let requestSeq = 0
 
+// 監看的是會改變結果的參數，接成一個字串：只換分頁（tab、ks）時字串不變，不重新搜尋
+// （回傳陣列的話每次都是新的陣列，任何網址變動都會觸發）
 watch(
-  () => [route.query.q, route.query.fz, route.query.src, route.query.dia, route.query.unit, route.query.f, route.query.x],
+  () => [route.query.q, route.query.fz, route.query.src, route.query.dia, route.query.unit, route.query.f, route.query.x, route.query.m].map((v) => String(v ?? '')).join('\u0000'),
   async () => {
     const q = String(route.query.q ?? '').trim()
     limits.value = { entries: PAGE_SIZE, occurrences: PAGE_SIZE, glosses: PAGE_SIZE }
     if (!q) {
       response.value = null
+      patternResponse.value = null
       return
     }
     const seq = ++requestSeq
@@ -136,13 +167,20 @@ watch(
     try {
       load()
       const f = filters.value
-      const result = await client.search(q, {
-        fuzziness: f.fuzziness,
-        fields: f.fields,
-        filters: { sources: f.sources, dialects: f.dialects, units: f.units },
-        exclude: f.exclude,
-      })
-      if (seq === requestSeq) response.value = result
+      const recordFilters = { sources: f.sources, dialects: f.dialects, units: f.units }
+      if (patternMode.value) {
+        const result = await client.searchPattern(q, { fuzziness: f.fuzziness, filters: recordFilters })
+        if (seq === requestSeq) {
+          patternResponse.value = result
+          response.value = null
+        }
+      } else {
+        const result = await client.search(q, { fuzziness: f.fuzziness, fields: f.fields, filters: recordFilters, exclude: f.exclude })
+        if (seq === requestSeq) {
+          response.value = result
+          patternResponse.value = null
+        }
+      }
     } catch (e) {
       if (seq === requestSeq) searchError.value = e instanceof Error ? e.message : String(e)
     } finally {
@@ -204,7 +242,7 @@ const filterSheetOpen = ref(false)
               <SheetDescription>{{ t('調整模糊程度與搜尋方法，或限定來源、方言、語言單位。') }}</SheetDescription>
             </SheetHeader>
             <div class="px-4 pb-6">
-              <FilterPanel v-model="filters" :counts="response?.methods ?? null" :group-counts="response?.methodGroups ?? null" />
+              <FilterPanel v-model="filters" :pattern="patternMode" :counts="response?.methods ?? null" :group-counts="response?.methodGroups ?? null" />
             </div>
           </SheetContent>
         </Sheet>
@@ -214,7 +252,7 @@ const filterSheetOpen = ref(false)
     <div class="grid gap-8 lg:grid-cols-[15rem_minmax(0,1fr)]">
       <aside class="hidden lg:block">
         <div class="sticky top-36">
-          <FilterPanel v-model="filters" :counts="response?.methods ?? null" :group-counts="response?.methodGroups ?? null" />
+          <FilterPanel v-model="filters" :pattern="patternMode" :counts="response?.methods ?? null" :group-counts="response?.methodGroups ?? null" />
         </div>
       </aside>
 
@@ -231,7 +269,7 @@ const filterSheetOpen = ref(false)
 
         <!-- 沒有選搜尋範圍 -->
         <StateMessage
-          v-else-if="filters.fields.length === 0"
+          v-else-if="filters.fields.length === 0 && !patternMode"
           :title="t('請選擇搜尋範圍')"
           :description="t('至少要勾選「族語」或「釋義」其中一項。')"
         >
@@ -285,7 +323,7 @@ const filterSheetOpen = ref(false)
         </div>
 
         <!-- 搜尋中（第一次） -->
-        <div v-else-if="!response && (searching || indexStatus !== 'ready')" class="space-y-4" aria-busy="true">
+        <div v-else-if="!response && !patternResponse && (searching || indexStatus !== 'ready')" class="space-y-4" aria-busy="true">
           <p class="text-muted-foreground text-sm">{{ indexStatus === 'ready' ? t('搜尋中…') : t('正在載入辭典索引…') }}</p>
           <div v-for="k in 4" :key="k" class="space-y-2 px-4 py-3">
             <Skeleton class="h-6 w-40" />
@@ -294,7 +332,24 @@ const filterSheetOpen = ref(false)
           </div>
         </div>
 
+        <!-- 句型搜尋：模式列（可以切回一般搜尋、看寫法），語法錯誤或結果 -->
+        <template v-else-if="patternMode && patternResponse">
+          <div class="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+            <span class="border-primary/40 text-accent-foreground inline-flex h-6 items-center rounded-sm border border-dashed px-2 text-xs font-medium">
+              {{ t('以句型搜尋') }}
+            </span>
+            <button type="button" class="text-primary min-h-8 hover:underline" @click="setMode('plain')">{{ t('改用一般搜尋') }}</button>
+            <RouterLink :to="{ name: 'about', hash: '#pattern' }" class="text-primary min-h-8 leading-8 hover:underline">{{ t('句型的寫法') }}</RouterLink>
+          </div>
+          <PatternError v-if="patternResponse.error" :query="patternResponse.query" :error="patternResponse.error" @plain="setMode('plain')" />
+          <PatternResults v-else v-model:tab="patternTab" v-model:sort="kwicSort" :response="patternResponse" :searching="searching" />
+        </template>
+
         <template v-else-if="response">
+          <p v-if="forcedPlain" class="text-muted-foreground mb-2 text-sm">
+            {{ t('這個查詢含有句型的寫法，目前以一般搜尋。') }}
+            <button type="button" class="text-primary hover:underline" @click="setMode(undefined)">{{ t('改用句型搜尋') }}</button>
+          </p>
           <!-- 結果數在上、相近拼寫在下：位置固定，不隨查詢長短左右跳動 -->
           <div class="mb-3 space-y-1">
             <p class="text-muted-foreground text-sm">

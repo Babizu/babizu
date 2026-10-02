@@ -29,6 +29,12 @@ export default defineSite({
     { q: '火', note: { 'zh-TW': '以中文釋義搜尋', en: 'search Chinese meanings' } },
     { q: 'water', note: { 'zh-TW': '以英文釋義搜尋', en: 'search English meanings' } },
   ],
+  // 「關於」頁句型搜尋說明的例子（這個虛構語言沒有構詞規格，所以只有詞序的例子）
+  patternExamples: [
+    { q: '_ ka _', note: { 'zh-TW': 'ka 前後各一個詞', en: 'one word on each side of ka' } },
+    { q: '^ sapi', note: { 'zh-TW': '以 sapi 開頭的句子', en: 'sentences beginning with sapi' } },
+    { q: 'lalan $', note: { 'zh-TW': '以 lalan 結尾的句子（也找到北部的 ralan）', en: 'sentences ending with lalan (also northern ralan)' } },
+  ],
   about: { 'zh-TW': 'content/about.zh-TW.md', en: 'content/about.en.md' },
   lab: {
     pairs: [

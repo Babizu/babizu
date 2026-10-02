@@ -272,8 +272,8 @@ export const MUTANTS = [
   {
     name: '寬鬆時仍只用方言變體當自動派生的起點',
     file: 'src/search/engine.js',
-    find: '.filter((m) => level.derivedFromAll || (',
-    replace: '.filter((m) => false || (',
+    find: '    return level.derivedFromAll || (m.distance',
+    replace: '    return false || (m.distance',
     why: '查 sugut 找不到 pausunguday；derivations 測試「寬鬆：查詢的相近寫法也當起點」',
   },
   {
@@ -366,5 +366,114 @@ export const MUTANTS = [
     find: '        if (all.length === 1) return all[0]',
     replace: '        if (all.length >= 1) return all[0]',
     why: '同形異義詞被接錯；family 測試「對不到唯一一個詞目時不連」',
+  },
+  // 句型搜尋（src/pattern）
+  {
+    name: '句型：重疊不貪婪（先停再多比）',
+    file: 'src/pattern/match.js',
+    find: `    if (count < node.max) {
+      for (const e of ends(node.node, i)) {
+        if (e > i) pushUnique(out, seen, repeatEnds(node, e, count + 1))
+      }
+    }
+    if (count >= node.min) pushUnique(out, seen, [i])`,
+    replace: `    if (count >= node.min) pushUnique(out, seen, [i])
+    if (count < node.max) {
+      for (const e of ends(node.node, i)) {
+        if (e > i) pushUnique(out, seen, repeatEnds(node, e, count + 1))
+      }
+    }`,
+    why: '與 RegExp 的區間不同；match 的性質測試',
+  },
+  {
+    name: '句型：量詞上限差一',
+    file: 'src/pattern/match.js',
+    find: `    if (count < node.max) {
+      for (const e of ends(node.node, i)) {
+        if (e > i) pushUnique`,
+    replace: `    if (count <= node.max) {
+      for (const e of ends(node.node, i)) {
+        if (e > i) pushUnique`,
+    why: 'x{0,1} 比到兩次；match 的性質測試',
+  },
+  {
+    name: '句型：擇一的分支倒過來試',
+    file: 'src/pattern/match.js',
+    find: '        for (const o of node.options) pushUnique(out, seen, ends(o, i))',
+    replace: '        for (const o of [...node.options].reverse()) pushUnique(out, seen, ends(o, i))',
+    why: '優先序與 RegExp 不同；match 的性質測試',
+  },
+  {
+    name: '句型：下一次從起點的下一個位置接著找（區間重疊）',
+    file: 'src/pattern/match.js',
+    find: '      pos = e > s ? e : e + 1',
+    replace: '      pos = s + 1',
+    why: '與 RegExp 的 g 不同；match 的性質測試',
+  },
+  {
+    name: '句型：不分句',
+    file: 'src/pattern/sentences.js',
+    find: '      if (isSeparator(ch)) flush(SENTENCE_END.test(ch))',
+    replace: '      if (isSeparator(ch)) flush(false)',
+    why: '^ $ 與 _* 跨句；sentences 的分句測試、search 的 ^ $ 測試',
+  },
+  {
+    name: '句型：前綴只看有沒有，不看順序',
+    file: 'src/pattern/morph.js',
+    find: `    for (const m of have) if (j < want.length && want[j].forms.has(m.form)) j++
+    return j === want.length`,
+    replace: '    return want.every((g) => have.some((m) => g.forms.has(m.form)))',
+    why: 'pa-ka-… 找到 ka-pa-x；morph 的順序測試',
+  },
+  {
+    name: '句型：多層衍生的後綴沒有依由內而外排列',
+    file: 'src/pattern/morph.js',
+    find: `  for (let k = 0; k < path.length; k++) {
+    const steps = path[k].analysis.steps`,
+    replace: `  for (let k = path.length - 1; k >= 0; k--) {
+    const steps = path[k].analysis.steps`,
+    why: '兩層的後綴順序顛倒；morph 的多層測試',
+  },
+  {
+    name: '句型：同位詞素組只取寫法本身',
+    file: 'src/pattern/morph.js',
+    find: "      return [{ type: side, forms: group, label: labelOf(side, form) }]",
+    replace: "      return [{ type: side, forms: new Set([form]), label: labelOf(side, form) }]",
+    why: 'mu-… 與 mi-… 結果不同；search 的同位詞素組測試',
+  },
+  {
+    name: '句型：引號沒有關掉歸併',
+    file: 'src/pattern/morph.js',
+    find: '    if (quoted) return group ? [{ type: side, forms: new Set([form]), label: labelOf(side, form) }] : fail()',
+    replace: '    if (quoted) return group ? [{ type: side, forms: group, label: labelOf(side, form) }] : fail()',
+    why: '"mu"-… 找到 mikita；search 的引號測試',
+  },
+  {
+    name: '句型：往上的路徑與往下的不同（上限不同）',
+    file: 'src/search/derivations.js',
+    find: '      const reach = this.reachFrom(root).get(word)',
+    replace: '      const reach = this.descendants([{ id: root, distance: 0 }], DERIVATION_MAX_COST).find((r) => r.word === word)',
+    why: 'ancestors 的路徑不是 reachFrom 的那一條；search 的對稱測試',
+  },
+  {
+    name: '句型：句末的驚嘆號也觸發句型搜尋',
+    file: 'src/pattern/detect.js',
+    find: String.raw`  { reason: '!', test: /(?:^|[\s(|&])!(?=[\p{L}"“(@_!^])/u },`,
+    replace: "  { reason: '!', test: /!/u },",
+    why: 'bunang ka lalan! 改用句型搜尋；detect 的一般搜尋清單',
+  },
+  {
+    name: '句型：& ! 的條件被忽略',
+    file: 'src/pattern/search.js',
+    find: '            if (matchesAnywhere(cond.body, tokens.length, test)) return null',
+    replace: '            void matchesAnywhere',
+    why: 'yaku & !hapet 仍找到含 hapet 的句子；search 的 & ! 測試',
+  },
+  {
+    name: '句型：可省略的詞也當成必經的詞篩選候選',
+    file: 'src/pattern/ast.js',
+    find: '      return node.min >= 1 ? requiredAtoms(node.node) : []',
+    replace: '      return requiredAtoms(node.node)',
+    why: 'minukan isiw? yaku 篩掉沒有 isiw 的句子；search 的候選篩選對照',
   },
 ]

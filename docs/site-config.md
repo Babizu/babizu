@@ -64,6 +64,7 @@ export default defineSite({
 | `writingSystems` | `{代碼: Localized}` | `{}` | 記錄 `altTexts[].system` 的顯示名稱，例如 `{ 'pan-yongli': '潘永歷標記法' }` |
 | `specialChars` | string[] | `[]` | 搜尋框旁的特殊字元快捷鍵（一般鍵盤打不出來的字母） |
 | `examples` | `{q, note?}[]` | `[]` | 首頁的範例查詢；`note` 是 Localized |
+| `patternExamples` | `{q, note?}[]` | `[]` | 關於頁「句型搜尋」一節的例子（[pattern-query.md](pattern-query.md)）。建置時剖析每個 `q`，寫法錯誤時報錯；構詞樣式的詞綴等到搜尋時才依構詞規格解析 |
 | `about` | Localized（路徑） | — | 「關於」頁的 Markdown 檔，見下節 |
 | `footer` | Localized | 網站名稱＋引用提醒 | 頁尾文字 |
 | `lab.pairs` | `[string, string][]` | `[]` | 演算法實驗室可以一鍵帶入的詞對，第一組是預設值；第一組也會出現在「關於」頁的特色介紹 |

@@ -15,8 +15,11 @@ import {
   notationCharsOf,
 } from '../fuzzy/index.js'
 
-/** 斷詞用的分隔字元：空白與中英文標點（保留撇號 ' 作為喉塞音） */
-const TOKEN_SEPARATORS = /[\s,.;:!?"“”«»()[\]{}/\\|。，、；：！？「」『』（）［］]+/u
+/**
+ * 斷詞用的分隔字元：空白與中英文標點（保留撇號 ' 作為喉塞音）。
+ * 句型搜尋的分句（babizu/pattern 的 sentences.js）也用這一組，切出的詞與索引一致。
+ */
+export const TOKEN_SEPARATORS = /[\s,.;:!?"“”«»()[\]{}/\\|。，、；：！？「」『』（）［］]+/u
 
 /** 詞內的構詞分界（連字號、等號、重疊號、中綴括號） */
 const MORPHEME_SEPARATORS = /[-=~<>]+/u

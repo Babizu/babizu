@@ -33,6 +33,8 @@ const props = defineProps({
   counts: { type: Object, default: null },
   /** 每一組搜尋方法找得到幾筆（搜尋回應的 methodGroups，組內各方法的聯集） */
   groupCounts: { type: Object, default: null },
+  /** 句型搜尋：沒有「搜尋範圍」與「搜尋方法」（句型只比對族語，詞的條件由寫法決定） */
+  pattern: { type: Boolean, default: false },
 })
 const { sources } = useSources()
 
@@ -123,7 +125,7 @@ function reset() {
 
 <template>
   <div class="@container space-y-6 text-sm">
-    <fieldset>
+    <fieldset v-if="!props.pattern">
       <legend class="mb-2 font-medium">{{ t('搜尋範圍') }}</legend>
       <div :class="GRID">
         <label v-for="f in FIELD_OPTIONS" :key="f" :class="OPTION" :title="t(FIELD_LABELS[f].hint)">
@@ -185,7 +187,7 @@ function reset() {
       搜尋方法：四組。每組一列（整組勾選、組名與來源、整組筆數、展開鈕），個別的方法收在底下，預設收合。
       筆數不受排除影響：排除掉的方法有多少仍看得到。
     -->
-    <fieldset>
+    <fieldset v-if="!props.pattern">
       <legend class="mb-1 flex w-full items-baseline justify-between gap-2 font-medium">
         <span>{{ t('搜尋方法') }}</span>
         <button v-if="model.exclude.length" type="button" class="text-primary min-h-8 text-xs font-normal hover:underline" @click="setExclude([])">
