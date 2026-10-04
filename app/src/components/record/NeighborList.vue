@@ -6,6 +6,7 @@ import DialectBadge from '@/components/common/DialectBadge.vue'
 import MatchExplanation from '@/components/common/MatchExplanation.vue'
 import { useSources } from '@/composables/useSources.js'
 import { recordRoute } from '@/lib/labels.js'
+import { vCardLink } from '@/lib/card-link.js'
 import { t } from '@/i18n.js'
 
 defineProps({
@@ -19,10 +20,10 @@ const { shortTitle } = useSources()
 
 <template>
   <ul class="divide-y">
-    <li v-for="hit in hits" :key="hit.doc.id" class="relative flex items-start gap-3 py-2.5">
+    <li v-for="hit in hits" :key="hit.doc.id" v-card-link="recordRoute(hit.doc.id)" class="group relative flex items-start gap-3 py-2.5">
       <div class="min-w-0 flex-1">
         <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <RouterLink :to="recordRoute(hit.doc.id)" class="native-text font-medium after:absolute after:inset-0 hover:underline">
+          <RouterLink :to="recordRoute(hit.doc.id)" class="native-text font-medium group-hover:underline">
             {{ hit.doc.text }}
           </RouterLink>
           <DialectBadge v-for="d in hit.doc.dialects" :key="d" :dialect="d" />

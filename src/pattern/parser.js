@@ -319,8 +319,13 @@ function morphSegments(pieces, start, end) {
       s.end = k === 0 ? start + 1 : end
     } else throw new PatternError('E_EMPTY_SEGMENT', s.start - 1, s.end + 1)
   })
-  // 詞根段只能有一個（寫成 … 或省略的）；寫出的詞根由 morph.js 依詞綴判斷
-  const roots = segments.filter((s) => s.wildcard && !s.red)
-  if (roots.length > 1) throw new PatternError('E_MULTI_ROOT', start, end, { segments: roots.map((s) => s.host) })
+  // … 是詞根段，或寫在最外側（第一段、最後一段）表示那一側不錨定（`…-pa-…`）；哪一個是詞根由 morph.js 依詞綴判斷。
+  // 這裡只擋寫法上一定不對的：兩個 … 相鄰（`…-…`），或不在頭尾的 … 有兩個以上
+  const core = segments.filter((s) => !s.red)
+  const inner = core.filter((s, k) => s.wildcard && k !== 0 && k !== core.length - 1)
+  const adjacent = core.some((s, k) => k > 0 && s.wildcard && core[k - 1].wildcard)
+  if (inner.length > 1 || adjacent) {
+    throw new PatternError('E_MULTI_ROOT', start, end, { segments: core.filter((s) => s.wildcard).map((s) => s.host) })
+  }
   return segments
 }

@@ -4,7 +4,7 @@
  */
 
 import { createCitation, createRecord, createSense } from '../../src/schema/index.js'
-import { buildDerivationGraph, buildSearchIndex, SearchEngine } from '../../src/search/index.js'
+import { buildDerivationGraph, buildParseChart, buildSearchIndex, SearchEngine } from '../../src/search/index.js'
 import { PAZEH_PROFILE } from '../fixtures/pazeh.js'
 
 /** 構詞文法：主事焦點的同位詞素組 {m, mu, mi, me}、中綴 <in> <a>、組合規則（docs/morph-grammar.md） */
@@ -36,11 +36,11 @@ export const PATTERN_GRAMMAR = {
 }
 
 /** @param {string} localId @param {string} unit @param {string} text */
-const rec = (localId, unit, text) => createRecord({ source: 'dict', localId, unit, text, citation: createCitation(`dict ${localId}`) }, { senses: [createSense({ zh: text })] })
+export const rec = (localId, unit, text) => createRecord({ source: 'dict', localId, unit, text, citation: createCitation(`dict ${localId}`) }, { senses: [createSense({ zh: text })] })
 
 export const RECORDS = [
   // 詞根
-  ...['kita', 'kan', 'eken', 'baket', 'putiuk', 'hapuy', 'kawas', 'idem'].map((w) => rec(w, 'word', w)),
+  ...['kita', 'kan', 'eken', 'baket', 'putiuk', 'hapuy', 'kawas', 'idem', 'barak', 'rak'].map((w) => rec(w, 'word', w)),
   // 加綴的詞
   ...['mikita', 'mukita', 'pakita', 'pinakita', 'minukan', 'mineken', 'binaket', 'mukan', 'makan', 'minakan', 'takani', 'paputiuk', 'pakan', 'kikita', 'midemen', 'kitaun'].map((w) => rec(w, 'word', w)),
   // 例句
@@ -56,11 +56,30 @@ export const RECORDS = [
   rec('s10', 'sentence', 'yaku nahaza mama iu/*maki iah.'),
   rec('s11', 'sentence', 'mokan ki saw'),
   rec('s12', 'sentence', 'takani ki kawas!'),
+  // 構詞樣式的取捨（拆解表，docs/pattern-query.md 第 4 節）：
+  // kamikita 最好的拆法是 ka-mikita，差 0.1 的是 ka-mi-kita（像 imini 的 i-mini、i-m-ini）；
+  // pakanen 最好的是 pakan-en，差 0.1 的是 pa-kan-en（次佳的拆法才有 pa-）；
+  // bakita 只有靠 b→p 音變的 pa-kita；mupakita 最好的是 mu-pakita，差 0.1 的是 mu-pa-kita；
+  // pabak 的 BCDP 最好的命中是 barak（與詞同長，不是拆法），拆法 rak 差 0.2（像 abak 的 a-pa-rak）
+  rec('s13', 'sentence', 'kamikita ki saw'),
+  rec('s14', 'sentence', 'pakanen isiw'),
+  rec('s15', 'sentence', 'bakita ki hapuy'),
+  rec('s16', 'sentence', 'mupakita yaku'),
+  rec('s17', 'sentence', 'pabak isiw'),
 ]
 
-/** @param {object | null} [morphology] null：沒有構詞規格 */
-export function buildPatternEngine(morphology = PATTERN_GRAMMAR) {
+/**
+ * 建置輸出（docs.json、lexicon.json、language.json 的內容）
+ * @param {object | null} [morphology] null：沒有構詞規格
+ * @param {ReturnType<typeof rec>[]} [records]
+ */
+export function buildPatternData(morphology = PATTERN_GRAMMAR, records = RECORDS) {
   const profile = morphology ? { ...PAZEH_PROFILE, morphology } : { ...PAZEH_PROFILE }
-  const built = JSON.parse(JSON.stringify(buildSearchIndex({ items: RECORDS.map((record) => ({ record, shard: 'all' })), groups: [], sourceIds: ['dict'], profile })))
-  return new SearchEngine({ ...built, derivations: buildDerivationGraph(built) })
+  return JSON.parse(JSON.stringify(buildSearchIndex({ items: records.map((record) => ({ record, shard: 'all' })), groups: [], sourceIds: ['dict'], profile })))
+}
+
+/** @param {object | null} [morphology] null：沒有構詞規格 @param {ReturnType<typeof rec>[]} [records] */
+export function buildPatternEngine(morphology = PATTERN_GRAMMAR, records = RECORDS) {
+  const built = buildPatternData(morphology, records)
+  return new SearchEngine({ ...built, derivations: buildDerivationGraph(built), parses: buildParseChart(built) })
 }

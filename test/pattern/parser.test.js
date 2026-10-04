@@ -129,11 +129,19 @@ describe('剖析：錯誤代碼與位置', () => {
     ['m<in>…', 'E_WILDCARD_ATTACHED', 'm<in>…'],
     ['pa--…', 'E_EMPTY_SEGMENT', '--'],
     ['m<in', 'E_UNCLOSED_INFIX', '<in'],
-    ['…-pa-…', 'E_MULTI_ROOT', '…-pa-…'],
+    ['…-…', 'E_MULTI_ROOT', '…-…'],
+    ['pa-…-ka-…-en', 'E_MULTI_ROOT', 'pa-…-ka-…-en'],
     ['…', 'E_EMPTY_WORD', '…'],
     ['"m"u-…', 'E_QUOTE_POS', '"m"u'],
   ])('%s → %s', (q, code, at) => {
     expect(error(q)).toEqual({ code, at })
+  })
+
+  it('外側的 …（不錨定的一側）剖析時照樣分段，哪一個 … 是詞根由構詞規格決定（morph.test.js）', () => {
+    expect(tree('…-pa-…')).toBe('M(…|pa|…)')
+    expect(tree('…-ta-…-i-…')).toBe('M(…|ta|…|i|…)')
+    // 頭尾的空段是省略的 …：-pa- ＝ …-pa-…
+    expect(tree('-pa-')).toBe('M(…|pa|…)')
   })
 
   it('查詢太長、條件太多', () => {

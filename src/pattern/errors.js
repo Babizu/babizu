@@ -25,8 +25,10 @@
  * - E_QUOTE_POS：構詞樣式中的引號要包住整個詞綴（`"mu"-…`）
  * - E_EMPTY_SEGMENT：構詞樣式中有空的一段（`pa--…`）
  * - E_WILDCARD_ATTACHED：構詞樣式中 … 與字母連在同一段（`m<in>…`），要用 - 分開（`m<in>-…`）
- * - E_MULTI_ROOT：構詞樣式中有兩個以上的詞根段（params.segments）
+ * - E_MULTI_ROOT：構詞樣式中有兩個以上的詞根段，或兩個 … 相鄰（params.segments）
  * - E_AMBIGUOUS_ROOT：看不出哪一段是詞根，請用 … 或寫出詞根（params.segments）
+ * - E_AMBIGUOUS_SIDE：`…-i-…` 中間的詞綴可以是前綴也可以是後綴，看不出哪一個 … 是詞根
+ *   （params.forms；params.prefix、params.suffix 是只看最外層的兩種寫法）
  * - E_UNKNOWN_AFFIX：不是構詞規格中的詞綴（params.form、params.side、params.suggestions）
  * - E_NO_MORPHOLOGY：語言設定檔沒有構詞規格，不能用構詞樣式或 @
  */
@@ -52,6 +54,7 @@ export const PATTERN_ERRORS = /** @type {const} */ ([
   'E_WILDCARD_ATTACHED',
   'E_MULTI_ROOT',
   'E_AMBIGUOUS_ROOT',
+  'E_AMBIGUOUS_SIDE',
   'E_UNKNOWN_AFFIX',
   'E_NO_MORPHOLOGY',
 ])
@@ -63,7 +66,9 @@ export const PATTERN_ERRORS = /** @type {const} */ ([
  * - W_TRAILING_Q：最後的 ? 表示「可有可無」，不是問號
  * - W_AFFIX_VARIANT：這個詞綴寫法不在規格中，依方言規則視為另一個（params.form → params.to）
  * - W_ALSO_CONSTRUCTION：這個寫法也是某個組合的整體寫法（params.form、params.parts），只找了詞素本身
- * - W_EXACT_MORPHOLOGY：精確模式下，構詞樣式的分析成本上限較低（0.6），找到的可能比標準模式少
+ * - W_EXACT_MORPHOLOGY：精確模式下，構詞樣式只取每個詞最好的拆法、不容許音變（morph.js 的 PARSE_SELECTION），找到的可能比標準模式少
+ * - W_INNER_AFFIX：列出的前綴或後綴只算最外層；改成不錨定（`…-x-…`）可以多找到 params.count 個詞形
+ *   （params.form 是那些詞綴，params.query 是改寫後的整個查詢，介面做成可以點的連結）
  */
 export const PATTERN_WARNINGS = /** @type {const} */ ([
   'W_PUNCT',
@@ -72,6 +77,7 @@ export const PATTERN_WARNINGS = /** @type {const} */ ([
   'W_AFFIX_VARIANT',
   'W_ALSO_CONSTRUCTION',
   'W_EXACT_MORPHOLOGY',
+  'W_INNER_AFFIX',
 ])
 
 /** @typedef {typeof PATTERN_ERRORS[number]} PatternErrorCode */

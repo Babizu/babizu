@@ -26,6 +26,11 @@
  * masamian 的自動拆解是 ma- ＋ samian，詞庫已經解釋得了，不再拆成 masa- ＋ mian。拆出的虛擬詞根往下走，
  * 找到的是與查詢推定同一個詞根的詞（命中方式 sibling，介面標「自動同根」）。虛擬詞根本身不是結果。
  *
+ * ## 拆解表 parses.json（句型搜尋用，見 parses.js）
+ * 建圖時對每個詞跑的那一次 BCDP，本來就算出了所有候選詞根（每個詞根取最好的分析，在「最好的 ＋ lemmaSpread」之內），
+ * 自動派生圖只取最好的。`analyzeAll` 把其餘的也收下（詞根比詞短、不含空白），所以拆解表幾乎不多花時間；
+ * BCDP 最好的命中不是拆法時另外記下它的成本（bests）。拆解表中與最好的命中同分的詞庫詞根，就是自動派生圖這個詞的邊。
+ *
  * ## derivations.json
  * ```
  * { version, count, virtual: [詞幹…], steps: [MorphStepHit…], analyses: [[cost, [步驟編號…], [音變…]]…], edges: [Δw, r, a, Δw, r, a, …] }
@@ -108,7 +113,15 @@ export function createDerivationAnalyzer({ lexicon, profile }) {
      * @param {number} [to]
      * @returns {DerivationEdge[]} 依詞編號排序
      */
-    analyze: (from = 0, to = Infinity) => (search ? analyzeRange(index, search, from, to) : []),
+    analyze: (from = 0, to = Infinity) => (search ? analyzeRange(index, search, from, to).edges : []),
+    /**
+     * 同 analyze，另外收下拆解表的分析（每個候選詞根一個，見 parses.js）。
+     * @param {number} [from]
+     * @param {number} [to]
+     * @returns {{edges: DerivationEdge[], parses: DerivationEdge[], bests: Array<[number, number]>}} 都依詞編號排序；
+     *   bests 是 BCDP 最好的命中不是拆法的詞（詞根不比詞短或含空白）與那個命中的成本（parses.js 的 best）
+     */
+    analyzeAll: (from = 0, to = Infinity) => (search ? analyzeRange(index, search, from, to) : { edges: [], parses: [], bests: [] }),
     /**
      * @param {DerivationEdge[]} edges 第 1 階段全部的邊
      * @returns {DerivationEdge[]} 虛擬詞根的邊，依詞編號排序
@@ -174,22 +187,30 @@ export function mergeEdges(lexical, virtual) {
  */
 function analyzeRange(index, search, from, to) {
   const terms = index.terms
-  /** @type {DerivationEdge[]} */
-  const out = []
+  /** @type {DerivationEdge[]} 自動派生圖的邊 */
+  const edges = []
+  /** @type {DerivationEdge[]} 拆解表 */
+  const parses = []
+  /** @type {Array<[number, number]>} 拆解表：BCDP 最好的命中不是拆法（詞根不比詞短或含空白）的詞，與那個命中的成本 */
+  const bests = []
   for (let word = from; word < Math.min(to, terms.length); word++) {
     const w = terms[word]
     const length = Array.from(w).length
-    // 詞庫中的詞根：BCDP 成本最低的（同分全收），詞根比詞短
     const prepared = search.prepare(w, DERIVATION_MAX_COST)
     const hits = prepared ? search.finish(prepared, index.searchChannels(search.seed(prepared).channels), DERIVATION_MAX_COST) : []
+    if (hits.length && (Array.from(hits[0].term).length >= length || hits[0].term.includes(' '))) bests.push([word, roundCost(hits[0].distance)])
     for (const hit of hits) {
-      if (hit.distance > hits[0].distance + EPSILON) break
       if (Array.from(hit.term).length >= length) continue
+      const root = index.dawg.lookup(hit.term)
+      // 拆解表：每個候選詞根（詞根比詞短、是單一個詞），不存音變說明（需要時現算）
+      if (!hit.term.includes(' ')) parses.push({ word, root, analysis: { cost: roundCost(hit.distance), steps: hit.steps, notes: [] } })
+      // 自動派生圖：BCDP 成本最低的詞庫詞根（同分全收），詞根比詞短
+      if (hit.distance > hits[0].distance + EPSILON) continue
       const notes = search.notesOf(/** @type {NonNullable<typeof prepared>} */ (prepared), hit)
-      out.push({ word, root: index.dawg.lookup(hit.term), analysis: { cost: roundCost(hit.distance), steps: hit.steps, notes } })
+      edges.push({ word, root, analysis: { cost: roundCost(hit.distance), steps: hit.steps, notes } })
     }
   }
-  return out
+  return { edges, parses, bests }
 }
 
 /**
@@ -230,6 +251,17 @@ export function virtualRoots(w, analyzer, index, lexiconBest) {
  * @returns {DerivationData}
  */
 export function encodeDerivations(edges, count) {
+  return encodeEdges(edges, count, DERIVATIONS_FORMAT_VERSION)
+}
+
+/**
+ * 邊（依詞編號排序）的編碼，derivations.json 與 parses.json 共用（格式見檔頭）。
+ * @param {DerivationEdge[]} edges
+ * @param {number} count 詞圖的詞數
+ * @param {number} version
+ * @returns {DerivationData}
+ */
+export function encodeEdges(edges, count, version) {
   const virtual = [...new Set(edges.flatMap((e) => (typeof e.root === 'string' ? [e.root] : [])))].sort()
   const virtualIds = new Map(virtual.map((v, k) => [v, count + k]))
   /** 去重：同樣內容的物件只存一次，回傳它的編號 @template T @param {T[]} table @param {Map<string, number>} ids @param {T} value */
@@ -262,7 +294,7 @@ export function encodeDerivations(edges, count) {
     flat.push(word - prev, typeof root === 'string' ? /** @type {number} */ (virtualIds.get(root)) : root, intern(analyses, analysisIds, encoded))
     prev = word
   }
-  return { version: DERIVATIONS_FORMAT_VERSION, count, virtual, steps, analyses, edges: flat }
+  return { version, count, virtual, steps, analyses, edges: flat }
 }
 
 /**
@@ -320,10 +352,6 @@ export class DerivationGraph {
     }
     /** @type {Map<number, number>} */
     this._length = new Map()
-    /** @type {Map<number, Map<number, DerivedReach>> | null} 詞根 → 往下走到的詞（reachFrom 的快取） */
-    this._reach = null
-    /** @type {Map<number, number[]> | null} 詞 → 它的詞根（ancestors 用，第一次用到時建立） */
-    this._parents = null
   }
 
   /** @param {number} id */
@@ -401,67 +429,5 @@ export class DerivationGraph {
       out.push({ word, cost: b.cost, seed: b.seed, path })
     }
     return out.sort((a, b) => a.cost - b.cost || a.word - b.word)
-  }
-
-  /**
-   * 由一個詞根往下能走到的每個詞與它的最短路徑：就是 `descendants([{id: root, distance: 0}])`，
-   * 路徑上限是 DERIVATION_MAX_COST（建圖的上限），依詞編號查詢。每個詞根第一次用到時計算後快取。
-   *
-   * 句型搜尋的兩個方向都經過這裡（docs/pattern-query.md 第 4 節）：
-   * - 往下（寫出詞根的構詞樣式 `pa-kita`）：kita 的 reachFrom；
-   * - 往上（詞根是 … 的構詞樣式 `pa-…`）：ancestors(w) 對每個可能的詞根 u 取 reachFrom(u) 中 w 的那一條。
-   * 兩個方向用的是同一條路徑（同一個函式、同樣的同分規則），所以「由 kita 往下找到 w」與「由 w 往上找到 kita」一定一致。
-   *
-   * @param {number} root 節點編號（詞庫中的詞或虛擬詞根）
-   * @returns {Map<number, DerivedReach>}
-   */
-  reachFrom(root) {
-    if (!this._reach) this._reach = new Map()
-    let map = this._reach.get(root)
-    if (!map) {
-      map = new Map(this.descendants([{ id: root, distance: 0 }], DERIVATION_MAX_COST).map((r) => [r.word, r]))
-      this._reach.set(root, map)
-    }
-    return map
-  }
-
-  /**
-   * 詞 → 由它往上能走到的每個詞根（直接的詞根、詞根的詞根…，含虛擬詞根），以及那個詞根往下到這個詞的路徑。
-   * 路徑一律取 reachFrom(詞根) 中的那一條，與往下的方向相同。
-   * @param {number} word 詞編號
-   * @returns {Array<{root: number, reach: DerivedReach}>} 依路徑成本排序（同分依詞根編號）
-   */
-  ancestors(word) {
-    if (!this._parents) {
-      /** @type {Map<number, number[]>} 詞 → 它的詞根（每條邊的反向） */
-      const parents = new Map()
-      for (const [root, list] of this.children) {
-        for (const c of list) {
-          const ps = parents.get(c.word)
-          if (ps) ps.push(root)
-          else parents.set(c.word, [root])
-        }
-      }
-      this._parents = parents
-    }
-    // 往上收集所有可能的詞根（邊一定由短指向長，不會有環），再逐一取它往下的路徑
-    /** @type {Set<number>} */
-    const seen = new Set()
-    const stack = [word]
-    while (stack.length) {
-      const x = /** @type {number} */ (stack.pop())
-      for (const p of this._parents.get(x) ?? []) {
-        if (seen.has(p)) continue
-        seen.add(p)
-        stack.push(p)
-      }
-    }
-    /** @type {Array<{root: number, reach: DerivedReach}>} */
-    const out = []
-    for (const root of seen) {
-      const reach = this.reachFrom(root).get(word)
-      if (reach) out.push({ root, reach })
-    }
-    return out.sort((a, b) => a.reach.cost - b.reach.cost || a.root - b.root)
   }
 }

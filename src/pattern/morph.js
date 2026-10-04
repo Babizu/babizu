@@ -1,9 +1,10 @@
 /**
  * @file 構詞樣式的解析與比對（docs/pattern-query.md 第 3 節）。
  *
- * 查詢的構詞樣式（`pa-…`、`m<in>u-…`、`…-en`、`pa-kita`）在這裡依語言設定檔的構詞規格解析成一組
- * **詞素條件**（MorphRequirement），再與 BCDP 的分析（自動派生圖的路徑）比對。比對的是詞素，不是字串：
- * BCDP 的分析保留每個詞素實際的寫法（構詞文法展開後的 parts，例如 minukan ＝ mu ＋ <in>，mineken ＝ m ＋ <in>）。
+ * 查詢的構詞樣式（`pa-…`、`m<in>u-…`、`…-en`、`pa-kita`、`…-pa-…`）在這裡依語言設定檔的構詞規格解析成一組
+ * **詞素條件**（MorphRequirement），再與拆解表（每個詞的所有 BCDP 拆法，src/search/parses.js）中、
+ * 依模糊程度取到的拆法比對。比對的是詞素，不是字串：BCDP 的分析保留每個詞素實際的寫法
+ * （構詞文法展開後的 parts，例如 minukan ＝ mu ＋ <in>，mineken ＝ m ＋ <in>）。
  *
  * ## 詞綴寫法的解析（依序）
  * 1. **同位詞素組**：構詞文法中寫在同一個詞素 `forms` 的寫法，加上共用寫法的同一類詞素連成一組。
@@ -13,15 +14,63 @@
  * 3. **方言寫法**：以上都不是時，用語言設定檔的距離函式找最近的詞綴（噶哈巫語 `mo-` 依 u↔o 視為 mu-），附提示。
  * 4. 都找不到就報錯（BCDP 只認得規格中的詞綴，不認得的寫法永遠比不到），列出最接近的幾個。
  *
- * ## 比對規則
- * - 前綴：樣式中的前綴（由外而內）必須是這個詞前綴的**子序列**（順序相同，可以有沒寫出來的）；後綴同樣（由內而外）。
+ * ## 詞根段與外側的 …
+ * 構詞樣式以 - 分段，詞根段是 … 或寫出的詞根。寫在**最外側**（第一段或最後一段）、與詞根之間隔著詞綴的 …，
+ * 表示那一側不錨定：`…-pa-…` 是「前綴中有 pa-」。哪一段是詞根依語言知識決定（resolve）：
+ * 逐一假設每一段是詞根，其他段都要解析得成那一側的詞綴，外側的 … 只能在頭尾、與詞根之間要有詞綴；
+ * 只有一種讀法成立時就是它。`…-i-…` 的 i 是前綴也是後綴，兩種讀法都成立，報錯 E_AMBIGUOUS_SIDE。
+ *
+ * ## 比對規則（satisfies）
+ * - 前綴：樣式中的前綴（由外而內）必須正好是這個拆法**最外面的幾個前綴**，而且彼此相連；後綴同樣，由最外面往內數。
+ *   imini 拆成 i-mini 或 i-m-ini，最外層的前綴是 i-，所以 `m-…` 不中。
+ * - 外側寫了 … 的那一側不錨定：列出的詞綴在那一側的任何位置連續出現即可（`…-m-…` 中 i-m-ini）。
+ * - 列出的詞綴與詞根之間可以有沒列出的詞素（`pa-…`、`pa-kita` 都找到 pa-ka-kita）。
  * - 中綴、重疊不看位置，只要有（中綴的位置由語言決定，查詢的人不必知道它落在哪裡）。
+ *
+ * ## 取哪些拆法（PARSE_SELECTION，跟著模糊程度）
+ * 先求這個詞的 best（所有拆法中成本最低的；BCDP 最好的命中不是拆法時是那個命中，與自動派生圖相同），
+ * 取成本在 best ＋ spread 之內的，再去掉音變超過 sound 的。
+ * 順序是刻意的：最好的拆法要靠方言音變時，比它差的「拼寫完全相同」的拆法多半是巧合，不改取它。
  */
 
 import { PatternError } from './errors.js'
 
 /** 方言寫法的詞綴最多差多少，才視為同一個（兩條 0.1 的方言規則） */
 export const AFFIX_VARIANT_MAX = 0.25
+
+/**
+ * 依模糊程度取哪些拆法：spread 是比最好的拆法差多少以內，sound 是整個詞的音變上限。
+ * 數字以潘德興詞彙表 184 個人工拆解（morphology.segmentation）為標準，量每個最外層詞綴條件的準確與召回
+ * （minubizu tools/eval-parse-gold.mjs，研究紀錄 U.19；docs/pattern-query.md 3.6）：
+ * | 模糊程度 | spread | sound | 準確 | 召回 |
+ * | 精確 | 0（同分都取） | 0 | 72.6% | 60.2% |
+ * | 標準 | 0.1 | 0.2 | 68.0% | 88.1% |
+ * | 寬鬆 | 全部 | 0.4 | 57.5% | 91.5% |
+ * （v0.6.0：自動派生圖最好的詞根、詞綴在任何位置，標準 59.9%、87.5%）
+ */
+export const PARSE_SELECTION = Object.freeze({
+  exact: Object.freeze({ spread: 0, sound: 0 }),
+  normal: Object.freeze({ spread: 0.1, sound: 0.2 }),
+  loose: Object.freeze({ spread: Infinity, sound: 0.4 }),
+})
+
+const EPSILON = 1e-9
+
+/**
+ * 依模糊程度取一個詞的拆法（PARSE_SELECTION）。
+ * @template {{cost: number, sound: number}} T
+ * @param {T[]} parses 這個詞的所有拆法
+ * @param {string} fuzziness
+ * @param {number} [floor] 從哪個成本算起：BCDP 最好的命中（ParseChart.bestOf）；它不是拆法時（例如最接近的是另一個同樣長的詞）
+ *   比所有拆法都低，與自動派生圖不建邊的條件相同。預設是最好的拆法
+ * @returns {T[]}
+ */
+export function selectParses(parses, fuzziness, floor = Infinity) {
+  if (parses.length === 0) return []
+  const { spread, sound } = PARSE_SELECTION[/** @type {keyof typeof PARSE_SELECTION} */ (fuzziness)] ?? PARSE_SELECTION.normal
+  const best = Math.min(floor, ...parses.map((x) => x.cost))
+  return parses.filter((x) => x.cost <= best + spread + EPSILON && x.sound <= sound + EPSILON)
+}
 
 /** @typedef {'prefix' | 'suffix' | 'infix'} AffixType */
 
@@ -38,13 +87,15 @@ export const AFFIX_VARIANT_MAX = 0.25
  * @property {boolean} rootExact 詞根寫在引號中：只要這個拼寫（否則依模糊程度）
  * @property {AffixGroup[]} prefixes 由外而內
  * @property {AffixGroup[]} suffixes 由內而外
+ * @property {boolean} prefixesAnywhere 外側寫了 …（`…-pa-…`）：前綴不必是最外層，在任何位置連續出現即可
+ * @property {boolean} suffixesAnywhere 同上，後綴（`…-en-…`）
  * @property {AffixGroup[]} infixes
  * @property {boolean} red 要有重疊
  */
 
 /**
  * @typedef {{type: AffixType, form: string}} Morph 分析中的一個詞素（寫法是規格中的寫法，已是搜尋鍵）
- * @typedef {object} MorphReading 一個詞相對於某個詞根的所有詞素（自動派生圖上一條路徑各層的步驟合起來）
+ * @typedef {object} MorphReading 一種拆法的所有詞素（各步驟合起來）
  * @property {Morph[]} left 前綴，由外而內
  * @property {Morph[]} right 後綴，由內而外
  * @property {Morph[]} infixes
@@ -210,31 +261,54 @@ export function createPatternMorphology(spec, searchKey, distance, isRoot = () =
   function resolve(segments, warnings) {
     const red = segments.some((s) => s.red)
     const core = segments.filter((s) => !s.red)
-    // 詞根段：寫成 … 的那一段；沒有時，是「其他段都解析得成詞綴」的那一段
-    const wild = core.flatMap((s, k) => (s.wildcard ? [k] : []))
-    if (wild.length > 1) throw new PatternError('E_MULTI_ROOT', core[wild[0]].start, core[wild[wild.length - 1]].end, { segments: wild.map((k) => core[k].host) })
-    let rootAt = wild.length === 1 ? wild[0] : -1
-    if (rootAt === -1) {
-      const valid = core.flatMap((s, i) => {
-        if (!s.host) return []
-        const ok = core.every((t, j) => j === i || !t.host || resolveAffix(t.host, j < i ? 'prefix' : 'suffix', t.quoted, t, null))
-        return ok ? [i] : []
-      })
-      // 好幾段都可以當詞根時（tau-en：tau 是詞根加 -en，或是前綴 tau- 加 en），只留 BCDP 可能當成詞根的：
+    const n = core.length
+    const span = { start: core[0].start, end: core[n - 1].end }
+    /** 第 a 段與第 b 段之間有沒有詞綴（有字母、不是 … 的段） @param {number} a @param {number} b */
+    const affixBetween = (a, b) => core.slice(Math.min(a, b) + 1, Math.max(a, b)).some((s) => s.host && !s.wildcard)
+    /** 第 r 段當詞根時的形狀：其他的 … 只能在頭尾（外側的 …），而且與詞根之間要有詞綴 @param {number} r */
+    const shapeOk = (r) => core.every((s, k) => !s.wildcard || k === r || ((k === 0 || k === n - 1) && affixBetween(k, r)))
+    /** 第 r 段當詞根時，其他有字母的段都解析得成那一側的詞綴 @param {number} r */
+    const affixesOk = (r) =>
+      core.every((t, j) => j === r || !t.host || t.wildcard || resolveAffix(t.host, j < r ? 'prefix' : 'suffix', t.quoted, t, null))
+    // 每一種讀法：詞根在第 r 段（… 或寫出的詞根）
+    const valid = core.flatMap((s, r) => (s.host && shapeOk(r) && affixesOk(r) ? [r] : []))
+    /** @type {number} */
+    let rootAt
+    if (valid.length === 1) rootAt = valid[0]
+    else if (valid.length > 1) {
+      // 好幾段都可以當詞根時（tau-en：tau 是詞根加 -en，或是前綴 tau- 加 en），寫出的詞根只留 BCDP 可能當成詞根的：
       // 至少 minStem 個字元（BCDP 的詞根不會更短），而且是詞庫中的詞或虛擬詞根
-      const roots = valid.length > 1 ? valid.filter((k) => Array.from(searchKey(core[k].host)).length >= spec.minStem && isRoot(searchKey(core[k].host))) : valid
-      if (roots.length > 1 || (roots.length === 0 && valid.length > 1)) {
-        throw new PatternError('E_AMBIGUOUS_ROOT', core[0].start, core[core.length - 1].end, { segments: valid.map((k) => core[k].host) })
-      }
-      if (roots.length === 1) rootAt = roots[0]
+      const kept = valid.filter(
+        (k) => core[k].wildcard || (Array.from(searchKey(core[k].host)).length >= spec.minStem && isRoot(searchKey(core[k].host))),
+      )
+      if (kept.length === 1) rootAt = kept[0]
+      else if (kept.length > 1 && kept.every((k) => core[k].wildcard)) {
+        // …-i-…：中間的詞綴是前綴也是後綴，看不出哪一個 … 是詞根
+        const forms = core.filter((s) => s.host && !s.wildcard).map((s) => s.host).join('-')
+        throw new PatternError('E_AMBIGUOUS_SIDE', span.start, span.end, { forms, prefix: `${forms}-…`, suffix: `…-${forms}` })
+      } else throw new PatternError('E_AMBIGUOUS_ROOT', span.start, span.end, { segments: valid.map((k) => core[k].host) })
+    } else {
+      // 沒有一種讀法成立：選一段當詞根，讓下面的解析報出第一個不認得的詞綴
+      // （有 … 時取不在頭尾的那一個、沒有就取最後一個；沒有 … 時取最長的一段）
+      const wild = core.flatMap((s, k) => (s.wildcard ? [k] : []))
+      if (wild.length) rootAt = wild.find((k) => k !== 0 && k !== n - 1) ?? wild[wild.length - 1]
       else {
-        // 每一段都當不成詞根：以最長的一段當詞根，報出第一個不認得的詞綴
         const hosts = core.map((s) => Array.from(s.host).length)
         rootAt = hosts.indexOf(Math.max(...hosts))
       }
+      if (!shapeOk(rootAt)) throw new PatternError('E_MULTI_ROOT', span.start, span.end, { segments: wild.map((k) => core[k].host) })
     }
     /** @type {MorphRequirement} */
-    const req = { root: null, rootExact: false, prefixes: [], suffixes: [], infixes: [], red }
+    const req = {
+      root: null,
+      rootExact: false,
+      prefixes: [],
+      suffixes: [],
+      prefixesAnywhere: rootAt !== 0 && core[0].wildcard,
+      suffixesAnywhere: rootAt !== n - 1 && core[n - 1].wildcard,
+      infixes: [],
+      red,
+    }
     core.forEach((s, j) => {
       for (const x of s.infixes) for (const g of /** @type {AffixGroup[]} */ (resolveAffix(x.form, 'infix', false, x, warnings))) req.infixes.push(g)
       if (j === rootAt) {
@@ -244,7 +318,7 @@ export function createPatternMorphology(spec, searchKey, distance, isRoot = () =
         }
         return
       }
-      if (!s.host) return
+      if (!s.host || s.wildcard) return
       for (const g of /** @type {AffixGroup[]} */ (resolveAffix(s.host, j < rootAt ? 'prefix' : 'suffix', s.quoted, s, warnings))) {
         if (g.type === 'infix') req.infixes.push(g)
         else if (g.type === 'prefix') req.prefixes.push(g)
@@ -301,28 +375,19 @@ export function stepMorphs(step) {
 }
 
 /**
- * 自動派生圖上一條路徑（由詞根往下，最後一條邊進入這個詞）的所有詞素。
- * 每條邊的步驟由外而內；越下面的邊越外層：前綴由外而內＝由最後一條邊的最外層步驟開始，
- * 後綴由內而外＝由第一條邊的最內層步驟開始。
- * @param {Array<{analysis: {steps: import('../fuzzy/morph-search.js').MorphStepHit[]}}>} path
+ * 一種拆法（步驟由外而內）的所有詞素：前綴由外而內＝由最外層的步驟開始；後綴由內而外＝由最內層的步驟開始。
+ * @param {import('../fuzzy/morph-search.js').MorphStepHit[]} steps
  * @returns {MorphReading}
  */
-export function readingOfPath(path) {
+export function readingOfSteps(steps) {
   /** @type {MorphReading} */
   const out = { left: [], right: [], infixes: [], red: false }
-  for (let k = path.length - 1; k >= 0; k--) {
-    for (const step of path[k].analysis.steps) out.left.push(...stepMorphs(step).left)
-  }
-  for (let k = 0; k < path.length; k++) {
-    const steps = path[k].analysis.steps
-    for (let j = steps.length - 1; j >= 0; j--) out.right.push(...stepMorphs(steps[j]).right)
-  }
-  for (const e of path) {
-    for (const step of e.analysis.steps) {
-      const m = stepMorphs(step)
-      out.infixes.push(...m.infixes)
-      if (m.red) out.red = true
-    }
+  for (const step of steps) out.left.push(...stepMorphs(step).left)
+  for (let j = steps.length - 1; j >= 0; j--) out.right.push(...stepMorphs(steps[j]).right)
+  for (const step of steps) {
+    const m = stepMorphs(step)
+    out.infixes.push(...m.infixes)
+    if (m.red) out.red = true
   }
   return out
 }
@@ -334,13 +399,19 @@ export function readingOfPath(path) {
  */
 export function satisfies(req, reading) {
   if (req.red && !reading.red) return false
-  /** 樣式中的詞綴依序是詞的詞綴的子序列 @param {AffixGroup[]} want @param {Morph[]} have */
-  const subsequence = (want, have) => {
-    let j = 0
-    for (const m of have) if (j < want.length && want[j].forms.has(m.form)) j++
-    return j === want.length
+  /** 樣式中的詞綴從 have 的第 at 個起依序相連 @param {AffixGroup[]} want @param {Morph[]} have @param {number} at */
+  const runAt = (want, have, at) => at >= 0 && at + want.length <= have.length && want.every((g, i) => g.forms.has(have[at + i].form))
+  /** 在任何位置連續出現 @param {AffixGroup[]} want @param {Morph[]} have */
+  const anywhere = (want, have) => {
+    for (let at = 0; at + want.length <= have.length; at++) if (runAt(want, have, at)) return true
+    return false
   }
-  if (!subsequence(req.prefixes, reading.left) || !subsequence(req.suffixes, reading.right)) return false
+  // 前綴由外而內：最外面的是 left[0]；後綴由內而外：最外面的是 right 的最後一個
+  const prefixOk = req.prefixesAnywhere ? anywhere(req.prefixes, reading.left) : runAt(req.prefixes, reading.left, 0)
+  const suffixOk = req.suffixesAnywhere
+    ? anywhere(req.suffixes, reading.right)
+    : runAt(req.suffixes, reading.right, reading.right.length - req.suffixes.length)
+  if (!prefixOk || !suffixOk) return false
   // 中綴不看位置：每一個條件配一個不同的中綴
   const used = new Set()
   for (const g of req.infixes) {

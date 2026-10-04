@@ -89,10 +89,10 @@ const tab = computed({
 const patternMode = computed(() => isPatternQuery(String(route.query.q ?? ''), /** @type {string | undefined} */ (route.query.m)))
 /** 查詢有句型的寫法、但被強制以一般搜尋：提示可以切回來 */
 const forcedPlain = computed(() => route.query.m === 'plain' && looksLikePattern(String(route.query.q ?? '')).pattern)
-const PATTERN_TABS = ['sentences', 'kwic', 'frequency']
+const PATTERN_TABS = ['records', 'kwic', 'frequency']
 const patternTab = computed({
-  get: () => (PATTERN_TABS.includes(String(route.query.tab)) ? String(route.query.tab) : 'sentences'),
-  set: (t) => updateQuery({ tab: t === 'sentences' ? undefined : t }),
+  get: () => (PATTERN_TABS.includes(String(route.query.tab)) ? String(route.query.tab) : 'records'),
+  set: (t) => updateQuery({ tab: t === 'records' ? undefined : t }),
 })
 const kwicSort = computed({
   get: () => String(route.query.ks ?? 'position'),

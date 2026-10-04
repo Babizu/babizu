@@ -11,6 +11,7 @@ import MetaTag from '@/components/common/MetaTag.vue'
 import { useSources } from '@/composables/useSources.js'
 import { t } from '@/i18n.js'
 import { formatCount, recordRoute } from '@/lib/labels.js'
+import { vCardLink } from '@/lib/card-link.js'
 
 const props = defineProps({
   /** Checklist.duplicatePage／sentencePage 的一組 */
@@ -48,10 +49,11 @@ const repeated = computed(() => {
       <li
         v-for="doc in group.docs"
         :key="doc.id"
-        class="hover:bg-muted/60 relative grid gap-x-6 gap-y-0.5 rounded-md px-2 py-1.5 transition-colors sm:grid-cols-[minmax(0,14rem)_minmax(0,1fr)]"
+        v-card-link="recordRoute(doc.id)"
+        class="group hover:bg-muted/60 relative grid gap-x-6 gap-y-0.5 rounded-md px-2 py-1.5 transition-colors sm:grid-cols-[minmax(0,14rem)_minmax(0,1fr)]"
       >
         <p class="text-muted-foreground min-w-0 text-xs sm:pt-0.5">
-          <RouterLink :to="recordRoute(doc.id)" class="after:absolute after:inset-0 hover:underline">
+          <RouterLink :to="recordRoute(doc.id)" class="group-hover:underline">
             <span class="text-foreground/80 font-medium">{{ shortTitle(doc.source) }}</span>
             <span aria-hidden="true"> · </span>
             <span class="break-words">{{ doc.citation }}</span>

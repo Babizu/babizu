@@ -10,6 +10,8 @@
  * - 由查詢的相近寫法出發時（寬鬆查 sugut，經 sungut），列出兩者的差異
  * - 自動同根（查 binubuer 找到 mabubuer）：兩個詞推定來自同一個詞庫外的詞根（bubuer），
  *   分別列出查詢怎麼拆到它、這個詞怎麼由它衍生，以及「詞庫外的詞根」的代價
+ * - 句型搜尋的構詞樣式比對的是依模糊程度取到的拆法（babizu/pattern 的 PARSE_SELECTION），
+ *   不是這個詞最好的拆法時（analysis.bestCost 比 cost 小）標「次佳」並說明；詞根是虛擬詞根時（analysis.virtual）說明它不在詞庫中
  */
 import { computed } from 'vue'
 import { InfoIcon } from '@lucide/vue'
@@ -39,6 +41,8 @@ const props = defineProps({
   term: { type: String, default: '' },
 })
 
+/** 句型搜尋：比到的是次佳的拆法（這個詞最好的拆法成本較低） */
+const alternative = computed(() => props.analysis.bestCost !== undefined && props.analysis.cost > props.analysis.bestCost + 1e-9)
 /** 自動同根：查詢拆出的虛擬詞根與拆法（見 babizu/search 的 LemmaAnalysis.sibling） */
 const sibling = computed(() => /** @type {{root: string, steps: any[], cost: number, penalty: number} | null} */ (props.analysis.sibling ?? null))
 const summary = computed(() => (sibling.value ? sibling.value.root : morphSummary(props.analysis)))
@@ -80,7 +84,7 @@ const derived = computed(() => props.matchType === 'derived')
  * （建置時就是這樣對每個詞跑 BCDP，求得最好的詞根）。自動同根的詞根不在詞庫中，實驗室重現不了
  */
 const lab = computed(() => {
-  if (sibling.value) return null
+  if (sibling.value || props.analysis.virtual) return null
   if (derived.value) return props.term ? { q: props.term, t: props.analysis.stem } : null
   return props.query && props.term ? { q: props.query, t: props.term } : null
 })
@@ -100,10 +104,10 @@ const partLabel = (part, k) => (part.type === 'prefix' ? `${part.form}-` : part.
         size="tag"
         variant="inferred"
         class="max-w-full cursor-pointer"
-        :aria-label="t('{label}：{summary}，查看說明', { label: matchTypeLabel(matchType), summary })"
+        :aria-label="t('{label}：{summary}，查看說明', { label: alternative ? `${matchTypeLabel(matchType)} · ${t('次佳')}` : matchTypeLabel(matchType), summary })"
         @click.stop.prevent
       >
-        <span>{{ matchTypeLabel(matchType) }}</span>
+        <span>{{ matchTypeLabel(matchType) }}<template v-if="alternative"> · {{ t('次佳') }}</template></span>
         <span class="native-text truncate font-normal">{{ summary }}</span>
         <span v-if="hasSoundChange" class="text-accent-foreground/70 font-normal" aria-hidden="true">≈</span>
       </Badge>
@@ -115,6 +119,12 @@ const partLabel = (part, k) => (part.type === 'prefix' ? `${part.form}-` : part.
       </div>
       <!-- 查詢 → 詞根，接著說明這是演算法推定的結果，不是分析標註 -->
       <p class="native-text mt-1.5 text-base leading-tight">{{ intro }}</p>
+      <p v-if="alternative" class="text-muted-foreground mt-1 text-xs">
+        {{ t('這不是這個詞最好的拆法（最好的成本 {best}，這一種 {cost}）。句型搜尋依模糊程度也比對次佳的拆法。', { best: formatDistance(analysis.bestCost), cost: formatDistance(analysis.cost) }) }}
+      </p>
+      <p v-if="analysis.virtual" class="text-muted-foreground mt-1 text-xs">
+        {{ t('詞根「{root}」不在詞庫中，是演算法由詞形拆出來的。', { root: analysis.stem }) }}
+      </p>
       <div v-if="analysis.variantOf" class="text-muted-foreground mt-1 text-xs">
         <p>{{ t('查詢「{query}」與詞庫中的「{root}」寫法相近，由「{root}」自動派生。', { query: analysis.variantOf, root }) }}</p>
         <p v-if="analysis.variantNotes?.length" class="mt-0.5 flex flex-wrap items-baseline gap-x-2">

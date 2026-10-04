@@ -12,6 +12,7 @@ import DialectBadge from '@/components/common/DialectBadge.vue'
 import MetaTag from '@/components/common/MetaTag.vue'
 import { t } from '@/i18n.js'
 import { recordRoute, roleLabel, unitLabel } from '@/lib/labels.js'
+import { vCardLink } from '@/lib/card-link.js'
 import HitTags from './HitTags.vue'
 import ResultCitation from './ResultCitation.vue'
 
@@ -35,11 +36,11 @@ const contextLabel = computed(() => {
 </script>
 
 <template>
-  <article class="hover:bg-muted/50 relative flex gap-3 rounded-lg px-3 py-3 transition-colors sm:px-4">
+  <article v-card-link="recordRoute(doc.id)" class="group hover:bg-muted/50 relative flex gap-3 rounded-lg px-3 py-3 transition-colors sm:px-4">
     <div class="min-w-0 flex-1 space-y-1">
       <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
         <h3 class="native-text text-lg leading-snug font-semibold">
-          <RouterLink :to="recordRoute(doc.id)" class="after:absolute after:inset-0 hover:underline">
+          <RouterLink :to="recordRoute(doc.id)" class="group-hover:underline">
             {{ doc.text }}
           </RouterLink>
         </h3>

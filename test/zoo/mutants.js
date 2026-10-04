@@ -251,7 +251,7 @@ export const MUTANTS = [
   {
     name: '自動派生圖收下所有詞根，不只最好的',
     file: 'src/search/derivations.js',
-    find: '      if (hit.distance > hits[0].distance + EPSILON) break',
+    find: '      if (hit.distance > hits[0].distance + EPSILON) continue',
     replace: '      void hits',
     why: 'pausunguday 直接連到 sungut（雜訊多）；derivations 測試「最好詞根是 pusungut，不是 sungut」',
   },
@@ -418,21 +418,107 @@ export const MUTANTS = [
     why: '^ $ 與 _* 跨句；sentences 的分句測試、search 的 ^ $ 測試',
   },
   {
-    name: '句型：前綴只看有沒有，不看順序',
+    name: '句型：前綴不錨定在最外層（任何位置都算）',
     file: 'src/pattern/morph.js',
-    find: `    for (const m of have) if (j < want.length && want[j].forms.has(m.form)) j++
-    return j === want.length`,
-    replace: '    return want.every((g) => have.some((m) => g.forms.has(m.form)))',
-    why: 'pa-ka-… 找到 ka-pa-x；morph 的順序測試',
+    find: '  const prefixOk = req.prefixesAnywhere ? anywhere(req.prefixes, reading.left) : runAt(req.prefixes, reading.left, 0)',
+    replace: '  const prefixOk = anywhere(req.prefixes, reading.left)',
+    why: 'mi-… 找到 kamikita（ka-mi-kita），v0.6.0 的 imini 雜訊；morph 的 imini 測試、search 的 kamikita 測試',
   },
   {
-    name: '句型：多層衍生的後綴沒有依由內而外排列',
+    name: '句型：後綴錨在內側（從第一個後綴算起）',
     file: 'src/pattern/morph.js',
-    find: `  for (let k = 0; k < path.length; k++) {
-    const steps = path[k].analysis.steps`,
-    replace: `  for (let k = path.length - 1; k >= 0; k--) {
-    const steps = path[k].analysis.steps`,
-    why: '兩層的後綴順序顛倒；morph 的多層測試',
+    find: '    : runAt(req.suffixes, reading.right, reading.right.length - req.suffixes.length)',
+    replace: '    : runAt(req.suffixes, reading.right, 0)',
+    why: '…-an-ay 找不到 x-i-an-ay、卻找到 x-an-ay-i；morph 的後綴測試',
+  },
+  {
+    name: '句型：列出的前綴不必相連（子序列）',
+    file: 'src/pattern/morph.js',
+    find: '  const runAt = (want, have, at) => at >= 0 && at + want.length <= have.length && want.every((g, i) => g.forms.has(have[at + i].form))',
+    replace: `  const runAt = (want, have, at) => {
+    let j = 0
+    for (const m of have.slice(Math.max(0, at))) if (j < want.length && want[j].forms.has(m.form)) j++
+    return at >= 0 && j === want.length
+  }`,
+    why: 'pa-ka-… 找到 pa-ma-ka-x；morph 的相連測試',
+  },
+  {
+    name: '句型：外側的 … 被當成錨定',
+    file: 'src/pattern/morph.js',
+    find: '      prefixesAnywhere: rootAt !== 0 && core[0].wildcard,',
+    replace: '      prefixesAnywhere: false,',
+    why: '…-pa-… 找不到 mupakita；morph 的外側 … 測試、search 的 mupakita 測試',
+  },
+  {
+    name: '句型：先扣音變再求最好的拆法',
+    file: 'src/pattern/morph.js',
+    find: '  const best = Math.min(floor, ...parses.map((x) => x.cost))',
+    replace: '  const best = Math.min(floor, ...parses.filter((x) => x.sound <= sound + EPSILON).map((x) => x.cost))',
+    why: '精確模式改取比最好的差、但沒有音變的拆法；morph 的「先求最好的再扣音變」測試',
+  },
+  {
+    name: '句型：標準模式取差 0.2 以內的拆法',
+    file: 'src/pattern/morph.js',
+    find: '  normal: Object.freeze({ spread: 0.1, sound: 0.2 }),',
+    replace: '  normal: Object.freeze({ spread: 0.2, sound: 0.2 }),',
+    why: '標準多收了差 0.2 的拆法；morph 的 PARSE_SELECTION 測試',
+  },
+  {
+    name: '句型：不限制音變',
+    file: 'src/pattern/morph.js',
+    find: '  return parses.filter((x) => x.cost <= best + spread + EPSILON && x.sound <= sound + EPSILON)',
+    replace: '  return parses.filter((x) => x.cost <= best + spread + EPSILON)',
+    why: '精確模式收下 bakita（只靠 b→p 的 pa-kita）；morph 的音變上限測試、search 的 bakita 測試',
+  },
+  {
+    name: '句型：取拆法從最好的拆法算起，不看 BCDP 最好的命中',
+    file: 'src/pattern/search.js',
+    find: '      list = selectParses(all, level, id === -1 ? Infinity : chart.bestOf(id))',
+    replace: '      list = selectParses(all, level)',
+    why: '標準模式把 pabak 拆成 pa-pa-rak（最好的命中是同長的 barak）；search 的 pabak 測試',
+  },
+  {
+    name: '句型：拆解表不記 BCDP 最好的命中',
+    file: 'src/search/derivations.js',
+    find: "    if (hits.length && (Array.from(hits[0].term).length >= length || hits[0].term.includes(' '))) bests.push([word, roundCost(hits[0].distance)])",
+    replace: '    void bests',
+    why: '同上，由建置端漏掉；search 的 pabak 測試、拆解表對自動派生圖測試',
+  },
+  {
+    name: '句型：證據取這個詞最好的拆法，不是符合條件的那一種',
+    file: 'src/pattern/search.js',
+    find: '    for (const parse of this._parsesOf(key, fuzziness)) if ((roots === null || roots.has(parse.root)) && satisfies(req, parse.reading)) return parse',
+    replace: `    const list = this._parsesOf(key, fuzziness)
+    if (list.some((parse) => (roots === null || roots.has(parse.root)) && satisfies(req, parse.reading))) return list[0]`,
+    why: '…-pa-… 的 mupakita 說明成 mu- ＋ pakita；search 的證據測試',
+  },
+  {
+    name: '句型：不錨定的提示把原本就找到的詞也算進去',
+    file: 'src/pattern/search.js',
+    find: '    for (const key of this.corpus.docsOf.keys()) if (!found.has(key) && this._matchParse(key, wider, roots, fuzziness)) count++',
+    replace: '    for (const key of this.corpus.docsOf.keys()) if (this._matchParse(key, wider, roots, fuzziness)) count++',
+    why: 'W_INNER_AFFIX 的數量不是多找到的詞形數；search 的提示測試',
+  },
+  {
+    name: '句型：拆解表漏掉虛擬詞根',
+    file: 'src/search/parses.js',
+    find: "      virtual.map((e) => ({ ...e, analysis: { ...e.analysis, notes: [] } })),",
+    replace: '      [],',
+    why: 'mausay、mupuza 的虛擬詞根不在拆解表；search 的拆解表對自動派生圖測試',
+  },
+  {
+    name: '句型：拆解表收下含空白的詞根',
+    file: 'src/search/derivations.js',
+    find: "      if (!hit.term.includes(' ')) parses.push(",
+    replace: '      if (hit.term) parses.push(',
+    why: 'pakakita 拆成 pa- ＋「ka kita」；search 的單一個詞測試',
+  },
+  {
+    name: '句型：拆解表只收最好的詞根（次佳的拆法不見了）',
+    file: 'src/search/derivations.js',
+    find: "      if (!hit.term.includes(' ')) parses.push({ word, root, analysis: { cost: roundCost(hit.distance), steps: hit.steps, notes: [] } })\n      // 自動派生圖：BCDP 成本最低的詞庫詞根（同分全收），詞根比詞短\n      if (hit.distance > hits[0].distance + EPSILON) continue",
+    replace: "      if (hit.distance > hits[0].distance + EPSILON) continue\n      if (!hit.term.includes(' ')) parses.push({ word, root, analysis: { cost: roundCost(hit.distance), steps: hit.steps, notes: [] } })",
+    why: 'pakanen 的 pa-kan-en（次佳）不在拆解表；search 的 pakanen 測試、拆解表對一般搜尋的自動拆解測試',
   },
   {
     name: '句型：同位詞素組只取寫法本身',
@@ -447,13 +533,6 @@ export const MUTANTS = [
     find: '    if (quoted) return group ? [{ type: side, forms: new Set([form]), label: labelOf(side, form) }] : fail()',
     replace: '    if (quoted) return group ? [{ type: side, forms: group, label: labelOf(side, form) }] : fail()',
     why: '"mu"-… 找到 mikita；search 的引號測試',
-  },
-  {
-    name: '句型：往上的路徑與往下的不同（上限不同）',
-    file: 'src/search/derivations.js',
-    find: '      const reach = this.reachFrom(root).get(word)',
-    replace: '      const reach = this.descendants([{ id: root, distance: 0 }], DERIVATION_MAX_COST).find((r) => r.word === word)',
-    why: 'ancestors 的路徑不是 reachFrom 的那一條；search 的對稱測試',
   },
   {
     name: '句型：句末的驚嘆號也觸發句型搜尋',

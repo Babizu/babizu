@@ -17,6 +17,7 @@ import MetaTag from '@/components/common/MetaTag.vue'
 import { t } from '@/i18n.js'
 import { displayHit } from '@/lib/entry-groups.js'
 import { recordRoute, unitLabel } from '@/lib/labels.js'
+import { vCardLink } from '@/lib/card-link.js'
 import { DICTIONARY_KINDS } from '@babizu/search/scoring.js'
 import HitTags from './HitTags.vue'
 
@@ -35,12 +36,12 @@ const showUnit = computed(() => doc.value.unit !== 'word' && doc.value.unit !== 
 </script>
 
 <template>
-  <div class="hover:bg-muted/50 relative flex items-start gap-2 rounded-md px-2 py-1.5 transition-colors">
+  <div v-card-link="recordRoute(doc.id)" class="group hover:bg-muted/50 relative flex items-start gap-2 rounded-md px-2 py-1.5 transition-colors">
     <div class="min-w-0 flex-1">
       <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
         <RouterLink
           :to="recordRoute(doc.id)"
-          class="native-text leading-snug after:absolute after:inset-0 hover:underline"
+          class="native-text leading-snug group-hover:underline"
           :class="hit ? 'font-medium' : 'text-muted-foreground'"
         >
           {{ doc.text }}

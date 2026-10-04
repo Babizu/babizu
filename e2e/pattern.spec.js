@@ -1,5 +1,6 @@
 /**
- * 句型搜尋（示範站台）：自動判斷、結果的三個分頁、語法錯誤、強制模式、關於頁的說明。
+ * 句型搜尋（示範站台）：自動判斷、結果的三個分頁與記錄的分區、語法錯誤、強制模式、關於頁的說明；
+ * 以及結果列的文字可以拖曳反白（v-card-link，一般搜尋的列也一樣）。
  * 示範語言沒有構詞規格，只測詞序；構詞樣式由網站 repo（pazeh-kaxabu）的端對端測試涵蓋。
  */
 
@@ -29,7 +30,7 @@ test('_ ka _：自動改用句型搜尋，命中的詞依位置高亮；對照�
   await page.getByRole('tab', { name: /^頻率/ }).click()
   await expect(page.getByText('都是')).toBeVisible()
   await page.getByRole('button', { name: /^sapi/ }).click()
-  await page.getByRole('tab', { name: /^句子/ }).click()
+  await page.getByRole('tab', { name: /^記錄/ }).click()
   await expect(page.locator('article')).toHaveCount(1)
   await page.getByRole('button', { name: '取消篩選' }).click()
   await expect(page.locator('article')).toHaveCount(2)
@@ -63,4 +64,53 @@ test('關於頁：句型搜尋的寫法與例子（沒有構詞規格時不列�
   await section.getByRole('link', { name: /\^ sapi/ }).click()
   await expect(page).toHaveURL(/m=pattern/)
   await expect(page.locator('article').filter({ hasText: 'sapi ka alim' })).toBeVisible({ timeout: 30_000 })
+})
+
+test('記錄依語言單位分區：sapi 有詞條也有句子；分區標籤可以只看一區', async ({ page }) => {
+  await page.goto('./#/?q=sapi&m=pattern')
+  await expect(page.getByRole('heading', { name: /^詞條/ })).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByRole('heading', { name: /^句子/ })).toBeVisible()
+  await page.getByRole('button', { name: /^句子/ }).click()
+  await expect(page.getByRole('heading', { name: /^詞條/ })).toHaveCount(0)
+  await expect(page.locator('article').filter({ hasText: 'sapi ka alim' })).toBeVisible()
+  await page.getByRole('button', { name: /^全部/ }).click()
+  await expect(page.getByRole('heading', { name: /^詞條/ })).toBeVisible()
+})
+
+/**
+ * 在元素上由左到右拖曳滑鼠
+ * @param {import('@playwright/test').Page} page
+ * @param {import('@playwright/test').Locator} target
+ */
+async function dragAcross(page, target) {
+  const box = /** @type {{x: number, y: number, width: number, height: number}} */ (await target.boundingBox())
+  await page.mouse.move(box.x + 2, box.y + box.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(box.x + box.width - 2, box.y + box.height / 2, { steps: 8 })
+  await page.mouse.up()
+}
+
+test('結果的文字可以拖曳反白（不是拖出網址、也不開啟記錄）；沒有反白時點整列仍開啟記錄', async ({ page }) => {
+  await page.goto('./#/?q=_%20ka%20_')
+  const row = page.locator('article').filter({ hasText: 'sapi ka alim' })
+  await expect(row).toBeVisible({ timeout: 30_000 })
+  const selected = () => page.evaluate(() => window.getSelection()?.toString() ?? '')
+  // 釋義與句子本身（句子是連結）都可以反白
+  for (const target of [row.locator('.gloss-zh'), row.getByRole('link').first()]) {
+    await dragAcross(page, target)
+    expect((await selected()).length).toBeGreaterThan(2)
+    await expect(page).toHaveURL(/q=_/)
+  }
+  await page.evaluate(() => window.getSelection()?.removeAllRanges())
+  await row.locator('.gloss-zh').click()
+  await expect(page).toHaveURL(/#\/r\//)
+})
+
+test('一般搜尋的詞條列也可以反白', async ({ page }) => {
+  await page.goto('./#/?q=sapi')
+  const gloss = page.locator('article .gloss-zh').first()
+  await expect(gloss).toBeVisible({ timeout: 30_000 })
+  await dragAcross(page, gloss)
+  expect((await page.evaluate(() => window.getSelection()?.toString() ?? '')).length).toBeGreaterThan(0)
+  await expect(page).toHaveURL(/q=sapi/)
 })

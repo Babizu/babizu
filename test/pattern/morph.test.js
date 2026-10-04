@@ -1,10 +1,11 @@
 /**
- * 構詞樣式的比對（src/pattern/morph.js）：詞素的順序（子序列）、多層衍生的組合、構式的 parts。
+ * 構詞樣式的比對（src/pattern/morph.js）：詞綴錨定在詞緣而且相連、外側的 … 不錨定、
+ * 依模糊程度取拆法（先求最好的再扣音變）、一種拆法的詞素、構式的 parts、哪一段是詞根。
  */
 
 import { describe, expect, it } from 'vitest'
 import { PatternError } from '../../src/pattern/errors.js'
-import { createPatternMorphology, readingOfPath, satisfies, stepMorphs } from '../../src/pattern/morph.js'
+import { createPatternMorphology, PARSE_SELECTION, readingOfSteps, satisfies, selectParses, stepMorphs } from '../../src/pattern/morph.js'
 import { parsePattern } from '../../src/pattern/parser.js'
 import { createTextTools } from '../../src/search/text.js'
 import { PAZEH_PROFILE } from '../fixtures/pazeh.js'
@@ -13,7 +14,7 @@ import { PATTERN_GRAMMAR } from './fixture.js'
 /** @param {string} label @param {string[]} forms @returns {import('../../src/pattern/morph.js').AffixGroup} */
 const group = (label, forms, type = /** @type {const} */ ('prefix')) => ({ type, forms: new Set(forms), label })
 /** @param {Partial<import('../../src/pattern/morph.js').MorphRequirement>} r */
-const req = (r) => ({ root: null, rootExact: false, prefixes: [], suffixes: [], infixes: [], red: false, ...r })
+const req = (r) => ({ root: null, rootExact: false, prefixes: [], suffixes: [], prefixesAnywhere: false, suffixesAnywhere: false, infixes: [], red: false, ...r })
 /** @param {string[]} left @param {string[]} [right] @param {string[]} [infixes] */
 const reading = (left, right = [], infixes = []) => ({
   left: left.map((form) => ({ type: /** @type {const} */ ('prefix'), form })),
@@ -22,18 +23,38 @@ const reading = (left, right = [], infixes = []) => ({
   red: false,
 })
 
-describe('比對：前綴、後綴是子序列，中綴不看位置', () => {
-  it('pa-ka-… 找得到 pa-ka-x、pa-ma-ka-x，找不到 ka-pa-x', () => {
+describe('比對：詞綴從最外層算起、彼此相連，中綴不看位置', () => {
+  it('pa-ka-… 找得到 pa-ka-x、pa-ka-ma-x（ma 在內側，由 … 吸收），找不到 ka-pa-x、pa-ma-ka-x、ma-pa-ka-x', () => {
     const r = req({ prefixes: [group('pa-', ['pa']), group('ka-', ['ka'])] })
     expect(satisfies(r, reading(['pa', 'ka']))).toBe(true)
-    expect(satisfies(r, reading(['pa', 'ma', 'ka']))).toBe(true)
+    expect(satisfies(r, reading(['pa', 'ka', 'ma']))).toBe(true)
     expect(satisfies(r, reading(['ka', 'pa']))).toBe(false)
+    expect(satisfies(r, reading(['pa', 'ma', 'ka']))).toBe(false)
+    expect(satisfies(r, reading(['ma', 'pa', 'ka']))).toBe(false)
   })
 
-  it('…-an-ay（由內而外）找得到 x-an-ay，找不到 x-ay-an', () => {
+  it('imini（i-m-ini）：m-… 不中（最外層是 i-），…-m-… 中', () => {
+    const m = group('m-', ['m', 'mu', 'mi', 'me'])
+    expect(satisfies(req({ prefixes: [m] }), reading(['i', 'm']))).toBe(false)
+    expect(satisfies(req({ prefixes: [m], prefixesAnywhere: true }), reading(['i', 'm']))).toBe(true)
+    // 不錨定時列出的詞綴仍要相連：…-pa-ka-… 找不到 pa-ma-ka-x
+    const pk = req({ prefixes: [group('pa-', ['pa']), group('ka-', ['ka'])], prefixesAnywhere: true })
+    expect(satisfies(pk, reading(['ma', 'pa', 'ka', 'mi']))).toBe(true)
+    expect(satisfies(pk, reading(['pa', 'ma', 'ka']))).toBe(false)
+  })
+
+  it('…-an-ay（由內而外）找得到 x-an-ay、x-i-an-ay（i 在內側），找不到 x-ay-an、x-an-ay-i', () => {
     const r = req({ suffixes: [group('-an', ['an'], 'suffix'), group('-ay', ['ay'], 'suffix')] })
     expect(satisfies(r, reading([], ['an', 'ay']))).toBe(true)
+    expect(satisfies(r, reading([], ['i', 'an', 'ay']))).toBe(true)
     expect(satisfies(r, reading([], ['ay', 'an']))).toBe(false)
+    expect(satisfies(r, reading([], ['an', 'ay', 'i']))).toBe(false)
+    // 外側寫了 …（…-an-ay-…）就不必是最外層
+    expect(satisfies({ ...r, suffixesAnywhere: true }, reading([], ['an', 'ay', 'i']))).toBe(true)
+  })
+
+  it('沒有列出前綴時，任何前綴都可以（…-en 找得到 pa-x-en）', () => {
+    expect(satisfies(req({ suffixes: [group('-en', ['en'], 'suffix')] }), reading(['pa'], ['en']))).toBe(true)
   })
 
   it('同一個中綴寫兩次要有兩個', () => {
@@ -49,23 +70,49 @@ describe('詞素：構式的 parts 與多層衍生', () => {
     expect(stepMorphs(/** @type {any} */ (step))).toMatchObject({ left: [{ form: 'pa' }], infixes: [{ form: 'in' }], right: [] })
   })
 
-  it('兩層：sungut →（pu-）pusungut →（<a>、-ay）pausunguday；前綴由外而內，後綴由內而外', () => {
-    /** @param {any[]} steps */
-    const edge = (steps) => ({ analysis: { steps } })
-    const path = [
-      edge([{ type: 'prefix', form: 'pu' }, { type: 'suffix', form: 'an' }]),
-      edge([{ type: 'prefix', form: 'ma' }, { type: 'infix', form: 'a' }, { type: 'suffix', form: 'ay' }]),
-    ]
-    expect(readingOfPath(/** @type {any} */ (path))).toMatchObject({
-      left: [{ form: 'ma' }, { form: 'pu' }],
-      right: [{ form: 'an' }, { form: 'ay' }],
-      infixes: [{ form: 'a' }],
-    })
+  it('一種拆法的幾個步驟（由外而內）：ma-pa-x-an-ay；前綴由外而內，後綴由內而外', () => {
+    const steps = [{ type: 'prefix', form: 'ma' }, { type: 'suffix', form: 'ay' }, { type: 'prefix', form: 'pa' }, { type: 'suffix', form: 'an' }]
+    expect(readingOfSteps(/** @type {any} */ (steps))).toMatchObject({ left: [{ form: 'ma' }, { form: 'pa' }], right: [{ form: 'an' }, { form: 'ay' }] })
   })
 
-  it('一層裡的幾個步驟（由外而內）：ma-pa-x-an-ay', () => {
-    const path = [{ analysis: { steps: [{ type: 'prefix', form: 'ma' }, { type: 'suffix', form: 'ay' }, { type: 'prefix', form: 'pa' }, { type: 'suffix', form: 'an' }] } }]
-    expect(readingOfPath(/** @type {any} */ (path))).toMatchObject({ left: [{ form: 'ma' }, { form: 'pa' }], right: [{ form: 'an' }, { form: 'ay' }] })
+  it('環綴與中綴：p<a>u-…-ay 的 pu 在外、<a> 是中綴、-ay 是後綴', () => {
+    const steps = [{ type: 'circumfix', form: '', left: { type: 'infix', form: 'a' }, outer: 'pu', suffix: 'ay' }]
+    expect(readingOfSteps(/** @type {any} */ (steps))).toMatchObject({ left: [{ form: 'pu' }], infixes: [{ form: 'a' }], right: [{ form: 'ay' }] })
+  })
+})
+
+describe('依模糊程度取拆法（PARSE_SELECTION）', () => {
+  /** @param {number} cost @param {number} sound @param {string} root */
+  const p = (cost, sound, root) => ({ cost, sound, root })
+
+  it('精確：最好的拆法（同分都取）、不容許音變；標準：差 0.1 以內、音變 ≤ 0.2；寬鬆：全部、音變 ≤ 0.4', () => {
+    const all = [p(0.1, 0, 'a'), p(0.1, 0, 'b'), p(0.2, 0, 'c'), p(0.3, 0, 'd'), p(0.5, 0.3, 'e'), p(0.6, 0.5, 'f')]
+    expect(selectParses(all, 'exact').map((x) => x.root)).toEqual(['a', 'b'])
+    expect(selectParses(all, 'normal').map((x) => x.root)).toEqual(['a', 'b', 'c'])
+    expect(selectParses(all, 'loose').map((x) => x.root)).toEqual(['a', 'b', 'c', 'd', 'e'])
+    expect(selectParses([], 'loose')).toEqual([])
+    expect(PARSE_SELECTION.normal).toEqual({ spread: 0.1, sound: 0.2 })
+  })
+
+  it('先求最好的再扣音變：最好的拆法要靠音變時，精確模式不改取比它差的無音變拆法', () => {
+    const all = [p(0.2, 0.1, 'sound'), p(0.3, 0, 'plain')]
+    expect(selectParses(all, 'exact')).toEqual([])
+    expect(selectParses(all, 'normal').map((x) => x.root)).toEqual(['sound', 'plain'])
+  })
+
+  it('從 BCDP 最好的命中算起：最好的命中不是拆法時（abak 最好的是 a- ＋ barak 0.25），差太多的拆法（a-pa-rak 0.55）標準不收', () => {
+    const all = [p(0.55, 0, 'rak')]
+    expect(selectParses(all, 'normal', 0.25)).toEqual([])
+    expect(selectParses(all, 'exact', 0.25)).toEqual([])
+    expect(selectParses(all, 'loose', 0.25).map((x) => x.root)).toEqual(['rak'])
+    // 沒有給起點時從最好的拆法算起
+    expect(selectParses(all, 'exact').map((x) => x.root)).toEqual(['rak'])
+  })
+
+  it('音變的上限：標準不收音變 0.3 的拆法，寬鬆收', () => {
+    const all = [p(0.4, 0.3, 'x')]
+    expect(selectParses(all, 'normal')).toEqual([])
+    expect(selectParses(all, 'loose').map((x) => x.root)).toEqual(['x'])
   })
 })
 
@@ -99,5 +146,31 @@ describe('哪一段是詞根', () => {
     expect(() => pick('tau-ena', () => false)).toThrow(PatternError)
     // ka、en 都比 minStem 短，不可能是詞根
     expect(() => pick('ka-en', () => true)).toThrow(PatternError)
+  })
+
+  it('外側的 …：那一側不錨定；哪一個 … 是詞根由中間的詞綴是前綴還是後綴決定', () => {
+    expect(resolve('…-pa-…')).toMatchObject({ root: null, prefixes: [{ label: 'pa-' }], prefixesAnywhere: true, suffixesAnywhere: false })
+    expect(resolve('…-en-…')).toMatchObject({ root: null, suffixes: [{ label: '-en' }], prefixesAnywhere: false, suffixesAnywhere: true })
+    expect(resolve('…-ta-…-i-…')).toMatchObject({ prefixes: [{ label: 'ta-' }], suffixes: [{ label: '-i' }], prefixesAnywhere: true, suffixesAnywhere: true })
+    expect(resolve('…-ka-…-en')).toMatchObject({ prefixesAnywhere: true, suffixesAnywhere: false })
+    expect(resolve('…-pa-kita')).toMatchObject({ root: 'kita', prefixes: [{ label: 'pa-' }], prefixesAnywhere: true })
+    expect(resolve('-pa-')).toMatchObject({ root: null, prefixesAnywhere: true })
+    // 沒有外側的 … 時錨定
+    expect(resolve('pa-…')).toMatchObject({ prefixesAnywhere: false, suffixesAnywhere: false })
+    // 外側的 … 與詞根之間要有詞綴；不認得的詞綴照樣報錯（以前綴解析，列出最接近的）
+    expect(() => resolve('…-<in>-…')).toThrow(expect.objectContaining({ code: 'E_MULTI_ROOT' }))
+    expect(() => resolve('…-xyz-…')).toThrow(expect.objectContaining({ code: 'E_UNKNOWN_AFFIX', params: expect.objectContaining({ side: 'prefix' }) }))
+  })
+
+  it('…-i-…：i 是前綴也是後綴，看不出哪一個 … 是詞根，報錯並給出兩種只看最外層的寫法', () => {
+    const flat = createTextTools({ ...PAZEH_PROFILE, morphology: { cost: 0.1, minStem: 3, prefixes: [{ form: 'i' }, { form: 'pa' }], suffixes: [{ form: 'i' }, { form: 'en' }] } })
+    const morph = createPatternMorphology(/** @type {any} */ (flat.morphology).spec, flat.searchKey, (a, b) => flat.createSearchMetric().distance(a, b))
+    /** @param {string} q */
+    const pick = (q) => morph.resolve(/** @type {any} */ (parsePattern(q).conditions[0].body).atom.segments, [])
+    expect(() => pick('…-i-…')).toThrow(expect.objectContaining({ code: 'E_AMBIGUOUS_SIDE', params: { forms: 'i', prefix: 'i-…', suffix: '…-i' } }))
+    // 只有一種讀法時沒有歧義
+    expect(pick('…-pa-…')).toMatchObject({ prefixesAnywhere: true })
+    expect(pick('i-…')).toMatchObject({ prefixes: [{ label: 'i-' }] })
+    expect(pick('…-i')).toMatchObject({ suffixes: [{ label: '-i' }] })
   })
 })

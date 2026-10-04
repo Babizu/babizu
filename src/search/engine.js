@@ -16,9 +16,13 @@
  */
 
 import { createMorphSearch, FuzzyIndex, roundCost } from '../fuzzy/index.js'
+import { atomsOf } from '../pattern/ast.js'
+import { PatternError } from '../pattern/errors.js'
+import { parsePattern } from '../pattern/parser.js'
 import { PatternSearch } from '../pattern/search.js'
 import { DerivationGraph, isLexicalRoot, VIRTUAL_ROOT_PENALTY, virtualRoots } from './derivations.js'
 import { buildEntryGroups, collectHits, mergeSpellings } from './family.js'
+import { ParseChart } from './parses.js'
 import { decodePosting, docAt, INDEX_FORMAT_VERSION } from './format.js'
 import {
   alternativesOf,
@@ -123,6 +127,8 @@ export const FUZZINESS = Object.freeze({
  * @property {{root: string, steps: Array<import('../fuzzy/morph-search.js').MorphStepHit>, cost: number, penalty: number}} [sibling]
  *   自動同根（matchType 'sibling'）：查詢拆出的虛擬詞根 root（詞庫中沒有）與拆法；stem、steps、chain 是這個詞往上到 root 的路。
  *   查 binubuer：root 是 bubuer（b<in>ubuer），這個詞 mabubuer ＝ ma- ＋ bubuer
+ * @property {number} [bestCost] 句型搜尋的構詞樣式：這個詞最好的拆法的成本；比 cost 小時，這一種是次佳的拆法
+ * @property {boolean} [virtual] 句型搜尋的構詞樣式：詞根（stem）是虛擬詞根，不在詞庫中
  */
 
 /** @typedef {import('./scoring.js').MatchType} MatchType */
@@ -205,10 +211,13 @@ export class SearchEngine {
    *   lexicon: import('../fuzzy/fuzzy-index.js').SerializedIndex,
    *   profile: import('../fuzzy/profile.js').LanguageProfile,
    *   derivations?: import('./derivations.js').DerivationData | null,
+   *   parses?: import('./derivations.js').DerivationData | null,
    * }} data `profile` 必須是建索引時用的同一份語言設定檔（建置輸出的 search/language.json）；
-   *   `derivations` 是自動派生圖（search/derivations.json，見 derivations.js），沒有時不找自動派生形
+   *   `derivations` 是自動派生圖（search/derivations.json，見 derivations.js），沒有時不找自動派生形；
+   *   `parses` 是拆解表（search/parses.json，見 parses.js），句型搜尋的構詞樣式要用。網站在第一次需要時才載入，
+   *   之後以 attachParseChart 接上（needsParseChart 判斷要不要）
    */
-  constructor({ docs, lexicon, profile, derivations = null }) {
+  constructor({ docs, lexicon, profile, derivations = null, parses = null }) {
     if (docs.version !== INDEX_FORMAT_VERSION) {
       throw new Error(`搜尋索引格式版本 ${docs.version} 與框架（${INDEX_FORMAT_VERSION}）不符，請重新建置網站`)
     }
@@ -240,6 +249,8 @@ export class SearchEngine {
     this._affixForms = null
     /** 自動派生圖（查詞根找自動派生形，見 derivations.js） */
     this.derivations = derivations && this.morphSearch ? new DerivationGraph(derivations, this.index.terms) : null
+    /** @type {ParseChart | null} 拆解表（句型搜尋的構詞樣式用，見 parses.js） */
+    this.parses = parses && this.morphSearch ? new ParseChart(parses, this.index.terms) : null
     /** @type {PatternSearch | null} 句型搜尋（第一次用到時建立，見 babizu/pattern） */
     this._pattern = null
   }
@@ -253,6 +264,31 @@ export class SearchEngine {
   searchPattern(query, options = {}) {
     if (!this._pattern) this._pattern = new PatternSearch(this)
     return this._pattern.search(query, options)
+  }
+
+  /**
+   * 這個句型查詢需不需要先載入拆解表：有構詞規格、還沒有拆解表，而且查詢中有構詞樣式。
+   * 查詢有語法錯誤時不需要（searchPattern 會回報錯誤）。
+   * @param {string} query
+   */
+  needsParseChart(query) {
+    if (!this.morphSearch || this.parses) return false
+    try {
+      return parsePattern(query).conditions.some((c) => [...atomsOf(c.body)].some((n) => n.atom.kind === 'morph'))
+    } catch (err) {
+      if (err instanceof PatternError) return false
+      throw err
+    }
+  }
+
+  /**
+   * 接上拆解表（網站在第一次需要時才載入 search/parses.json）。
+   * @param {import('./derivations.js').DerivationData} data
+   */
+  attachParseChart(data) {
+    if (!this.morphSearch) return
+    this.parses = new ParseChart(data, this.index.terms)
+    this._pattern?.reset()
   }
 
   /**

@@ -3,6 +3,7 @@
  * 句型搜尋的一筆結果：原文中命中的詞依引擎回傳的位置高亮（不在介面重新切詞，位置一定對得上），
  * 下面每個有說明的詞一組標籤（與一般搜尋的例句同一套 HitTags：自動是虛線框、確定是實心底）。
  * `_` 與 `!x` 比到的詞用較淡的底色（只是填在空位上的詞），也不附標籤。
+ * 整列可以點（v-card-link），文字可以拖曳反白、複製。
  */
 import { computed } from 'vue'
 import AudioButton from '@/components/common/AudioButton.vue'
@@ -10,6 +11,7 @@ import DialectBadge from '@/components/common/DialectBadge.vue'
 import HitTags from '@/components/search/HitTags.vue'
 import ResultCitation from '@/components/search/ResultCitation.vue'
 import { recordRoute } from '@/lib/labels.js'
+import { vCardLink } from '@/lib/card-link.js'
 
 const props = defineProps({
   /** babizu/pattern 的 PatternHit */
@@ -58,10 +60,10 @@ const tagged = computed(() => {
 </script>
 
 <template>
-  <article class="hover:bg-muted/50 relative flex gap-3 rounded-lg px-3 py-3 transition-colors sm:px-4">
+  <article v-card-link="recordRoute(doc.id)" class="hover:bg-muted/50 relative flex gap-3 rounded-lg px-3 py-3 transition-colors sm:px-4">
     <div class="min-w-0 flex-1 space-y-1">
       <p class="native-text text-base leading-relaxed font-medium">
-        <RouterLink :to="recordRoute(doc.id)" class="after:absolute after:inset-0">
+        <RouterLink :to="recordRoute(doc.id)">
           <template v-for="(p, k) in pieces" :key="k"><mark v-if="p.hit === 'word'">{{ p.text }}</mark><mark v-else-if="p.hit === 'slot'" class="bg-muted text-foreground">{{ p.text }}</mark><template v-else>{{ p.text }}</template></template>
         </RouterLink>
       </p>
@@ -72,7 +74,8 @@ const tagged = computed(() => {
       <div class="flex flex-wrap items-center gap-2">
         <DialectBadge v-for="d in doc.dialects" :key="d" :dialect="d" />
         <span v-for="(x, k) in tagged" :key="k" class="inline-flex min-w-0 flex-wrap items-center gap-1.5">
-          <span class="native-text text-muted-foreground text-xs">{{ x.token }}</span>
+          <!-- 詞條區的記錄只有一個詞（就是上面的詞條），不必再寫一次 -->
+          <span v-if="hit.group !== 'entries' || tagged.length > 1" class="native-text text-muted-foreground text-xs">{{ x.token }}</span>
           <HitTags :hit="x.evidence" :query="x.evidence.word" />
         </span>
         <ResultCitation :source="doc.source" :citation="doc.citation" :status="doc.status" />

@@ -30,6 +30,7 @@ const ERROR_TEXT = {
   E_WILDCARD_ATTACHED: msg('「{text}」：… 和詞綴之間要用 - 分開，例如 m<in>-…。'),
   E_MULTI_ROOT: msg('構詞樣式只能有一個詞根。'),
   E_AMBIGUOUS_ROOT: msg('看不出哪一段是詞根，請用 … 標出詞根，或寫出詞根。'),
+  E_AMBIGUOUS_SIDE: msg('「{forms}」可以是前綴也可以是後綴，看不出哪一個 … 是詞根；請寫出詞根，或改寫成只看最外層的 {prefix} 或 {suffix}。'),
   E_UNKNOWN_AFFIX: msg('「{form}」不是構詞規格中的詞綴。'),
   E_NO_MORPHOLOGY: msg('這個辭典的語言設定檔沒有構詞規格，不能用構詞樣式（- < > ~）或 @。'),
 }
@@ -44,7 +45,8 @@ const WARNING_TEXT = {
   W_TRAILING_Q: msg('最後的 ? 表示「可有可無」，不是問號。'),
   W_AFFIX_VARIANT: msg('「{form}」不在構詞規格中，依方言規則視為「{to}」。'),
   W_ALSO_CONSTRUCTION: msg('「{form}」也是 {parts} 的寫法，這裡只找 {form}；兩者都要找請用擇一的寫法。'),
-  W_EXACT_MORPHOLOGY: msg('精確模式下，構詞分析的成本上限較低，找到的可能比標準模式少。'),
+  W_EXACT_MORPHOLOGY: msg('精確模式下，構詞樣式只取每個詞最好的拆法、不容許音變，找到的可能比標準模式少。'),
+  W_INNER_AFFIX: msg('列出的詞綴只算最外層；另有 {count} 個詞形的 {form} 在內層。'),
 }
 
 /**
@@ -52,14 +54,14 @@ const WARNING_TEXT = {
  */
 
 /**
- * 錯誤或提示的說明，以及（有的話）建議。
+ * 錯誤或提示的說明，以及（有的話）建議與改寫後的查詢（介面做成連結）。
  * @param {PatternIssue} issue
- * @returns {{text: string, hint: string | null}}
+ * @returns {{text: string, hint: string | null, query: string | null}}
  */
 export function patternIssueText(issue) {
   const params = issue.params ?? {}
   if (issue.code === 'E_EMPTY_MATCH' && params.word) {
-    return { text: t(WARNING_TEXT.W_STAR_WORD, { text: params.word }), hint: null }
+    return { text: t(WARNING_TEXT.W_STAR_WORD, { text: params.word }), hint: null, query: null }
   }
   const table = /** @type {Record<string, string>} */ (issue.code.startsWith('W_') ? WARNING_TEXT : ERROR_TEXT)
   const template = table[issue.code]
@@ -76,7 +78,9 @@ export function patternIssueText(issue) {
     }
     hint = parts.join(' ') || null
   }
-  return { text, hint }
+  // 不錨定的寫法（…-pa-…）：點了改查
+  const query = issue.code === 'W_INNER_AFFIX' && typeof params.query === 'string' ? params.query : null
+  return { text, hint, query }
 }
 
 /** 語詞索引的排序方式 */

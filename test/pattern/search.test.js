@@ -1,18 +1,22 @@
 /**
  * 句型搜尋（src/pattern/search.js）：
  * - 構詞樣式的寫法與解析（同位詞素組、中綴不看位置、組合的整體寫法、方言寫法、引號）；
- * - 與 BCDP 的對稱：由詞根往下與由詞往上的結果相同（derivations.js 的 reachFrom、ancestors）；
+ * - 拆解表與 BCDP：拆解表就是自動派生圖建置時那一次 BCDP 的全部結果，也就是一般搜尋的自動拆解清單；
+ * - 構詞樣式依模糊程度取拆法、詞綴從最外層算起（外側寫 … 不錨定）、詞根是 … 等於每個詞根合起來（三種模糊程度）；
  * - 與一般搜尋的一致：`kita`、`@kita` 找到的記錄與一般搜尋（排除其他搜尋方法）相同；
  * - 句與讀法、& 與 !、候選篩選不影響結果、頻率。
  * 資料是合成的（test/pattern/fixture.js）。
  */
 
 import { describe, expect, it } from 'vitest'
+import { buildDerivationGraph, buildParseChart, FUZZINESS, SearchEngine } from '../../src/search/index.js'
 import { SEARCH_METHODS } from '../../src/search/scoring.js'
-import { buildPatternEngine, PATTERN_GRAMMAR } from './fixture.js'
+import { buildPatternData, buildPatternEngine, PATTERN_GRAMMAR, rec } from './fixture.js'
 
 const engine = buildPatternEngine()
 const graph = /** @type {NonNullable<typeof engine.derivations>} */ (engine.derivations)
+const chart = /** @type {NonNullable<typeof engine.parses>} */ (engine.parses)
+const FUZZY_LEVELS = /** @type {const} */ (['exact', 'normal', 'loose'])
 
 /** 句型搜尋，回傳命中的記錄文字 @param {string} q @param {object} [options] */
 const docs = (q, options = {}) => {
@@ -20,9 +24,9 @@ const docs = (q, options = {}) => {
   if (r.error) throw new Error(`${q}: ${JSON.stringify(r.error)}`)
   return r.hits.map((h) => h.doc.text)
 }
-/** 命中的詞（主條件的每一格，去重排序） @param {string} q */
-const tokens = (q) => {
-  const r = engine.searchPattern(q)
+/** 命中的詞（主條件的每一格，去重排序） @param {string} q @param {string} [fuzziness] */
+const tokens = (q, fuzziness = 'normal') => {
+  const r = engine.searchPattern(q, { fuzziness: /** @type {any} */ (fuzziness) })
   if (r.error) throw new Error(`${q}: ${JSON.stringify(r.error)}`)
   return [...new Set(r.hits.flatMap((h) => h.matches.filter((m) => m.cond === 0).flatMap((m) => m.cells.map((c) => c.key))))].sort()
 }
@@ -62,7 +66,7 @@ describe('構詞樣式：寫法與解析（docs/pattern-query.md 第 3 節的對
     expect(mu).toEqual(expect.arrayContaining(['mikita', 'mukita', 'minukan', 'mineken', 'mukan', 'midemen']))
     for (const q of ['mi-…', 'm-…', 'me-…']) expect(tokens(q), q).toEqual(mu)
     const en = tokens('…-en')
-    expect(en).toEqual(['kitaun', 'midemen'])
+    expect(en).toEqual(['kitaun', 'midemen', 'pakanen'])
     for (const q of ['…-un', '…=en', '-en']) expect(tokens(q), q).toEqual(en)
   })
 
@@ -76,7 +80,8 @@ describe('構詞樣式：寫法與解析（docs/pattern-query.md 第 3 節的對
   })
 
   it('比的是詞素：pa-… 也找得到 pinakita（pa ＋ <in>）', () => {
-    expect(tokens('pa-…')).toEqual(['pakan', 'pakita', 'paputiuk', 'pinakita'])
+    // barak、bakita 是靠 b→p 音變的 pa-rak、pa-kita（標準容許少量音變）
+    expect(tokens('pa-…')).toEqual(['bakita', 'barak', 'pakan', 'pakanen', 'pakita', 'paputiuk', 'pinakita'])
   })
 
   it('引號只要那個寫法："mu"-… 不含 mikita、mineken，但含 mokan（BCDP 把 mo 分析成 mu）', () => {
@@ -93,7 +98,9 @@ describe('構詞樣式：寫法與解析（docs/pattern-query.md 第 3 節的對
 
   it('方言寫法：mo-… 依 u↔o 視為 mu-（提示）；不認得的詞綴報錯並列出最接近的', () => {
     const r = engine.searchPattern('mo-…')
-    expect(r.warnings).toEqual([expect.objectContaining({ code: 'W_AFFIX_VARIANT', params: { form: 'mo-', to: 'mu-' } })])
+    expect(r.warnings.filter((w) => w.code !== 'W_INNER_AFFIX')).toEqual([expect.objectContaining({ code: 'W_AFFIX_VARIANT', params: { form: 'mo-', to: 'mu-' } })])
+    // 改寫成不錨定時保留查詢的寫法（…-mo-…，同樣視為 mu-）
+    expect(r.warnings.find((w) => w.code === 'W_INNER_AFFIX')?.params?.query).toBe('…-mo-…')
     expect(tokens('mo-…')).toEqual(tokens('mu-…'))
     const err = engine.searchPattern('b-…').error
     expect(err).toMatchObject({ code: 'E_UNKNOWN_AFFIX', start: 0, end: 1, params: { form: 'b-', side: 'prefix' } })
@@ -104,7 +111,7 @@ describe('構詞樣式：寫法與解析（docs/pattern-query.md 第 3 節的對
     expect(engine.searchPattern('ma-…').warnings).toEqual([expect.objectContaining({ code: 'W_ALSO_CONSTRUCTION', params: { form: 'ma-', parts: 'm- ＋ <a>' } })])
   })
 
-  it('前綴的順序：子序列；環綴；重疊', () => {
+  it('環綴；重疊；兩個條件都要成立', () => {
     expect(tokens('ta-…-i')).toEqual(['takani'])
     expect(tokens('~…')).toEqual(['kikita'])
     expect(tokens('m-<in>-…-en')).toEqual([])
@@ -117,28 +124,159 @@ describe('構詞樣式：寫法與解析（docs/pattern-query.md 第 3 節的對
   })
 })
 
-describe('與 BCDP 對稱：由詞根往下與由詞往上是同一條路徑', () => {
-  it('每個詞的每個詞根：ancestors(w) 中的路徑就是 reachFrom(詞根) 中 w 的那一條；反過來也都找得到', () => {
-    let pairs = 0
-    engine.index.terms.forEach((_, w) => {
-      for (const a of graph.ancestors(w)) {
-        expect(graph.reachFrom(a.root).get(w)).toBe(a.reach)
-        pairs++
+describe('拆解表：與自動派生圖、一般搜尋的自動拆解是同一次 BCDP', () => {
+  /** @param {number} x */
+  const round = (x) => Math.round(x * 1e6) / 1e6
+
+  it('每個詞在拆解表中與 BCDP 最好的命中同分的詞庫詞根，就是自動派生圖這個詞的邊；虛擬詞根的邊也一樣', () => {
+    /** @type {Map<number, string[]>} 詞 → 自動派生圖的邊（詞根:成本） */
+    const edges = new Map()
+    for (const [root, list] of graph.children) {
+      for (const c of list) {
+        const key = `${graph.nodes[root]}:${round(graph.analyses[c.analysis].cost)}${graph.isVirtual(root) ? '*' : ''}`
+        edges.set(c.word, [...(edges.get(c.word) ?? []), key])
       }
-    })
-    for (let u = 0; u < graph.nodes.length; u++) {
-      for (const w of graph.reachFrom(u).keys()) expect(graph.ancestors(w).some((a) => a.root === u)).toBe(true)
     }
-    expect(pairs).toBeGreaterThan(20)
+    let words = 0
+    engine.index.terms.forEach((_, w) => {
+      const parses = chart.of(w)
+      const lexical = parses.filter((p) => !p.virtual)
+      const best = chart.lexicalBestOf(w)
+      const fromChart = [
+        ...lexical.filter((p) => p.cost <= best + 1e-9).map((p) => `${p.root}:${round(p.cost)}`),
+        ...parses.filter((p) => p.virtual).map((p) => `${p.root}:${round(p.cost)}*`),
+      ]
+      expect(fromChart.sort(), engine.index.terms[w]).toEqual((edges.get(w) ?? []).sort())
+      if (parses.length) words++
+    })
+    expect(words).toBeGreaterThan(20)
   })
 
-  it('構詞樣式：詞根是 … 的結果，等於每一個詞根各自寫出來的結果合起來', () => {
-    const roots = graph.nodes.filter((_, id) => graph.hasChildren(id))
-    for (const shape of [(/** @type {string} */ r) => `pa-${r}`, (r) => `mu-${r}`, (r) => `<in>${r}`, (r) => `${r}-en`, (r) => `ta-${r}-i`]) {
-      const wild = tokens(shape('…'))
-      const union = [...new Set(roots.flatMap((r) => tokens(shape(`"${r}"`))))].sort()
-      expect(union, shape('…')).toEqual(wild)
+  it('拆解表中詞庫詞根的拆法，就是一般搜尋查這個詞時自動拆解列出的那些（詞根比詞短、單一個詞）', () => {
+    const ms = /** @type {NonNullable<typeof engine.morphSearch>} */ (engine.morphSearch)
+    const level = FUZZINESS.normal
+    let checked = 0
+    engine.index.terms.forEach((w, id) => {
+      const prepared = ms.seed(ms.prepare(w, engine._lemmaMax(w, level)), engine.index)
+      const lemma = prepared ? engine._lemmaTerms(w, level, prepared, engine.index.searchChannels(prepared.channels)) : []
+      const plain = lemma.filter((t) => Array.from(t.term).length < Array.from(w).length && !t.term.includes(' ')).map((t) => `${t.term}:${round(t.distance)}`)
+      const fromChart = chart.of(id).filter((p) => !p.virtual).map((p) => `${p.root}:${round(p.cost)}`)
+      expect(fromChart.sort(), w).toEqual(plain.sort())
+      checked += plain.length
+    })
+    expect(checked).toBeGreaterThan(30)
+  })
+
+  it('詞根是單一個詞：BCDP 可以把片語「ka kita」當成 pakakita 的詞根（與 kita 同分），拆解表不收；自動派生圖照舊', () => {
+    const small = buildPatternEngine(undefined, [rec('a', 'phrase', 'ka kita'), rec('b', 'word', 'kita'), rec('c', 'word', 'pakakita')])
+    const id = small.index.dawg.lookup('pakakita')
+    const g = /** @type {NonNullable<typeof small.derivations>} */ (small.derivations)
+    expect([...g.children].filter(([, list]) => list.some((c) => c.word === id)).map(([root]) => g.nodes[root]).sort()).toEqual(['ka kita', 'kita'])
+    expect(/** @type {NonNullable<typeof small.parses>} */ (small.parses).of(id).map((p) => p.root)).toEqual(['kita'])
+  })
+
+  it('sound 是整個詞的音變：成本扣掉各步驟的成本（bakita 的 b→p）', () => {
+    const [p] = chart.of(engine.index.dawg.lookup('bakita'))
+    expect(p).toMatchObject({ root: 'kita', virtual: false })
+    expect(p.sound).toBeCloseTo(0.1)
+    expect(p.cost).toBeCloseTo(p.sound + p.steps.reduce((s, x) => s + x.cost, 0))
+  })
+})
+
+describe('構詞樣式：取哪些拆法跟著模糊程度，詞綴從最外層算起', () => {
+  it('kamikita（ka-mikita 最好、ka-mi-kita 差 0.1，像 imini）：mi-… 不中；…-mi-… 在標準、寬鬆中，精確不中', () => {
+    for (const f of FUZZY_LEVELS) expect(tokens('mi-…', f), f).not.toContain('kamikita')
+    expect(tokens('…-mi-…', 'exact')).not.toContain('kamikita')
+    expect(tokens('…-mi-…', 'normal')).toContain('kamikita')
+    expect(tokens('…-mi-…', 'loose')).toContain('kamikita')
+    for (const f of FUZZY_LEVELS) expect(tokens('ka-…', f), f).toContain('kamikita')
+  })
+
+  it('pakanen（pakan-en 最好、pa-kan-en 差 0.1）：次佳的拆法才帶 pa-，pa-… 在標準中、精確不中', () => {
+    expect(tokens('pa-…', 'exact')).not.toContain('pakanen')
+    expect(tokens('pa-…', 'normal')).toContain('pakanen')
+    expect(tokens('pa-kan', 'normal')).toContain('pakanen')
+    expect(tokens('pa-kan', 'exact')).not.toContain('pakanen')
+  })
+
+  it('bakita（只有靠 b→p 音變的 pa-kita）：精確不容許音變，不中；標準中', () => {
+    expect(tokens('pa-…', 'exact')).not.toContain('bakita')
+    expect(tokens('pa-…', 'normal')).toContain('bakita')
+  })
+
+  it('pabak（BCDP 最好的命中是 barak：與詞同長，不是拆法）：取拆法從它算起，pa-pa-rak 差 0.2，標準不中、寬鬆中；自動派生圖也不建邊', () => {
+    const id = engine.index.dawg.lookup('pabak')
+    expect(chart.of(id).map((p) => p.root)).toEqual(['rak'])
+    expect(chart.bestOf(id)).toBeCloseTo(0.2)
+    expect([...graph.children].some(([, list]) => list.some((c) => c.word === id))).toBe(false)
+    expect(tokens('pa-…', 'normal')).not.toContain('pabak')
+    expect(tokens('pa-…', 'loose')).toContain('pabak')
+  })
+
+  it('mupakita（mu-pakita、mu-pa-kita）：pa-… 不中（最外層是 mu-），…-pa-… 中；寫出詞根時也一樣', () => {
+    expect(tokens('pa-…')).not.toContain('mupakita')
+    expect(tokens('…-pa-…')).toContain('mupakita')
+    expect(tokens('pa-kita')).not.toContain('mupakita')
+    expect(tokens('…-pa-kita')).toContain('mupakita')
+    // 列出的詞綴與詞根之間可以有沒列出的：mu-kita 找到 mu-pa-kita
+    expect(tokens('mu-kita')).toContain('mupakita')
+  })
+
+  it('證據：符合條件的拆法中成本最低的；不是最好的拆法時附上最好的成本（介面標「次佳」）', () => {
+    const cell = (/** @type {string} */ q, /** @type {string} */ token) =>
+      engine.searchPattern(q).hits.flatMap((h) => h.matches.flatMap((m) => m.cells)).find((c) => c.key === token)?.evidence
+    expect(cell('…-pa-…', 'mupakita')).toMatchObject({ matchType: 'lemma', word: 'mupakita', term: 'kita', analysis: { stem: 'kita', bestCost: 0.1 } })
+    expect(/** @type {any} */ (cell('…-pa-…', 'mupakita')).analysis.cost).toBeCloseTo(0.2)
+    // 最好的拆法本身符合時，cost 等於 bestCost
+    const best = /** @type {any} */ (cell('mu-…', 'mupakita')).analysis
+    expect(best.stem).toBe('pakita')
+    expect(best.cost).toBeCloseTo(best.bestCost)
+    // 有音變的拆法：說明為前幾筆計算（與建置自動派生圖時同一個計算）
+    expect(/** @type {any} */ (cell('pa-…', 'bakita')).analysis.notes.length).toBeGreaterThan(0)
+    expect(/** @type {any} */ (cell('pa-…', 'paputiuk')).analysis.notes).toEqual([])
+  })
+
+  it('W_INNER_AFFIX：pa-… 提示改寫成 …-pa-… 多找到幾個詞形；改寫保留查詢的其他部分，點了得到的就是那些', () => {
+    const r = engine.searchPattern('pa-… yaku')
+    const hint = r.warnings.find((w) => w.code === 'W_INNER_AFFIX')
+    expect(hint).toMatchObject({ start: 0, end: 4, params: { form: 'pa-', query: '…-pa-… yaku' } })
+    const more = tokens('…-pa-…').filter((t) => !tokens('pa-…').includes(t))
+    expect(more).toEqual(['mupakita'])
+    expect(/** @type {any} */ (hint).params.count).toBe(more.length)
+    // 已經不錨定、或改寫後多不出詞形時不提示
+    expect(engine.searchPattern('…-pa-…').warnings.map((w) => w.code)).not.toContain('W_INNER_AFFIX')
+    expect(engine.searchPattern('<in>…').warnings.map((w) => w.code)).not.toContain('W_INNER_AFFIX')
+    expect(engine.searchPattern('ta-…-i').warnings.map((w) => w.code)).not.toContain('W_INNER_AFFIX')
+  })
+
+  it('詞根是 … 的結果，等於每一個詞根各自寫出來的結果合起來（三種模糊程度；同一個條件，所以一定成立）', () => {
+    const roots = [...new Set(engine.index.terms.flatMap((_, w) => chart.of(w).map((p) => p.root)))]
+    expect(roots.length).toBeGreaterThan(15)
+    const shapes = [(/** @type {string} */ r) => `pa-${r}`, (r) => `mu-${r}`, (r) => `<in>${r}`, (r) => `${r}-en`, (r) => `ta-${r}-i`, (r) => `…-pa-${r}`]
+    for (const f of FUZZY_LEVELS) {
+      for (const shape of shapes) {
+        const wild = tokens(shape('…'), f)
+        const union = [...new Set(roots.flatMap((r) => tokens(shape(`"${r}"`), f)))].sort()
+        expect(union, `${shape('…')} ${f}`).toEqual(wild)
+      }
     }
+  })
+
+  it('拆解表可以晚一點接上（網站在第一次需要時才載入 parses.json）', () => {
+    const built = buildPatternData()
+    const late = new SearchEngine({ ...built, derivations: buildDerivationGraph(built) })
+    expect(late.needsParseChart('pa-… ki _')).toBe(true)
+    expect(late.needsParseChart('yaku ka _* isiw')).toBe(false)
+    expect(late.needsParseChart('@kita')).toBe(false)
+    expect(late.needsParseChart('pa-… (')).toBe(false)
+    expect(() => late.searchPattern('pa-…')).toThrow(/parses\.json/)
+    // 不需要拆解表的查詢照常
+    expect(late.searchPattern('yaku ka _* isiw').hits).toHaveLength(4)
+    late.attachParseChart(buildParseChart(built))
+    expect(late.needsParseChart('pa-… ki _')).toBe(false)
+    expect(late.searchPattern('pa-…').hits).toEqual(engine.searchPattern('pa-…').hits)
+    // 沒有構詞規格的語言永遠不需要
+    expect(buildPatternEngine(null).needsParseChart('pa-…')).toBe(false)
   })
 })
 
@@ -179,6 +317,25 @@ describe('句、讀法、& 與 !、篩選、頻率', () => {
     expect(docs('yaku & isiw & !hapet')).toContain('yaku ka maha isiw usa humak.')
     expect(docs('ki !saw')).toEqual(expect.arrayContaining(['paputiuk ki hapuy', 'mineken ki kawas']))
     expect(docs('ki !saw')).not.toContain('mikita isiw ki saw')
+  })
+
+  it('分區：詞條（詞綴與詞）、片語、句子；各區依分數排序、各自取前 limit 筆，句子再多也不會擠掉詞條', () => {
+    const r = engine.searchPattern('pa-…')
+    expect(r.groups.map((g) => g.key)).toEqual(['entries', 'phrases', 'sentences'])
+    const entries = r.hits.filter((h) => h.group === 'entries')
+    expect(entries.map((h) => h.doc.text)).toEqual(expect.arrayContaining(['pakita', 'pinakita', 'paputiuk', 'pakan', 'barak']))
+    expect(entries.every((h) => h.doc.unit === 'word' || h.doc.unit === 'affix')).toBe(true)
+    expect(r.hits.filter((h) => h.group === 'sentences').every((h) => h.doc.unit === 'sentence')).toBe(true)
+    // 依分區排列：詞條在前
+    const order = r.hits.map((h) => ['entries', 'phrases', 'sentences'].indexOf(h.group))
+    expect(order).toEqual([...order].sort((x, y) => x - y))
+    expect(r.groups.reduce((sum, g) => sum + g.total, 0)).toBe(r.totals.hits)
+    expect(r.groups.find((g) => g.key === 'entries')?.total).toBe(entries.length)
+    // limit 是每一區的上限，總數不變
+    const one = engine.searchPattern('pa-…', { limit: 1 })
+    expect(one.hits.filter((h) => h.group === 'entries')).toHaveLength(1)
+    expect(one.hits.filter((h) => h.group === 'sentences')).toHaveLength(1)
+    expect(one.groups).toEqual(r.groups)
   })
 
   it('篩選：語言單位', () => {

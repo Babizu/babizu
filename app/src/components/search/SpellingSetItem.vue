@@ -16,6 +16,7 @@ import MetaTag from '@/components/common/MetaTag.vue'
 import { useSources } from '@/composables/useSources.js'
 import { t } from '@/i18n.js'
 import { recordRoute, unitLabel } from '@/lib/labels.js'
+import { vCardLink } from '@/lib/card-link.js'
 import HitTags from './HitTags.vue'
 import ResultCitation from './ResultCitation.vue'
 
@@ -45,13 +46,14 @@ const sharedTags = computed(() => new Set(members.value.map((/** @type {any} */ 
       <li
         v-for="m in members"
         :key="m.doc.id"
-        class="hover:bg-muted/50 relative flex items-start gap-3 rounded-md px-2 py-1.5 transition-colors"
+        v-card-link="recordRoute(m.doc.id)"
+        class="group hover:bg-muted/50 relative flex items-start gap-3 rounded-md px-2 py-1.5 transition-colors"
       >
         <div class="min-w-0 flex-1 space-y-0.5">
           <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
             <RouterLink
               :to="recordRoute(m.doc.id)"
-              class="gloss-zh min-w-0 text-[15px] after:absolute after:inset-0 hover:underline"
+              class="gloss-zh min-w-0 text-[15px] group-hover:underline"
               :aria-label="`${set.text} · ${shortTitle(m.doc.source)} · ${m.doc.zh || m.doc.en}`"
             >
               <span v-if="m.doc.zh">{{ m.doc.zh }}</span>

@@ -8,6 +8,7 @@
  *
  * 語言設定檔（search/language.json）和索引一起載入：它就是建索引時用的那一份，
  * 查詢端用它產生搜尋鍵與距離函式，結果才會和建置端一致。
+ * 拆解表（search/parses.json，句型搜尋的構詞樣式用）比較大，第一次遇到需要它的句型查詢時才載入。
  * 錯誤訊息是給開發者看的技術細節，介面會另外加上翻譯過的說明。
  */
 
@@ -18,23 +19,31 @@ import { fetchWithRetry } from '../services/fetch-retry.js'
 let engine = null
 /** @type {Promise<SearchEngine> | null} */
 let loading = null
+/** @type {{dataBase: string, version: string} | null} 資料的位置（延後載入的檔案用） */
+let source = null
+/** @type {Promise<void> | null} 拆解表載入中 */
+let parsesLoading = null
+
+/** @param {{dataBase: string, version: string}} at @param {string} path */
+async function fetchJson({ dataBase, version }, path) {
+  const res = await fetchWithRetry(`${dataBase}${path}?v=${version}`)
+  if (!res.ok) throw new Error(`Cannot load ${path} (HTTP ${res.status})`)
+  return res.json()
+}
 
 /**
  * @param {{dataBase: string, version: string}} params
  */
 async function init({ dataBase, version }) {
   if (!loading) {
+    source = { dataBase, version }
+    const at = source
     loading = (async () => {
-      const fetchJson = async (/** @type {string} */ path) => {
-        const res = await fetchWithRetry(`${dataBase}${path}?v=${version}`)
-        if (!res.ok) throw new Error(`Cannot load ${path} (HTTP ${res.status})`)
-        return res.json()
-      }
       const [docs, lexicon, profile, derivations] = await Promise.all([
-        fetchJson('search/docs.json'),
-        fetchJson('search/lexicon.json'),
-        fetchJson('search/language.json'),
-        fetchJson('search/derivations.json'),
+        fetchJson(at, 'search/docs.json'),
+        fetchJson(at, 'search/lexicon.json'),
+        fetchJson(at, 'search/language.json'),
+        fetchJson(at, 'search/derivations.json'),
       ])
       engine = new SearchEngine({ docs, lexicon, profile, derivations })
       engine.warmup()
@@ -61,8 +70,12 @@ function checklistFor({ lexicalSources }) {
 const methods = {
   /** @param {{query: string, options?: object}} p */
   search: (p) => requireEngine().search(p.query, p.options),
-  /** @param {{query: string, options?: object}} p 句型搜尋 */
-  searchPattern: (p) => requireEngine().searchPattern(p.query, p.options),
+  /** @param {{query: string, options?: object}} p 句型搜尋（有構詞樣式時先載入拆解表） */
+  searchPattern: async (p) => {
+    const ready = requireEngine()
+    if (ready.needsParseChart(p.query)) await loadParses(ready)
+    return ready.searchPattern(p.query, p.options)
+  },
   /** @param {{id: string, options?: object}} p */
   neighbors: (p) => requireEngine().neighbors(p.id, p.options),
   /** @param {{id: string}} p */
@@ -83,6 +96,18 @@ const methods = {
   checklistSentences: (p) => checklistFor(p).sentencePage(p),
 }
 
+/**
+ * 載入拆解表並接上引擎（只載一次；失敗時下次再試）。
+ * @param {SearchEngine} ready
+ */
+function loadParses(ready) {
+  if (!parsesLoading) {
+    parsesLoading = fetchJson(/** @type {NonNullable<typeof source>} */ (source), 'search/parses.json').then((data) => ready.attachParseChart(data))
+    parsesLoading.catch(() => (parsesLoading = null))
+  }
+  return parsesLoading
+}
+
 function requireEngine() {
   if (!engine) throw new Error('Search index is not loaded')
   return engine
@@ -98,7 +123,7 @@ self.addEventListener('message', async (event) => {
       if (!engine && loading) await loading
       const fn = methods[/** @type {keyof typeof methods} */ (method)]
       if (!fn) throw new Error(`Unknown method: ${method}`)
-      result = fn(params)
+      result = await fn(params)
     }
     self.postMessage({ id, result })
   } catch (error) {

@@ -6,25 +6,38 @@
  * 2. 每個詞的條件（atom）求成「詞形（搜尋鍵）→ 證據」：證據說明這個詞為什麼符合，形狀與一般搜尋例句的
  *    OccurrenceMatch 相同，介面直接用同一套說明標籤（HitTags）。
  * 3. 用每個正面條件必經的 atom 篩出候選記錄，逐筆在每一句、每一種讀法上比對（match.js）。
- * 4. 排序、語詞索引（每個命中區間左右的詞）、頻率（每一格的詞形次數）。
+ * 4. 分區（詞條、片語、句子，PATTERN_GROUPS）、排序、語詞索引（每個命中區間左右的詞）、頻率（每一格的詞形次數）。
  *
  * ## 各種詞的條件與一般搜尋的對應（兩邊用同一個函式）
  * - `kita`：依模糊程度的拼寫比對（SearchEngine._fuzzyTerms），即一般搜尋的完全相符與相近拼寫。
  * - `"kita"`：搜尋鍵完全相同。
  * - `pa…`、`…an`、`…ki…`：只看拼寫（… 是零個以上的字元）。
  * - `@kita`：一般搜尋 kita 的完全相符、相近拼寫、自動派生（_matchTerms）與確定派生（_dictionaryTokens）。
- * - 構詞樣式：自動派生圖（BCDP 為每個詞求得的最好詞根）。寫出詞根（`pa-kita`）時由詞根往下（reachFrom），
- *   詞根是 … 時由詞往上（ancestors）；兩個方向取的是同一條路徑（derivations.js），所以結果一致。
- *   路徑成本的上限與一般搜尋相同：依詞根的長度與模糊程度（SearchEngine._lemmaMax）。
+ * - 構詞樣式：拆解表（每個詞的所有 BCDP 拆法，即一般搜尋查這個詞時「自動拆解」列出的那一串，src/search/parses.js），
+ *   依模糊程度取拆法（morph.js 的 PARSE_SELECTION），再比對詞素條件（morph.js 的 satisfies）。
+ *   寫出詞根（`pa-kita`）時另外要求拆法的詞根在 kita 的詞根集合中（與一般搜尋自動派生的起點相同，derivationSeeds）。
+ *   詞根是 … 與寫出詞根用的是同一個條件，所以 `pa-…` 找到的詞，等於每個詞根 r 的 `pa-"r"` 合起來。
  */
 
 import { requiredAtoms } from './ast.js'
 import { PatternError } from './errors.js'
 import { findMatches, matchesAnywhere } from './match.js'
-import { createPatternMorphology, readingOfPath, satisfies } from './morph.js'
+import { createPatternMorphology, PARSE_SELECTION, readingOfSteps, satisfies, selectParses } from './morph.js'
 import { parsePattern } from './parser.js'
 import { segmentText } from './sentences.js'
+import { DERIVATION_MAX_COST } from '../search/derivations.js'
 import { alternativesOf, rankScore, recordScore, termScore } from '../search/scoring.js'
+
+/**
+ * 結果的分區（依記錄的語言單位）：詞條（詞綴與詞的條目）、片語、句子。各區各自排序、各自取前 limit 筆，
+ * 句子再多也不會把詞條擠出回傳的範圍；介面依這個分區顯示（與一般搜尋的「詞條」「例句」相同的意思）。
+ */
+export const PATTERN_GROUPS = Object.freeze([
+  Object.freeze({ key: 'entries', units: Object.freeze(['affix', 'word']) }),
+  Object.freeze({ key: 'phrases', units: Object.freeze(['phrase']) }),
+  Object.freeze({ key: 'sentences', units: Object.freeze(['sentence']) }),
+])
+/** @typedef {'entries' | 'phrases' | 'sentences'} PatternGroupKey */
 
 /** 命中區間最多幾個（超過時停止並標記 truncated） */
 export const MAX_MATCHES = 10000
@@ -39,7 +52,12 @@ const EPSILON = 1e-9
 /**
  * @typedef {import('../search/engine.js').OccurrenceMatch & {score: number}} PatternEvidence
  *   一個詞為什麼符合：欄位與一般搜尋例句的 OccurrenceMatch 相同（介面用同一套標籤），另附排序用的分數。
- *   word 是查詢中的寫法（構詞樣式詞根是 … 時是這個詞本身），term 是命中的詞庫詞或詞根，token 是句中的詞
+ *   word 是查詢中的寫法（構詞樣式是這個詞本身），term 是命中的詞庫詞或詞根，token 是句中的詞
+ */
+
+/**
+ * @typedef {import('../search/parses.js').ParsedAnalysis & {best: number, reading: import('./morph.js').MorphReading}} SelectedParse
+ *   依模糊程度取到的一種拆法；best 是這個詞最好的拆法的成本
  */
 
 /**
@@ -67,6 +85,7 @@ const EPSILON = 1e-9
  * @property {import('../search/format.js').DocSummary} doc
  * @property {number} score 各個正面條件最好的區間分數相加
  * @property {PatternMatch[]} matches 依條件、位置排列
+ * @property {PatternGroupKey} group 屬於哪一區（PATTERN_GROUPS，依記錄的語言單位）
  */
 
 /**
@@ -75,7 +94,8 @@ const EPSILON = 1e-9
  * @property {'pattern'} mode
  * @property {import('./errors.js').PatternIssue | null} error 查詢有錯時，其他欄位都是空的
  * @property {import('./errors.js').PatternIssue[]} warnings
- * @property {PatternHit[]} hits 依分數排序（最多 limit 筆）
+ * @property {PatternHit[]} hits 依分區（詞條、片語、句子）排列，每區內依分數排序、最多 limit 筆
+ * @property {Array<{key: PatternGroupKey, total: number}>} groups 每一區的記錄數（三區都列出，沒有命中的是 0）
  * @property {Array<{label: string, start: number, end: number, anchor: boolean}>} slots 主條件的各格（查詢中的寫法與位置；anchor：只是 ^ 或 $）
  * @property {Array<{slot: number, total: number, distinct: number, rows: Array<{form: string, count: number, docs: number}>}>} frequency
  *   主條件每一格（^ $ 除外）比到的詞形（同一格好幾個詞時以空白連接；比到零個詞時是空字串），以全部命中計算
@@ -87,7 +107,7 @@ const EPSILON = 1e-9
  * @typedef {object} PatternSearchOptions
  * @property {import('../search/engine.js').Fuzziness} [fuzziness='normal']
  * @property {import('../search/engine.js').SearchFilters} [filters]
- * @property {number} [limit=500] 最多回傳幾筆記錄
+ * @property {number} [limit=500] 每一區最多回傳幾筆記錄
  * @property {number} [explainLimit=40] 為前幾筆記錄附上模糊命中的對齊說明
  * @property {boolean} [prefilter=true] 先用必經的 atom 篩出候選記錄（只是加速，結果相同；測試時關掉來對照）
  */
@@ -100,10 +120,17 @@ export class PatternSearch {
     this._corpus = null
     /** @type {ReturnType<typeof createPatternMorphology> | null | undefined} */
     this._morphology = undefined
-    /** @type {Map<number, Array<{root: number, reach: import('../search/derivations.js').DerivedReach, reading: import('./morph.js').MorphReading}>>} 詞 → 往上的各個詞根與詞素 */
-    this._ancestors = new Map()
-    /** @type {WeakMap<object, import('./morph.js').MorphReading>} 路徑 → 詞素 */
-    this._readings = new WeakMap()
+    /** @type {Map<string, Map<string, SelectedParse[]>>} 模糊程度 → 詞 → 取到的拆法 */
+    this._selected = new Map()
+    /** @type {Map<string, import('../search/engine.js').MorphNote[]>} (詞, 詞根) → 音變說明 */
+    this._notes = new Map()
+  }
+
+  /** 拆解表換了（engine.attachParseChart）：丟掉依拆解表算的快取 */
+  reset() {
+    this._selected = new Map()
+    this._notes = new Map()
+    this._morphology = undefined
   }
 
   /**
@@ -132,9 +159,9 @@ export class PatternSearch {
   /** 構詞樣式的解析（語言設定檔沒有構詞規格時為 null） */
   get morphology() {
     if (this._morphology === undefined) {
-      const { text, metric, index, derivations } = this.engine
+      const { text, metric, index, derivations, parses } = this.engine
       /** 詞庫中的詞或虛擬詞根（構詞樣式判斷哪一段是詞根用） @param {string} key */
-      const isRoot = (key) => index.dawg.lookup(key) !== -1 || Boolean(derivations?.virtualIds.has(key))
+      const isRoot = (key) => index.dawg.lookup(key) !== -1 || Boolean(derivations?.virtualIds.has(key) || parses?.virtualIds.has(key))
       this._morphology = text.morphology ? createPatternMorphology(text.morphology.spec, text.searchKey, (a, b) => metric.distance(a, b), isRoot) : null
     }
     return this._morphology
@@ -155,6 +182,7 @@ export class PatternSearch {
       error: null,
       warnings: [],
       hits: [],
+      groups: PATTERN_GROUPS.map((g) => ({ key: g.key, total: 0 })),
       slots: [],
       frequency: [],
       totals: { hits: 0, matches: 0 },
@@ -165,7 +193,7 @@ export class PatternSearch {
     try {
       const parsed = parsePattern(q)
       response.warnings.push(...parsed.warnings)
-      compiled = this._compile(parsed, fuzziness, response.warnings)
+      compiled = this._compile(parsed, fuzziness, response.warnings, q)
     } catch (err) {
       if (!(err instanceof PatternError)) throw err
       response.error = err.toIssue()
@@ -226,13 +254,26 @@ export class PatternSearch {
       found,
       response.slots.flatMap((s, k) => (s.anchor ? [] : [k])),
     )
-    response.hits = found.slice(0, limit).map((f) => ({ doc: this.engine.doc(f.k), score: f.score, matches: f.matches }))
-    // 模糊命中的對齊說明只為前幾筆計算（同一個證據物件由所有用到它的詞共用，算一次就好）
+    // 分區：各區依分數排序（found 已排好）、各取前 limit 筆
+    const { docs } = this.engine
+    /** @type {Map<string, PatternGroupKey>} 語言單位 → 分區 */
+    const groupOfUnit = new Map(PATTERN_GROUPS.flatMap((g) => g.units.map((u) => [u, g.key])))
+    /** @param {number} k */
+    const groupOf = (k) => groupOfUnit.get(docs.units[docs.unit[k]]) ?? 'sentences'
+    response.groups = PATTERN_GROUPS.map((g) => ({ key: g.key, total: found.filter((f) => groupOf(f.k) === g.key).length }))
+    response.hits = PATTERN_GROUPS.flatMap((g) =>
+      found
+        .filter((f) => groupOf(f.k) === g.key)
+        .slice(0, limit)
+        .map((f) => ({ doc: this.engine.doc(f.k), score: f.score, matches: f.matches, group: g.key })),
+    )
+    // 模糊命中的對齊說明、構詞樣式的音變說明只為前幾筆計算（同一個證據物件由所有用到它的詞共用，算一次就好）
     for (const hit of response.hits.slice(0, explainLimit)) {
       for (const m of hit.matches) {
         for (const c of m.cells) {
           const e = c.evidence
           if (e && e.matchType === 'fuzzy' && e.distance > 0 && e.alignment === null) e.alignment = this.engine.explainNotes(e.word, e.term)
+          if (e && e.matchType === 'lemma' && e.analysis && e.analysis.notes === null) e.analysis.notes = this._notesOf(e.word, e.term)
         }
       }
     }
@@ -245,15 +286,16 @@ export class PatternSearch {
    * @param {import('./ast.js').PatternQuery} parsed
    * @param {import('../search/engine.js').Fuzziness} fuzziness
    * @param {import('./errors.js').PatternIssue[]} warnings
+   * @param {string} query 整個查詢（提示中的改寫用）
    */
-  _compile(parsed, fuzziness, warnings) {
+  _compile(parsed, fuzziness, warnings, query) {
     /** @type {Map<import('./match.js').AtomNode, Map<string, PatternEvidence> | null>} null 表示任一個詞（_） */
     const evidence = new Map()
     let morphological = false
     for (const c of parsed.conditions) {
       for (const node of atomNodes(c.body)) {
         if (node.atom.kind === 'morph' || node.atom.kind === 'family') morphological = true
-        evidence.set(node, this._evaluate(node, fuzziness, warnings))
+        evidence.set(node, this._evaluate(node, fuzziness, warnings, query))
       }
     }
     if (morphological && fuzziness === 'exact') warnings.push({ code: 'W_EXACT_MORPHOLOGY', start: 0, end: 0 })
@@ -272,9 +314,10 @@ export class PatternSearch {
    * @param {import('./match.js').AtomNode} node
    * @param {import('../search/engine.js').Fuzziness} fuzziness
    * @param {import('./errors.js').PatternIssue[]} warnings
+   * @param {string} query 整個查詢
    * @returns {Map<string, PatternEvidence> | null}
    */
-  _evaluate(node, fuzziness, warnings) {
+  _evaluate(node, fuzziness, warnings, query) {
     const atom = node.atom
     if (atom.kind === 'any') return null
     const engine = this.engine
@@ -335,75 +378,141 @@ export class PatternSearch {
       }
       return out
     }
-    // 構詞樣式
+    // 構詞樣式：每個詞依模糊程度取到的拆法中，第一個（成本最低的）符合詞素條件的
     const morphology = this.morphology
-    const graph = engine.derivations
-    if (!morphology || !graph) throw new PatternError('E_NO_MORPHOLOGY', node.start, node.end)
+    if (!morphology) throw new PatternError('E_NO_MORPHOLOGY', node.start, node.end)
+    if (!engine.parses) throw new Error('缺少拆解表（search/parses.json），請重新建置網站，或以 SearchEngine 的 parses 參數傳入')
     const req = morphology.resolve(atom.segments, warnings)
-    const nodes = graph.nodes
-    if (req.root !== null) {
-      // 寫出詞根：由詞根（與它依模糊程度的相近寫法）往下走，與一般搜尋的自動派生相同
-      const root = req.root
-      const seeds = req.rootExact ? lookupSeed(engine, root) : engine.derivationSeeds(root, fuzziness)
-      const virtual = graph.virtualIds.get(root)
-      if (virtual !== undefined) seeds.push({ id: virtual, distance: 0, term: root })
-      /** @type {Map<string, import('../search/engine.js').AlignmentNote[]>} */
-      const variantNotes = new Map()
-      for (const seed of seeds) {
-        const limit = engine._lemmaMax(nodes[seed.id], level)
-        for (const [word, reach] of graph.reachFrom(seed.id)) {
-          if (reach.cost > limit + EPSILON || !satisfies(req, this._readingOf(reach))) continue
-          const cost = Math.round((seed.distance + reach.cost) * 1e9) / 1e9
-          const term = engine.index.terms[word]
-          put(term, {
-            word: root,
-            term,
-            matchType: 'derived',
-            distance: cost,
-            analysis: engine._reachAnalysis(root, reach, seed, cost, variantNotes),
-            score: rankScore('derived', cost, 0),
-          })
-        }
-      }
-      return out
-    }
-    // 詞根是 …：每個詞往上找它的詞根（同一條路徑，見 derivations.js 的 ancestors）
+    const roots = this._rootsOf(req, fuzziness)
     for (const key of docsOf.keys()) {
-      const id = engine.index.dawg.lookup(key)
-      if (id === -1) continue
-      for (const a of this._ancestorsOf(id)) {
-        if (a.reach.cost > engine._lemmaMax(nodes[a.root], level) + EPSILON || !satisfies(req, a.reading)) continue
-        const cost = a.reach.cost
-        put(key, {
-          word: key,
-          term: nodes[a.root],
-          matchType: 'lemma',
-          distance: cost,
-          analysis: engine._reachAnalysis(key, a.reach, { term: nodes[a.root], distance: 0 }, cost),
-          score: rankScore('lemma', cost, 0),
-        })
-        break
-      }
+      const parse = this._matchParse(key, req, roots, fuzziness)
+      if (!parse) continue
+      put(key, {
+        word: key,
+        term: parse.root,
+        matchType: 'lemma',
+        distance: parse.cost,
+        analysis: {
+          stem: parse.root,
+          steps: parse.steps,
+          cost: parse.cost,
+          // 有音變時，說明只為前幾筆結果計算（search 的最後）
+          notes: parse.sound > 0 ? null : [],
+          bestCost: parse.best,
+          ...(parse.virtual ? { virtual: true } : {}),
+        },
+        score: rankScore('lemma', parse.cost + (roots?.get(parse.root) ?? 0), 0),
+      })
     }
+    this._innerAffixHint(node, req, roots, fuzziness, out, warnings, query)
     return out
   }
 
-  /** @param {import('../search/derivations.js').DerivedReach} reach */
-  _readingOf(reach) {
-    let r = this._readings.get(reach)
-    if (!r) this._readings.set(reach, (r = readingOfPath(reach.path)))
-    return r
+  /**
+   * 寫出的詞根 → 詞根集合（詞根 → 與查詢的距離）；詞根是 … 時為 null。
+   * 與一般搜尋自動派生的起點相同（derivationSeeds：依模糊程度的相近拼寫）；寫在引號中時只有它本身。
+   * @param {import('./morph.js').MorphRequirement} req
+   * @param {import('../search/engine.js').Fuzziness} fuzziness
+   * @returns {Map<string, number> | null}
+   */
+  _rootsOf(req, fuzziness) {
+    if (req.root === null) return null
+    /** @type {Map<string, number>} */
+    const roots = new Map([[req.root, 0]])
+    if (!req.rootExact) for (const seed of this.engine.derivationSeeds(req.root, fuzziness)) if (!roots.has(seed.term)) roots.set(seed.term, seed.distance)
+    return roots
   }
 
-  /** 詞往上的各個詞根，附上詞素（依路徑成本排序） @param {number} id */
-  _ancestorsOf(id) {
-    let list = this._ancestors.get(id)
+  /**
+   * 詞依模糊程度取到的拆法中，第一個（成本最低的）符合條件的；沒有就是 null。
+   * @param {string} key 詞（搜尋鍵）
+   * @param {import('./morph.js').MorphRequirement} req
+   * @param {Map<string, number> | null} roots 詞根集合（null：任意詞根）
+   * @param {import('../search/engine.js').Fuzziness} fuzziness
+   */
+  _matchParse(key, req, roots, fuzziness) {
+    for (const parse of this._parsesOf(key, fuzziness)) if ((roots === null || roots.has(parse.root)) && satisfies(req, parse.reading)) return parse
+    return null
+  }
+
+  /**
+   * 詞依模糊程度取到的拆法（依成本排序），附上詞素（依模糊程度、詞快取）。
+   * @param {string} key
+   * @param {import('../search/engine.js').Fuzziness} fuzziness
+   * @returns {SelectedParse[]}
+   */
+  _parsesOf(key, fuzziness) {
+    const level = fuzziness in PARSE_SELECTION ? fuzziness : 'normal'
+    let byWord = this._selected.get(level)
+    if (!byWord) this._selected.set(level, (byWord = new Map()))
+    let list = byWord.get(key)
     if (!list) {
-      const graph = /** @type {NonNullable<import('../search/engine.js').SearchEngine['derivations']>} */ (this.engine.derivations)
-      list = graph.ancestors(id).map((a) => ({ ...a, reading: this._readingOf(a.reach) }))
-      this._ancestors.set(id, list)
+      const engine = this.engine
+      const id = engine.index.dawg.lookup(key)
+      const chart = /** @type {NonNullable<typeof engine.parses>} */ (engine.parses)
+      const all = id === -1 ? [] : chart.of(id)
+      // best：最好的拆法（介面說明「次佳」用）；取拆法從 BCDP 最好的命中算起（bestOf，可能不是拆法）
+      const best = all.length ? all[0].cost : 0
+      list = selectParses(all, level, id === -1 ? Infinity : chart.bestOf(id)).map((x) => ({ ...x, best, reading: readingOfSteps(x.steps) }))
+      byWord.set(key, list)
     }
     return list
+  }
+
+  /**
+   * 列出的前綴或後綴只算最外層；改成不錨定（外側加 …）能多找到詞形時提示，附上改寫後的整個查詢。
+   * 改寫後的樣式照樣剖析、解析，數量用同一個比對算，所以點了提示得到的就是說的那些。
+   * @param {import('./match.js').AtomNode} node
+   * @param {import('./morph.js').MorphRequirement} req
+   * @param {Map<string, number> | null} roots
+   * @param {import('../search/engine.js').Fuzziness} fuzziness
+   * @param {Map<string, PatternEvidence>} found 原本的樣式找到的詞
+   * @param {import('./errors.js').PatternIssue[]} warnings
+   * @param {string} query
+   */
+  _innerAffixHint(node, req, roots, fuzziness, found, warnings, query) {
+    const openLeft = req.prefixes.length > 0 && !req.prefixesAnywhere
+    const openRight = req.suffixes.length > 0 && !req.suffixesAnywhere
+    if (!openLeft && !openRight) return
+    const text = `${openLeft ? '…-' : ''}${query.slice(node.start, node.end)}${openRight ? '-…' : ''}`
+    /** @type {import('./morph.js').MorphRequirement} */
+    let wider
+    try {
+      const body = parsePattern(text).conditions[0].body
+      if (body.type !== 'atom' || body.atom.kind !== 'morph') return
+      wider = /** @type {NonNullable<typeof this.morphology>} */ (this.morphology).resolve(body.atom.segments, [])
+    } catch (err) {
+      if (err instanceof PatternError) return
+      throw err
+    }
+    let count = 0
+    for (const key of this.corpus.docsOf.keys()) if (!found.has(key) && this._matchParse(key, wider, roots, fuzziness)) count++
+    if (count === 0) return
+    const form = [...(openLeft ? req.prefixes : []), ...(openRight ? req.suffixes : [])].map((g) => g.label).join(' ')
+    warnings.push({
+      code: 'W_INNER_AFFIX',
+      start: node.start,
+      end: node.end,
+      params: { form, count, query: query.slice(0, node.start) + text + query.slice(node.end) },
+    })
+  }
+
+  /**
+   * 構詞樣式命中的音變說明（與自動派生圖建置時同一個計算：BCDP 對這個詞、上限 DERIVATION_MAX_COST）。
+   * @param {string} word
+   * @param {string} root
+   */
+  _notesOf(word, root) {
+    const k = `${word}\u0000${root}`
+    let notes = this._notes.get(k)
+    if (!notes) {
+      const { morphSearch: ms, index } = this.engine
+      const prepared = ms ? ms.prepare(word, DERIVATION_MAX_COST) : null
+      const hit = prepared ? ms?.finish(prepared, index.searchChannels(ms.seed(prepared).channels), DERIVATION_MAX_COST).find((h) => h.term === root) : null
+      notes = prepared && hit && ms ? ms.notesOf(prepared, hit) : []
+      this._notes.set(k, notes)
+    }
+    return notes
   }
 
   /**
@@ -545,17 +654,6 @@ function keyOf(engine, text, at) {
   const key = engine.text.searchKey(text)
   if (!key) throw new PatternError('E_EMPTY_WORD', at.start, at.end)
   return key
-}
-
-/**
- * 詞根寫在引號中：只用這個拼寫當起點。
- * @param {import('../search/engine.js').SearchEngine} engine
- * @param {string} key
- * @returns {Array<{id: number, distance: number, term: string}>}
- */
-function lookupSeed(engine, key) {
-  const id = engine.index.dawg.lookup(key)
-  return id === -1 ? [] : [{ id, distance: 0, term: key }]
 }
 
 /** @param {string} s */

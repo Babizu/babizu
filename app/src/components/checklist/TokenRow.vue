@@ -14,6 +14,7 @@ import HitTags from '@/components/search/HitTags.vue'
 import { useSources } from '@/composables/useSources.js'
 import { t } from '@/i18n.js'
 import { formatCount, recordRoute } from '@/lib/labels.js'
+import { vCardLink } from '@/lib/card-link.js'
 import { TOKEN_KINDS } from './kinds.js'
 
 const props = defineProps({
@@ -61,9 +62,9 @@ const searchRoute = computed(() => ({ name: 'search', query: { q: props.item.ter
       </p>
       <p v-if="!item.hits.length" class="text-muted-foreground text-sm">{{ t('辭典中找不到拼寫相近的詞條，可能需要新增條目。') }}</p>
       <ul v-else class="-mx-2 space-y-0.5">
-        <li v-for="hit in item.hits" :key="hit.doc.id" class="hover:bg-muted/60 relative rounded-md px-2 py-1.5 transition-colors">
+        <li v-for="hit in item.hits" :key="hit.doc.id" v-card-link="recordRoute(hit.doc.id)" class="group hover:bg-muted/60 relative rounded-md px-2 py-1.5 transition-colors">
           <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <RouterLink :to="recordRoute(hit.doc.id)" class="native-text font-medium after:absolute after:inset-0 hover:underline">
+            <RouterLink :to="recordRoute(hit.doc.id)" class="native-text font-medium group-hover:underline">
               {{ hit.doc.text }}
             </RouterLink>
             <DialectBadge v-for="d in hit.doc.dialects" :key="d" :dialect="d" />

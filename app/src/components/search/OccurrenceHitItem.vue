@@ -9,6 +9,7 @@ import AudioButton from '@/components/common/AudioButton.vue'
 import DialectBadge from '@/components/common/DialectBadge.vue'
 import HighlightText from '@/components/common/HighlightText.vue'
 import { recordRoute } from '@/lib/labels.js'
+import { vCardLink } from '@/lib/card-link.js'
 import HitTags from './HitTags.vue'
 import ResultCitation from './ResultCitation.vue'
 
@@ -23,10 +24,10 @@ const matches = computed(() => props.hit.matches ?? [{ word: '', term: '', token
 </script>
 
 <template>
-  <article class="hover:bg-muted/50 relative flex gap-3 rounded-lg px-3 py-3 transition-colors sm:px-4">
+  <article v-card-link="recordRoute(doc.id)" class="hover:bg-muted/50 relative flex gap-3 rounded-lg px-3 py-3 transition-colors sm:px-4">
     <div class="min-w-0 flex-1 space-y-1">
       <p class="native-text text-base leading-relaxed font-medium">
-        <RouterLink :to="recordRoute(doc.id)" class="after:absolute after:inset-0">
+        <RouterLink :to="recordRoute(doc.id)">
           <HighlightText :text="doc.text" :terms="hit.terms" />
         </RouterLink>
       </p>

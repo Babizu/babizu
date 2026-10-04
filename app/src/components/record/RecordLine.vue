@@ -7,6 +7,7 @@ import AudioButton from '@/components/common/AudioButton.vue'
 import DialectBadge from '@/components/common/DialectBadge.vue'
 import MetaTag from '@/components/common/MetaTag.vue'
 import { formatTimecode, recordRoute, roleLabel } from '@/lib/labels.js'
+import { vCardLink } from '@/lib/card-link.js'
 import { cn } from '@/lib/utils'
 
 const props = defineProps({
@@ -31,9 +32,10 @@ const role = computed(() => props.record.group?.role)
 <template>
   <div
     :id="record.id"
+    v-card-link="recordRoute(record.id)"
     :class="
       cn(
-        'relative flex scroll-mt-32 items-start gap-3 rounded-md px-3 py-2 transition-colors',
+        'group relative flex scroll-mt-32 items-start gap-3 rounded-md px-3 py-2 transition-colors',
         active ? 'bg-accent ring-primary/40 ring-1' : 'hover:bg-muted/60',
       )
     "
@@ -43,7 +45,7 @@ const role = computed(() => props.record.group?.role)
       <div class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
         <RouterLink
           :to="recordRoute(record.id)"
-          :class="cn('native-text after:absolute after:inset-0 hover:underline', isHead ? 'text-base font-semibold' : 'font-medium')"
+          :class="cn('native-text group-hover:underline', isHead ? 'text-base font-semibold' : 'font-medium')"
           :aria-current="active ? 'true' : undefined"
         >
           {{ record.text }}
