@@ -8,12 +8,15 @@
  */
 
 import {
+  CostModel,
   createAnalyzer,
   createMetricFromProfile,
   createNormalizer,
   normalizerOptionsFromProfile,
   notationCharsOf,
+  RuleSet,
 } from '../fuzzy/index.js'
+import { alternationRules } from '../fuzzy/morphology.js'
 
 /**
  * 斷詞用的分隔字元：空白與中英文標點（保留撇號 ' 作為喉塞音）。
@@ -32,9 +35,9 @@ const MORPHEME_SEPARATORS = /[-=~<>]+/u
  * @property {(text: string) => string[]} tokenize 族語斷詞（含構詞部分）
  * @property {(text: string) => string[]} splitWords 只切整詞
  * @property {() => import('../fuzzy/distance.js').WeightedEditDistance} createSearchMetric
- * @property {((key: string) => import('../fuzzy/morphology.js').Analysis[]) | null} analyze
- *   去詞綴（輸入為搜尋鍵）；語言設定檔沒有 `morphology` 時為 null
- * @property {import('../fuzzy/morphology.js').Analyzer | null} morphology
+ * @property {() => import('../fuzzy/distance.js').WeightedEditDistance} createAlternationMetric
+ *   只有構詞音變的距離函式（虛擬詞根的分析用，見下方匯出的同名函式）
+ * @property {import('../fuzzy/morphology.js').Analyzer | null} morphology 構詞規格；語言設定檔沒有 `morphology` 時為 null
  */
 
 /**
@@ -96,11 +99,12 @@ export function createTextTools(profile) {
 
   /** 搜尋用的距離函式（見下方匯出的 createSearchMetric），與這裡的 searchKey 共用正規化 */
   const createSearchMetric = () => searchMetric(profile, searchKey)
+  /** 只有構詞音變的距離函式（見下方匯出的 createAlternationMetric），與這裡的 searchKey 共用正規化 */
+  const createAlternationMetric = () => alternationMetric(profile, searchKey)
 
   const morphology = profile.morphology ? createAnalyzer(profile.morphology, searchKey) : null
-  const analyze = morphology ? morphology.analyze : null
 
-  return { notationChars, baseNormalize, searchKey, tokenize, splitWords, createSearchMetric, analyze, morphology }
+  return { notationChars, baseNormalize, searchKey, tokenize, splitWords, createSearchMetric, createAlternationMetric, morphology }
 }
 
 /**
@@ -127,6 +131,34 @@ export function createSearchMetric(profile, options = {}) {
  */
 function searchMetric(profile, searchKey, { rules, costs } = {}) {
   return createMetricFromProfile(profile, { normalize: searchKey, ...(rules ? { rules } : {}), ...(costs ? { costs } : {}) })
+}
+
+/** 不可能的編輯成本：遠超過任何搜尋的上限（CostModel 只收有限數） */
+const UNREACHABLE = 1e6
+
+/**
+ * 只有構詞音變的距離函式：構詞規格的交界規則（構詞音變），沒有方言規則，一般的替換、刪除、插入都不可能。
+ *
+ * 虛擬詞根（詞根不在詞庫中）的分析用它：這樣的分析中，不在詞庫裡的部分不能再加模糊——詞幹是查詢中原樣的一段，
+ * 詞綴也必須原樣出現，只容許構詞音變（docs/bcdp.md 10.5）。正規化與詞邊界與 createSearchMetric 相同。
+ * @param {import('../fuzzy/profile.js').LanguageProfile} profile
+ * @returns {import('../fuzzy/distance.js').WeightedEditDistance}
+ */
+export function createAlternationMetric(profile) {
+  const searchKey = createNormalizer({ ...normalizerOptionsFromProfile(profile), removeChars: notationCharsOf(profile) })
+  return alternationMetric(profile, searchKey)
+}
+
+/**
+ * @param {import('../fuzzy/profile.js').LanguageProfile} profile
+ * @param {(text: string) => string} searchKey
+ */
+function alternationMetric(profile, searchKey) {
+  return createMetricFromProfile(profile, {
+    normalize: searchKey,
+    rules: RuleSet.fromTable(alternationRules(profile.morphology)),
+    costs: new CostModel({ substitute: UNREACHABLE, delete: UNREACHABLE, insert: UNREACHABLE }),
+  })
 }
 
 /** 是否含漢字 @param {string} text */

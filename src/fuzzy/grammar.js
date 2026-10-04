@@ -54,7 +54,7 @@ export const MAX_EXPANDED = 5000
 const TYPES = new Set(['prefix', 'suffix', 'infix', 'reduplication'])
 /** 文法寫法的頂層欄位；與平面清單共用的欄位（cost、alternations…）由 validateMorphology 檢查 */
 const GRAMMAR_KEYS = new Set(['morphemes', 'constructions'])
-const SHARED_KEYS = new Set(['cost', 'minStem', 'maxSteps', 'lemmaSpread', 'vowels', 'glides', 'alternations'])
+const SHARED_KEYS = new Set(['cost', 'minStem', 'maxSteps', 'lemmaSpread', 'virtualRootLengthCost', 'vowels', 'glides', 'alternations'])
 const MORPHEME_KEYS = new Set(['id', 'type', 'form', 'forms', 'pattern', 'gloss', 'cost', 'free', 'ref', 'note'])
 const CONSTRUCTION_KEYS = new Set(['id', 'sequence', 'gloss', 'cost', 'ref', 'note'])
 const hasSpace = (/** @type {string} */ s) => /\s/u.test(s)

@@ -13,11 +13,13 @@ export { buildSearchIndex } from './build.js'
 export {
   buildDerivationGraph,
   createDerivationAnalyzer,
+  createVirtualRootSearch,
   DerivationGraph,
   DERIVATIONS_FORMAT_VERSION,
   encodeDerivations,
   isVirtualRootShape,
-  VIRTUAL_ROOT_PENALTY,
+  virtualRootCost,
+  virtualRoots,
 } from './derivations.js'
 export { buildParseChart, encodeParses, ParseChart, PARSES_FORMAT_VERSION, parsedAnalysis, sortParses } from './parses.js'
 export { SearchEngine, FUZZINESS } from './engine.js'

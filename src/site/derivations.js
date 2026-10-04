@@ -40,9 +40,12 @@ export async function buildDerivations({ lexicon, profile, count, cacheDir }) {
   } catch {
     // 沒有快取
   }
-  // 第 1 階段（詞庫中的詞根）平行計算；第 2 階段（虛擬詞根）要看全部的邊，只用構詞分析器，在這裡算
-  const { edges, parses: all, bests } = profile.morphology ? await analyzeParallel(lexicon, profile, count) : { edges: [], parses: [], bests: [] }
-  const virtual = profile.morphology ? createDerivationAnalyzer({ lexicon, profile }).virtual(edges) : []
+  // 第 1 階段（詞庫中的詞根、拆解表、虛擬詞根的候選）平行計算；第 2 階段要看全部的邊（詞本身是別的詞的詞根時不往上拆），
+  // 只過濾候選，在這裡做
+  const { edges, parses: all, bests, virtual: candidates } = profile.morphology
+    ? await analyzeParallel(lexicon, profile, count)
+    : { edges: [], parses: [], bests: [], virtual: [] }
+  const virtual = profile.morphology ? createDerivationAnalyzer({ lexicon, profile }).virtual(edges, candidates) : []
   const data = encodeDerivations(mergeEdges(edges, virtual), count)
   const parses = encodeParses(all, virtual, bests, count)
   await mkdir(cacheDir, { recursive: true })
@@ -71,7 +74,7 @@ async function analysisSources() {
 async function analyzeParallel(lexicon, profile, count) {
   const chunks = []
   for (let from = 0; from < count; from += CHUNK) chunks.push({ from, to: Math.min(count, from + CHUNK) })
-  /** @type {Array<{edges: any[], parses: any[], bests: Array<[number, number]>}>} */
+  /** @type {Array<{edges: any[], parses: any[], bests: Array<[number, number]>, virtual: any[]}>} */
   const results = new Array(chunks.length)
   let next = 0
   const threads = Math.max(1, Math.min(availableParallelism() - 1, chunks.length))
@@ -98,5 +101,10 @@ async function analyzeParallel(lexicon, profile, count) {
         }),
     ),
   )
-  return { edges: results.flatMap((r) => r.edges), parses: results.flatMap((r) => r.parses), bests: results.flatMap((r) => r.bests) }
+  return {
+    edges: results.flatMap((r) => r.edges),
+    parses: results.flatMap((r) => r.parses),
+    bests: results.flatMap((r) => r.bests),
+    virtual: results.flatMap((r) => r.virtual),
+  }
 }

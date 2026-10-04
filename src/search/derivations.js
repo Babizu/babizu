@@ -12,16 +12,19 @@
  * - 只取最好的詞根、允許遞移：比收下所有詞根雜訊少得多，召回幾乎一樣（研究紀錄的評估）。
  *
  * ## 虛擬詞根：詞庫中沒有的共同詞根
- * 詞根不在詞庫中時，BCDP 兩個方向都找不到：查 binubuer（b<in>ubuer）找不到 mabubuer（ma-bubuer），
- * 因為兩者共同的詞根 bubuer 不是任何記錄的詞形。所以建置時另外以構詞分析器（精確的列舉，不含方言音變）
- * 拆出詞庫外的詞幹，符合三個條件時記一條邊 w → 虛擬詞根 v：
- * 1. **詞庫裡沒有同樣好的詞根**：v 的成本加上 `VIRTUAL_ROOT_PENALTY` 仍比 BCDP 在詞庫中最好的詞根便宜
- *    （沒有詞庫詞根時一律成立）。所以原本的邊一條都不動，只在詞庫解釋不了的地方補上；
- * 2. **形狀像一個詞根**（`isVirtualRootShape`）：至少兩個元音、比 minStem 長，太短的詞幹容易巧合相同；
- * 3. **本身是「根」**：v 不能再拆出詞庫中的詞（mabaketan 拆出的 baketan、mabaket 只是 baket 加上一個詞綴，不算）；
- * 4. 只取這個詞成本最低的虛擬詞根（同分的都取）；
- * 5. **w 本身不是別的詞的詞根**：自動派生圖中有詞以 w 為最好的詞根，或辭典標明某詞 < w 時，w 就是根，
- *    不再往上拆（samian 是 masamian、musamian 的詞根，不拆成 sa- ＋ mian）。所以要先算完所有詞庫詞根的邊。
+ * 詞根不在詞庫中時，在詞圖上走訪找不到它：查 binubuer（b<in>ubuer）找不到 mabubuer（ma-bubuer），
+ * 因為兩者共同的詞根 bubuer 不是任何記錄的詞形。所以同一個 BCDP 也求「詞庫外的詞根」（`virtualRoots`，docs/bcdp.md 10.5）：
+ * - **字面**：詞根是詞中原樣的一段（morph-search.js 的 openStems，成本直接由交界列讀出），分析中的詞綴也必須原樣出現，
+ *   只容許構詞音變（只有構詞音變的距離函式，text.js 的 createAlternationMetric）。不在詞庫裡的部分不能再加模糊，
+ *   否則會發明詞根（abuk → a- ＋ rabuk）與同根；
+ * - **最小描述長度**：詞庫中的詞根只要指出是哪一個，詞庫外的要逐字寫出來，所以分析的分數是
+ *   成本 ＋ `virtualRootLengthCost` × 詞根長度（`virtualRootCost`）。分數比 BCDP 在詞庫中最好的詞根的成本低才成立
+ *   （原本的邊一條都不動，只在詞庫解釋不了的地方補上），取分數最低的（同分的都取）。長的詞庫外詞根常常是沒有認出的組合
+ *   （pinahazab ＝ pina- ＋ hazap），自然輸給詞庫的分析；分數相同的拆法取剝得最乾淨的（maa- ＋ exet~ ＋ exet，不是 exetexet）；
+ * - **形狀像一個詞根**（`isVirtualRootShape`）：至少兩個元音、比 minStem 長，太短的詞幹容易巧合相同；
+ * - **w 本身不是別的詞的詞根**：自動派生圖中有詞以 w 為最好的詞根，或辭典標明某詞 < w 時，w 就是根，
+ *   不再往上拆（samian 是 masamian、musamian 的詞根，不拆成 sa- ＋ mian）。所以要知道所有詞庫詞根的邊：
+ *   候選與詞庫詞根的邊在第 1 階段一起（平行）算，第 2 階段只用這個條件過濾。
  * 查詢時以**同一個函式、同樣的條件**拆查詢本身（`virtualRoots`，詞庫中最好的詞根取自動拆解的結果）：
  * masamian 的自動拆解是 ma- ＋ samian，詞庫已經解釋得了，不再拆成 masa- ＋ mian。拆出的虛擬詞根往下走，
  * 找到的是與查詢推定同一個詞根的詞（命中方式 sibling，介面標「自動同根」）。虛擬詞根本身不是結果。
@@ -54,10 +57,34 @@ export const DERIVATIONS_FORMAT_VERSION = 2
 export const DERIVATION_MAX_COST = 1
 
 /**
- * 經過虛擬詞根的代價：詞庫中沒有這個詞根，推定的把握較小。建置時虛擬詞根要比詞庫中的詞根好這麼多才建立；
- * 查詢時經過虛擬詞根的命中加上一次（查詢 → 虛擬詞根 → 詞，只算一次）
+ * 詞庫詞根的自動同根：兩條邊（查詢 → 詞根、詞根 → 同根詞）的音變上限（成本扣掉步驟成本）。
+ * 與句型搜尋取拆法的音變上限（pattern/morph.js 的 PARSE_SELECTION，精確與標準）相同：音變多的拆法多半是巧合，
+ * 兩條巧合的邊接起來更不可靠（短的詞根 lat 收了 alasay、balas 這類巧合的子詞）
  */
-export const VIRTUAL_ROOT_PENALTY = 0.1
+export const SIBLING_MAX_SOUND = 0.2
+
+/** 一個分析的音變（成本扣掉步驟成本） @param {{cost: number, steps: Array<{cost: number}>}} a */
+export const soundOf = (a) => Math.max(0, roundCost(a.cost - a.steps.reduce((x, s) => x + s.cost, 0)))
+
+/**
+ * 經過虛擬詞根的代價（最小描述長度）：詞庫中沒有這個詞根，要逐字寫出來，每個字元 `virtualRootLengthCost`。
+ * 建置時虛擬詞根的分析加上它仍比詞庫中最好的詞根便宜才成立；查詢時經過虛擬詞根的命中加上一次
+ * （查詢 → 虛擬詞根 → 詞，只算一次）。
+ * @param {string} stem
+ * @param {{virtualRootLengthCost: number}} spec 構詞規格（分析器的 spec）
+ */
+export function virtualRootCost(stem, spec) {
+  return roundCost(spec.virtualRootLengthCost * Array.from(stem).length)
+}
+
+/**
+ * 虛擬詞根用的構詞搜尋：只有構詞音變的距離函式上的 BCDP（詞綴必須原樣出現；詞根由 openStems 給）。
+ * @param {import('./text.js').TextTools} text
+ * @param {FuzzyIndex} index 詞庫（虛擬詞根不能是詞庫中的詞）
+ */
+export function createVirtualRootSearch(text, index) {
+  return createMorphSearch({ analyzer: /** @type {import('../fuzzy/morphology.js').Analyzer} */ (text.morphology), metric: text.createAlternationMetric(), index })
+}
 
 /**
  * 詞幹的形狀像不像一個詞根（虛擬詞根的條件）：比 minStem 長，而且至少兩個元音。
@@ -95,8 +122,9 @@ export function isVirtualRootShape(stem, spec) {
 /**
  * 建立「求最好的詞根」的分析器，分兩個階段：
  * 1. `analyze(from, to)`：詞庫中編號在 [from, to) 的詞，BCDP 在詞庫中最好的詞根（每個詞各自算，可以切塊平行執行，
- *    src/site/derivations.js；各塊的結果依詞編號接起來，與一次算完相同）；
- * 2. `virtual(edges)`：拿第 1 階段全部的邊，求虛擬詞根的邊（條件 5 要知道哪些詞是別的詞的詞根）。
+ *    src/site/derivations.js；各塊的結果依詞編號接起來，與一次算完相同）。`analyzeAll` 另外收下拆解表與虛擬詞根的候選；
+ * 2. `virtual(edges, candidates)`：拿第 1 階段全部的邊，過濾虛擬詞根的候選（詞本身是別的詞的詞根時不往上拆，
+ *    要知道全部的邊）。沒有候選時這裡現算（單執行緒）。
  * @param {{lexicon: import('../fuzzy/fuzzy-index.js').SerializedIndex, profile: import('../fuzzy/profile.js').LanguageProfile}} input
  */
 export function createDerivationAnalyzer({ lexicon, profile }) {
@@ -105,6 +133,7 @@ export function createDerivationAnalyzer({ lexicon, profile }) {
   const index = FuzzyIndex.deserialize(lexicon, metric)
   const analyzer = text.morphology
   const search = analyzer ? createMorphSearch({ analyzer, metric, index }) : null
+  const open = analyzer ? createVirtualRootSearch(text, index) : null
   return {
     /** 詞圖的詞數 */
     count: index.size,
@@ -113,20 +142,21 @@ export function createDerivationAnalyzer({ lexicon, profile }) {
      * @param {number} [to]
      * @returns {DerivationEdge[]} 依詞編號排序
      */
-    analyze: (from = 0, to = Infinity) => (search ? analyzeRange(index, search, from, to).edges : []),
+    analyze: (from = 0, to = Infinity) => (search ? analyzeRange(index, search, null, from, to).edges : []),
     /**
-     * 同 analyze，另外收下拆解表的分析（每個候選詞根一個，見 parses.js）。
+     * 同 analyze，另外收下拆解表的分析（每個候選詞根一個，見 parses.js）與虛擬詞根的候選（還沒過濾條件「詞本身不是根」）。
      * @param {number} [from]
      * @param {number} [to]
-     * @returns {{edges: DerivationEdge[], parses: DerivationEdge[], bests: Array<[number, number]>}} 都依詞編號排序；
+     * @returns {{edges: DerivationEdge[], parses: DerivationEdge[], bests: Array<[number, number]>, virtual: DerivationEdge[]}} 都依詞編號排序；
      *   bests 是 BCDP 最好的命中不是拆法的詞（詞根不比詞短或含空白）與那個命中的成本（parses.js 的 best）
      */
-    analyzeAll: (from = 0, to = Infinity) => (search ? analyzeRange(index, search, from, to) : { edges: [], parses: [], bests: [] }),
+    analyzeAll: (from = 0, to = Infinity) => (search ? analyzeRange(index, search, open, from, to) : { edges: [], parses: [], bests: [], virtual: [] }),
     /**
      * @param {DerivationEdge[]} edges 第 1 階段全部的邊
+     * @param {DerivationEdge[]} [candidates] 第 1 階段的虛擬詞根候選（analyzeAll 的 virtual）；省略時現算
      * @returns {DerivationEdge[]} 虛擬詞根的邊，依詞編號排序
      */
-    virtual: (edges) => (analyzer ? virtualEdges(index, analyzer, edges) : []),
+    virtual: (edges, candidates) => (open ? virtualEdges(index, open, edges, candidates) : []),
   }
 }
 
@@ -143,31 +173,34 @@ export function isLexicalRoot(index, id, hasChildren) {
 }
 
 /**
- * 第 2 階段：每個詞的虛擬詞根（條件見檔頭）。
+ * 第 2 階段：虛擬詞根的邊（條件見檔頭）。候選（第 1 階段，每個詞各自算）只差「詞本身不是別的詞的詞根」這個條件，
+ * 它要知道全部的邊，在這裡過濾。沒有給候選時現算。
  * @param {FuzzyIndex} index
- * @param {import('../fuzzy/morphology.js').Analyzer} analyzer
+ * @param {ReturnType<typeof createMorphSearch>} open 虛擬詞根用的構詞搜尋（createVirtualRootSearch）
  * @param {DerivationEdge[]} edges 詞庫詞根的邊
+ * @param {DerivationEdge[]} [candidates]
  * @returns {DerivationEdge[]}
  */
-function virtualEdges(index, analyzer, edges) {
-  /** @type {Map<number, number>} 詞 → 詞庫中最好的詞根的成本 */
-  const best = new Map()
+function virtualEdges(index, open, edges, candidates) {
   /** @type {Set<number>} 是別的詞的詞根的詞 */
   const roots = new Set()
-  for (const e of edges) {
-    if (typeof e.root !== 'number') continue
-    best.set(e.word, Math.min(best.get(e.word) ?? Infinity, e.analysis.cost))
-    roots.add(e.root)
+  for (const e of edges) if (typeof e.root === 'number') roots.add(e.root)
+  if (!candidates) {
+    /** @type {Map<number, number>} 詞 → 詞庫中最好的詞根的成本 */
+    const best = new Map()
+    for (const e of edges) if (typeof e.root === 'number') best.set(e.word, Math.min(best.get(e.word) ?? Infinity, e.analysis.cost))
+    candidates = index.terms.flatMap((w, word) => virtualCandidates(w, word, open, index, best.get(word) ?? Infinity))
   }
-  /** @type {DerivationEdge[]} */
-  const out = []
-  index.terms.forEach((w, word) => {
-    if (isLexicalRoot(index, word, (id) => roots.has(id))) return
-    for (const v of virtualRoots(w, analyzer, index, best.get(word) ?? Infinity)) {
-      out.push({ word, root: v.stem, analysis: { cost: roundCost(v.cost), steps: v.steps, notes: [] } })
-    }
-  })
-  return out
+  return candidates.filter((e) => !isLexicalRoot(index, e.word, (id) => roots.has(id)))
+}
+
+/**
+ * 一個詞的虛擬詞根寫成邊（還沒過濾「詞本身不是根」）
+ * @param {string} w @param {number} word @param {ReturnType<typeof createMorphSearch>} open @param {FuzzyIndex} index @param {number} lexiconBest
+ * @returns {DerivationEdge[]}
+ */
+function virtualCandidates(w, word, open, index, lexiconBest) {
+  return virtualRoots(w, open, index, lexiconBest).map((v) => ({ word, root: v.stem, analysis: { cost: v.cost, steps: v.steps, notes: v.notes } }))
 }
 
 /**
@@ -182,10 +215,11 @@ export function mergeEdges(lexical, virtual) {
 /**
  * @param {FuzzyIndex} index
  * @param {ReturnType<typeof createMorphSearch>} search
+ * @param {ReturnType<typeof createMorphSearch> | null} open 虛擬詞根用的構詞搜尋（null：不求虛擬詞根）
  * @param {number} from
  * @param {number} to
  */
-function analyzeRange(index, search, from, to) {
+function analyzeRange(index, search, open, from, to) {
   const terms = index.terms
   /** @type {DerivationEdge[]} 自動派生圖的邊 */
   const edges = []
@@ -193,13 +227,16 @@ function analyzeRange(index, search, from, to) {
   const parses = []
   /** @type {Array<[number, number]>} 拆解表：BCDP 最好的命中不是拆法（詞根不比詞短或含空白）的詞，與那個命中的成本 */
   const bests = []
+  /** @type {DerivationEdge[]} 虛擬詞根的候選 */
+  const virtual = []
   for (let word = from; word < Math.min(to, terms.length); word++) {
-    const a = analyzeWord(terms[word], index, search)
+    const a = analyzeWord(terms[word], index, search, true, open)
     for (const e of a.edges) edges.push({ word, ...e })
     for (const p of a.parses) parses.push({ word, ...p })
+    for (const v of a.virtual) virtual.push({ word, root: v.stem, analysis: { cost: v.cost, steps: v.steps, notes: v.notes } })
     if (a.best !== null) bests.push([word, a.best])
   }
-  return { edges, parses, bests }
+  return { edges, parses, bests, virtual }
 }
 
 /**
@@ -209,11 +246,14 @@ function analyzeRange(index, search, from, to) {
  * @param {FuzzyIndex} index
  * @param {ReturnType<typeof createMorphSearch>} search
  * @param {boolean} [withNotes] 自動派生圖的邊附上音變說明（句型搜尋不需要）
- * @returns {{edges: Array<{root: number, analysis: DerivationAnalysis}>, parses: Array<{root: number, analysis: DerivationAnalysis}>, best: number | null}}
+ * @param {ReturnType<typeof createMorphSearch> | null} [open] 虛擬詞根用的構詞搜尋（createVirtualRootSearch；省略時不求虛擬詞根）
+ * @returns {{edges: Array<{root: number, analysis: DerivationAnalysis}>, parses: Array<{root: number, analysis: DerivationAnalysis}>, best: number | null,
+ *   virtual: ReturnType<typeof virtualRoots>}}
  *   edges 是自動派生圖的邊（BCDP 成本最低的詞庫詞根，同分全收，詞根比詞短）；parses 是拆解表（每個候選詞根，
- *   詞根比詞短、是單一個詞）；best 是 BCDP 最好的命中不是拆法時（詞根不比詞短或含空白）那個命中的成本，否則 null
+ *   詞根比詞短、是單一個詞）；best 是 BCDP 最好的命中不是拆法時（詞根不比詞短或含空白）那個命中的成本，否則 null；
+ *   virtual 是虛擬詞根（virtualRoots，詞庫中最好的詞根取 edges 的成本；還沒過濾「詞本身不是根」）
  */
-export function analyzeWord(w, index, search, withNotes = true) {
+export function analyzeWord(w, index, search, withNotes = true, open = null) {
   const length = Array.from(w).length
   /** @type {Array<{root: number, analysis: DerivationAnalysis}>} */
   const edges = []
@@ -232,38 +272,48 @@ export function analyzeWord(w, index, search, withNotes = true) {
     const notes = withNotes ? search.notesOf(/** @type {NonNullable<typeof prepared>} */ (prepared), hit) : []
     edges.push({ root, analysis: { cost: roundCost(hit.distance), steps: hit.steps, notes } })
   }
-  return { edges, parses, best }
+  const virtual = open ? virtualRoots(w, open, index, edges.length ? edges[0].analysis.cost : Infinity) : []
+  return { edges, parses, best, virtual }
 }
 
 /**
- * 一個詞的虛擬詞根：構詞分析器拆出的、不在詞庫中、形狀像詞根、本身再拆不出詞庫中的詞的詞幹，
- * 成本加上 VIRTUAL_ROOT_PENALTY 仍比詞庫中最好的詞根（lexiconBest）便宜的，取成本最低的幾個（同分全收）。
- * 分析器是精確的列舉（構詞音變算在步驟裡，沒有方言音變），成本就是步驟成本的和。
+ * 一個詞的虛擬詞根（條件見檔頭）：同一個 BCDP 的字面開放詞幹（open.openStems），詞綴必須原樣出現（open 只有構詞音變），
+ * 詞根比詞短、不在詞庫中、形狀像詞根；分數（成本 ＋ virtualRootCost）比詞庫中最好的詞根（lexiconBest）便宜的，
+ * 取分數最低的（同分全收）。成本是步驟成本加上構詞音變（BCDP 的成本），不含 virtualRootCost。
  * @param {string} w
- * @param {import('../fuzzy/morphology.js').Analyzer} analyzer
- * @param {FuzzyIndex} index
- * @param {number} lexiconBest
+ * @param {ReturnType<typeof createMorphSearch>} open 虛擬詞根用的構詞搜尋（createVirtualRootSearch）
+ * @param {FuzzyIndex} index 詞庫
+ * @param {number} lexiconBest BCDP 在詞庫中最好的詞根的成本（沒有時 Infinity）
+ * @returns {Array<{stem: string, cost: number, steps: import('../fuzzy/morph-search.js').MorphStepHit[], notes: DerivationAnalysis['notes']}>}
+ *   notes 是構詞音變的說明（成本 ＝ 步驟成本 ＋ notes 的成本）
  */
-export function virtualRoots(w, analyzer, index, lexiconBest) {
+export function virtualRoots(w, open, index, lexiconBest) {
   if (w.includes(' ')) return []
+  const spec = open.spec
   const length = Array.from(w).length
-  const candidates = analyzer
-    .analyze(w)
-    .filter(
-      (a) =>
-        a.steps.length > 0 &&
-        Array.from(a.stem).length < length &&
-        a.cost + VIRTUAL_ROOT_PENALTY < lexiconBest - EPSILON &&
-        isVirtualRootShape(a.stem, analyzer.spec) &&
-        index.dawg.lookup(a.stem) === -1 &&
-        !analyzer.analyze(a.stem).some((b) => index.dawg.lookup(b.stem) !== -1),
+  // 詞根至少 minStem ＋ 1 個字元（形狀），所以成本超過這個上限的分析分數不可能比詞庫的好
+  const bound = Math.min(DERIVATION_MAX_COST, lexiconBest - spec.virtualRootLengthCost * (spec.minStem + 1))
+  if (bound < 0) return []
+  const prepared = open.prepare(w, DERIVATION_MAX_COST)
+  if (!prepared) return []
+  const keep = (/** @type {string} */ v) => Array.from(v).length < length && index.dawg.lookup(v) === -1 && isVirtualRootShape(v, spec)
+  const results = open.openStems(prepared, { keep, bound })
+  /** @type {Map<string, number>} 詞幹 → 分數 */
+  const score = new Map()
+  for (const list of results) for (const r of list) score.set(r.term, Math.min(score.get(r.term) ?? Infinity, r.distance + virtualRootCost(r.term, spec)))
+  const ok = [...score].filter(([, x]) => x < lexiconBest - EPSILON)
+  if (ok.length === 0) return []
+  const min = Math.min(...ok.map(([, x]) => x))
+  const chosen = new Set(ok.filter(([, x]) => x <= min + EPSILON).map(([v]) => v))
+  // 說明：每個選到的詞根取成本最低的分析，同分依 finish 的規則選一種拆法
+  return open
+    .finish(
+      prepared,
+      results.map((list) => list.filter((r) => chosen.has(r.term))),
+      DERIVATION_MAX_COST,
     )
-  if (candidates.length === 0) return []
-  const min = Math.min(...candidates.map((a) => a.cost))
-  /** @type {Map<string, {stem: string, cost: number, steps: any[]}>} 同一個詞幹只留一種拆法（第一個，與分析器的順序相同） */
-  const out = new Map()
-  for (const a of candidates) if (a.cost <= min + EPSILON && !out.has(a.stem)) out.set(a.stem, { stem: a.stem, cost: a.cost, steps: [...a.steps] })
-  return [...out.values()]
+    .filter((h) => chosen.has(h.term))
+    .map((h) => ({ stem: h.term, cost: h.distance, steps: h.steps, notes: open.notesOf(prepared, h) }))
 }
 
 /**
@@ -391,6 +441,29 @@ export class DerivationGraph {
   /** 有沒有詞以這個節點為詞根 @param {number} id */
   hasChildren(id) {
     return (this.children.get(id)?.length ?? 0) > 0
+  }
+
+  /**
+   * 起點的直接子詞（以起點為最好詞根的詞），只取音變不超過 maxSound 的邊；起點距離加上邊的成本不超過 maxPath。
+   * 同一個詞由幾個起點走到時取總分最小的。詞庫詞根的自動同根用：同根就是同一個詞根的直接子詞，不含孫輩。
+   * @param {Array<{id: number, distance: number}>} seeds
+   * @param {{maxPath: number, maxSound: number}} options
+   * @returns {DerivedReach[]} 依總分排序（同分依詞編號），不含起點本身
+   */
+  childrenOf(seeds, { maxPath, maxSound }) {
+    /** @type {Map<number, DerivedReach>} */
+    const best = new Map()
+    const seedIds = new Set(seeds.map((s) => s.id))
+    seeds.forEach((s, k) => {
+      for (const c of this.children.get(s.id) ?? []) {
+        const analysis = this.analyses[c.analysis]
+        const cost = roundCost(s.distance + analysis.cost)
+        if (seedIds.has(c.word) || soundOf(analysis) > maxSound + EPSILON || cost > maxPath + EPSILON) continue
+        const prev = best.get(c.word)
+        if (!prev || cost < prev.cost - EPSILON) best.set(c.word, { word: c.word, cost, seed: k, path: [{ word: c.word, root: s.id, analysis }] })
+      }
+    })
+    return [...best.values()].sort((a, b) => a.cost - b.cost || a.word - b.word)
   }
 
   /**

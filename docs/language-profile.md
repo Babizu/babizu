@@ -112,7 +112,10 @@
 - 音變以**整個詞**計算：同一套方言規則套在「詞綴 · 詞根 · 詞綴」接起來的字串上，可以跨越詞素交界。`takitaw`（ta- ＋ kita ＋ -aw）的 a｜a 由規則 aa → a 處理，`tau'alawan`（tau- ＋ alaw ＋ -an）交界上的喉塞音由詞首規則 ' → ∅ 處理，都不必在詞綴清單中另列異體。
 - **自動派生**（還原詞綴）：查詞根，找到詞庫與例句中演算法推定由它衍生的詞，包括中綴、重疊形式、方言變體，以及派生詞的派生詞。例如查 `baket` 得到 `binaket`（`b<in>aket`）。建置時由 BCDP 算好（自動派生圖，[bcdp.md](bcdp.md) 第 10 節）。
 
-兩者都是演算法推定的，介面上標「自動拆解」「自動派生」；辭典標註的構詞關係（詞條家族、`<`）另外標「確定拆解」「確定派生」「確定同根」，不受這裡的規格影響。
+- **自動同根**：查詢與詞庫的詞推定來自同一個詞根，先往上到查詢的詞根、再往下找到。詞根可以在詞庫中（查 masamian 經 samian 找到 musamian），
+  也可以不在（虛擬詞根：查 binubuer 經 bubuer 找到 mabubuer；詞庫外的詞根依長度另加 `virtualRootLengthCost`，[bcdp.md](bcdp.md) 10.5）。
+
+三者都是演算法推定的，介面上標「自動拆解」「自動派生」「自動同根」；辭典標註的構詞關係（詞條家族、`<`）另外標「確定拆解」「確定派生」「確定同根」，不受這裡的規格影響。
 
 | 欄位                              | 預設      | 說明                                                                                    |
 | --------------------------------- | --------- | --------------------------------------------------------------------------------------- |
@@ -120,6 +123,7 @@
 | `minStem`                         | 3         | 詞根（詞庫詞）的最短長度（code point），太短的詞根容易巧合命中；見[步數預算](#步數預算) |
 | `maxSteps`                        | 3         | 前綴、後綴各自最多幾個（見[步數預算](#步數預算)），整數 0–10                            |
 | `lemmaSpread`                     | 0.6       | 自動拆解只保留成本在「最佳 ＋ lemmaSpread」之內的詞幹，控制候選數                       |
+| `virtualRootLengthCost`           | 0.03      | 詞庫外的詞根（虛擬詞根）每個字元的成本：越長越貴，長的詞庫外詞幹常常是沒有認出的組合（[bcdp.md](bcdp.md) 10.5）。預設值以巴宰–噶哈巫語的資料校準 |
 | `vowels`                          | `aeiouéə` | 元音字母，決定首輔音、中綴的位置與重疊模板                                              |
 | `glides`                          | `''`      | 可以當滑音的元音（`vowels` 的子集，巴宰語是 `iu`）；重疊型式 CGV、CVG 要用到，框架不預設 |
 | `prefixes`、`suffixes`、`infixes` | —         | 詞綴清單，見[詞綴](#詞綴)                                                               |
@@ -260,7 +264,7 @@
 
 AF.PFV 的四個形式都有證據（m<in>-、m<in>u-、m<in>i-、m<in>e-），所以引用 AF；AF.IRR 只有 m<a>-…-ay，所以引用只有 m 的 AF.m（見[編寫技巧](#編寫技巧依-bcdp-的運作原理)）。
 
-文法寫法與平面清單寫法（`prefixes`…`circumfixes`）二選一；`cost`、`minStem`、`maxSteps`、`lemmaSpread`、`vowels`、`glides`、`alternations` 兩種共用。
+文法寫法與平面清單寫法（`prefixes`…`circumfixes`）二選一；`cost`、`minStem`、`maxSteps`、`lemmaSpread`、`virtualRootLengthCost`、`vowels`、`glides`、`alternations` 兩種共用。
 
 **怎麼寫**：
 
@@ -429,13 +433,18 @@ console.table(flat.circumfixes)
 
 1. **格式**：`babizu check` 檢查整個設定檔。構詞規格的錯誤會指出欄位，例如 `morphology.reduplication[0].pattern 必須是 Ca、CV、CVV、CVCV、CVCVC、full 之一`。
 2. **單一個詞**：到演算法實驗室（`/lab`）輸入兩個詞，逐格檢查編輯距離的計算，確認規則照預期生效。
-3. **列舉式分析**：
+3. **一個詞的所有拆法**：演算法實驗室的「構詞」分頁逐步顯示 BCDP；程式裡也可以直接問。詞根不必在詞庫中時，
+   用虛擬詞根的構詞搜尋列出字面的開放詞幹（詞幹是詞中原樣的一段，詞綴原樣出現，只容許構詞音變）：
 
    ```js
-   import { createAnalyzer } from 'babizu/fuzzy'
-   const { analyze, generate } = createAnalyzer(profile.morphology)
-   analyze('binaket') // → [{ stem: 'baket', steps: [{ type: 'infix', form: 'in', … }], cost: 0.3 }, …]
-   generate('baket', [{ type: 'infix', form: 'in' }]) // → 'binaket'
+   import { FuzzyIndex } from 'babizu/fuzzy'
+   import { createTextTools, createVirtualRootSearch } from 'babizu/search'
+   const text = createTextTools(profile)
+   const open = createVirtualRootSearch(text, new FuzzyIndex(text.createSearchMetric()))
+   const prepared = open.prepare('binaket', 1)
+   open.finish(prepared, open.openStems(prepared, { keep: () => true, bound: 1 }), 1)
+   // → [{ term: 'baket', distance: 0.3, steps: [{ type: 'infix', form: 'in', … }] }, …]
+   text.morphology.generate('baket', [{ type: 'infix', form: 'in' }]) // → 'binaket'
    ```
 
 4. **整體效果**：如果資料中有標註的「衍生詞 < 詞根」，拿它們評估召回、第 1 名的比例與「其他詞幹數」（雜訊）。規格若是從這批詞對學出的，**一定要保留一部分詞對不用來學**，只拿它們評估，否則數字會偏樂觀。pazeh-kaxabu 的做法見其私有 repo 的評估工具與研究紀錄。

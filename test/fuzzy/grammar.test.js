@@ -5,16 +5,17 @@
  * 隨機規格也含展開後才有的包覆單位形狀）。這裡檢查的是展開本身：
  * - 固定的例子逐項比對；
  * - 引理：把詞素序列直接套在詞根上（這裡另外寫的具體推導），結果等於展開出的 L · op(詞根) · R，
- *   隨機的序列 × 元音開頭、輔音開頭的詞根都要成立；分析器的 generate 也要還原出同一個詞形。
+ *   隨機的序列 × 元音開頭、輔音開頭的詞根都要成立；去詞綴（字面的開放詞幹）的每個分析，generate 也要還原出同一個詞形。
  */
 
 import { describe, expect, it } from 'vitest'
-import { createAnalyzer, validateMorphology } from '../../src/fuzzy/morphology.js'
+import { validateMorphology } from '../../src/fuzzy/morphology.js'
 import { evaluate, expandGrammar } from '../../src/fuzzy/grammar.js'
 import { createCitation, createRecord, createSense } from '../../src/schema/index.js'
 import { SearchEngine, buildDerivationGraph, buildSearchIndex } from '../../src/search/index.js'
 import { PAZEH_PROFILE } from '../fixtures/pazeh.js'
 import { createRandom, pick } from './helpers.js'
+import { openAnalyzer } from './open-stems.js'
 
 /** 仿照巴宰語：主事焦點 m-／mu-／mi-／me-、非完成貌 <a>、完成貌 <in>、非實現 -ay（docs/morph-grammar.md） */
 export const GRAMMAR = {
@@ -188,12 +189,14 @@ describe('引理：展開出的 L · op(詞根) · R 等於把序列直接套在
     }
     expect(checked).toBeGreaterThan(1000)
 
-    // 分析器由展開後的項目還原：每一項的步驟加回詞根，得到同樣的詞形
-    const analyzer = createAnalyzer(GRAMMAR)
+    // 去詞綴由展開後的項目還原：沒有構詞音變的分析，步驟加回詞根得到同樣的詞形
+    const open = openAnalyzer(GRAMMAR)
+    const analyzer = open.analyzer
     for (const root of ['usa', 'baket']) {
-      for (const a of analyzer.analyze(analyzer.generate(root, [{ type: 'circumfix', form: '', left: { type: 'infix', form: 'a' }, outer: 'm', suffix: 'ay', gloss: null, cost: 0.2 }]))) {
-        expect(analyzer.generate(a.stem, [...a.steps])).toBe(analyzer.generate(root, [{ type: 'circumfix', form: '', left: { type: 'infix', form: 'a' }, outer: 'm', suffix: 'ay', gloss: null, cost: 0.2 }]))
-      }
+      const w = analyzer.generate(root, [{ type: 'circumfix', form: '', left: { type: 'infix', form: 'a' }, outer: 'm', suffix: 'ay', gloss: null, cost: 0.2 }])
+      const analyses = open.analyze(w).filter((a) => Math.abs(a.cost - a.steps.reduce((x, st) => x + st.cost, 0)) < 1e-9)
+      expect(analyses.some((a) => a.stem === root)).toBe(true)
+      for (const a of analyses) expect(analyzer.generate(a.stem, [...a.steps]), `${w} ← ${a.stem}`).toBe(w)
     }
     expect(analyzer.generate('usa', [{ type: 'circumfix', form: '', left: { type: 'infix', form: 'a' }, outer: 'm', suffix: 'ay', gloss: null, cost: 0.2 }])).toBe('mausaay')
     expect(analyzer.generate('baket', [{ type: 'circumfix', form: '', left: { type: 'infix', form: 'a' }, outer: 'm', suffix: 'ay', gloss: null, cost: 0.2 }])).toBe('mbaaketay')

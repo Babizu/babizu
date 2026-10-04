@@ -100,9 +100,10 @@ export function recordScore(score, depth = 0) {
 /**
  * 同一個詞同時有構詞命中 m（自動拆解、自動派生、自動同根）與原本的命中 prev 時，留下哪一個。
  *
- * - 原本是開頭相符或包含：一律改以構詞命中呈現（附上拆解或派生的說明），分數取兩者較好的。
- * - 自動同根只補上原本沒有的詞，不取代其他命中（模糊、自動拆解、自動派生）：它經過詞庫中沒有的詞根，
- *   是把握最小的一種；加上它之後，原本的結果一筆都不變。
+ * - 自動同根只補上原本沒有的詞，不取代任何其他命中（模糊、開頭相符、包含、自動拆解、自動派生）：它要先往上到查詢的詞根
+ *   再往下，是把握最小的一種，而且排在所有原本的命中之後（siblingTier）；取代原本的命中等於把它擠到最後。
+ *   加上它之後，原本的結果一筆都不變。
+ * - 原本是開頭相符或包含：一律改以構詞命中（自動拆解、自動派生）呈現（附上說明），分數取兩者較好的。
  *   開頭相符只看字串，BCDP 在模糊程度之內也分析得出來時，說明比「開頭相符」有用，名次也不該因此變差。
  * - 原本是模糊命中：取分數較好的一種；同分時模糊命中優先（直接相符）。
  *   不能只看命中方式：詞根落在模糊門檻內時（查 parazem，razem 的模糊距離 1.2 在門檻 1.25 內），
@@ -122,8 +123,9 @@ export function mergeMorphMatch(m, prev, key) {
   const b = termScore(prev, key)
   /** @param {T} winner @param {T} loser @param {Partial<Scored>} [patch] */
   const keep = (winner, loser, patch = {}) => ({ ...winner, ...patch, others: [...(winner.others ?? []), { ...loser, others: undefined }, ...(loser.others ?? [])] })
+  if (m.matchType === 'sibling') return keep(prev, m)
   if (PARTIAL.has(prev.matchType)) return keep(m, prev, { score: Math.min(a, b) })
-  if (m.matchType === 'sibling' || a >= b - EPSILON) return keep(prev, m)
+  if (a >= b - EPSILON) return keep(prev, m)
   return keep(m, prev)
 }
 
@@ -191,12 +193,20 @@ export function replacesRecordHit(hit, prev, compare) {
 }
 
 /**
- * 詞條命中的排序：分數，再依命中方式、詞長、命中身分、角色、長度。
+ * 自動同根（matchType sibling）排在其他命中之後：同根詞的詞條與例句都列，但不擠掉原本的命中
+ * （詞庫中常用詞根的同根詞可以出現在幾百句例句中；研究紀錄 U.21）。分數只在同一層之內比較。
+ * @param {{matchType: MatchType}} h
+ */
+export const siblingTier = (h) => (h.matchType === 'sibling' ? 1 : 0)
+
+/**
+ * 詞條命中的排序：自動同根在後（siblingTier），再依分數、命中方式、詞長、命中身分、角色、長度。
  * @param {{score: number, matchType: MatchType, term: string, kind: keyof typeof KIND_RANK, doc: {role: string, text: string, index: number}}} a
  * @param {typeof a} b
  */
 export function compareHits(a, b) {
   return (
+    siblingTier(a) - siblingTier(b) ||
     a.score - b.score ||
     MATCH_TYPE_RANK[a.matchType] - MATCH_TYPE_RANK[b.matchType] ||
     a.term.length - b.term.length ||
@@ -208,13 +218,14 @@ export function compareHits(a, b) {
 }
 
 /**
- * 例句命中的排序：分數（各查詢詞相加），再依最弱的命中方式、距離、句長。
- * 與詞條同一套分數；例句沒有角色與命中身分之分。
+ * 例句命中的排序：自動同根在後（siblingTier；matchType 是句中最弱的命中方式），再依分數（各查詢詞相加）、
+ * 最弱的命中方式、距離、句長。與詞條同一套分數；例句沒有角色與命中身分之分。
  * @param {{score: number, matchType: MatchType, distance: number, doc: {text: string, index: number}}} a
  * @param {typeof a} b
  */
 export function compareOccurrences(a, b) {
   return (
+    siblingTier(a) - siblingTier(b) ||
     a.score - b.score ||
     MATCH_TYPE_RANK[a.matchType] - MATCH_TYPE_RANK[b.matchType] ||
     a.distance - b.distance ||

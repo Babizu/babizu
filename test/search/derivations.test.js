@@ -5,9 +5,9 @@
 
 import { describe, expect, it } from 'vitest'
 import { createCitation, createGroup, createRecord, createSense } from '../../src/schema/index.js'
-import { buildDerivationGraph, buildSearchIndex, createDerivationAnalyzer, DerivationGraph, isVirtualRootShape, SearchEngine, VIRTUAL_ROOT_PENALTY } from '../../src/search/index.js'
+import { buildDerivationGraph, buildSearchIndex, createDerivationAnalyzer, DerivationGraph, isVirtualRootShape, SearchEngine, virtualRootCost } from '../../src/search/index.js'
 import { mergeEdges } from '../../src/search/derivations.js'
-import { mergeMorphMatch, replacesRecordHit } from '../../src/search/scoring.js'
+import { compareHits, compareOccurrences, mergeMorphMatch, replacesRecordHit } from '../../src/search/scoring.js'
 import { PAZEH_PROFILE } from '../fixtures/pazeh.js'
 
 const MORPHOLOGY = {
@@ -70,9 +70,13 @@ describe('建置：每個詞連到 BCDP 求得的最好詞根', () => {
 
   it('每條邊都是 BCDP 對那個詞最好的分析，而且詞根比詞短（所以沒有循環）', () => {
     const analyzer = createDerivationAnalyzer(built)
-    // 兩個階段：詞庫中的詞根（可切塊平行），再看全部的邊求虛擬詞根
+    // 兩個階段：詞庫中的詞根與虛擬詞根的候選（可切塊平行），再看全部的邊過濾候選
     const lexical = analyzer.analyze()
     const analyzed = mergeEdges(lexical, analyzer.virtual(lexical))
+    // 平行建置的路徑（analyzeAll 一起算候選，第 2 階段只過濾）與單執行緒現算的結果相同
+    const all = analyzer.analyzeAll()
+    expect(all.edges).toEqual(lexical)
+    expect(analyzer.virtual(all.edges, all.virtual)).toEqual(analyzer.virtual(lexical))
     expect(analyzed.length).toBe(edges.length)
     for (const { word, root, analysis } of analyzed) {
       // 詞庫中的詞根是詞編號，虛擬詞根是詞幹字串；都比詞短
@@ -246,18 +250,19 @@ describe('虛擬詞根與自動同根：共同的詞根不在詞庫中（查 bin
     rec('baket', 'word', 'baket'),
     rec('mabaketan', 'word', 'mabaketan'), // 詞庫中有 baket，不必另建虛擬詞根
     rec('dakut', 'word', 'dakut'),
-    rec('dakudan', 'word', 'dakudan'), // dakut ＋ -an（t → d，0.25）；虛擬的 dakud ＋ -an 是 0.2，沒有便宜到 0.1 以上
+    rec('dakudan', 'word', 'dakudan'), // dakut ＋ -an（t → d，0.25）；虛擬的 dakud ＋ -an 是 0.2 ＋ 0.03 × 5，比詞庫的貴
   ]
   const data = JSON.parse(JSON.stringify(buildSearchIndex({ items: list.map((record) => ({ record, shard: 'all' })), groups: [], sourceIds: ['dict'], profile: { ...PAZEH_PROFILE, morphology: MORPH } })))
   const graph = buildDerivationGraph(data)
   const v = new SearchEngine({ ...data, derivations: graph })
 
-  it('只在詞庫解釋不了時建立、形狀要像詞根、本身是根：bubuer 有，raw（一個音節）與 baketan、mabaket（再拆得出 baket）沒有', () => {
+  it('只在詞庫解釋不了時建立、形狀要像詞根；詞庫外的詞根越長越貴：bubuer 有，raw（一個音節）與 baketan、mabaket、dakud 沒有', () => {
     expect(graph.virtual).toContain('bubuer')
     expect(graph.virtual).not.toContain('raw')
-    // mabaketan 拆出的 baketan、mabaket 本身還能拆出詞庫中的 baket，不是「根」
-    // dakudan 的 dakud 只比詞庫的 dakut 便宜 0.05，不到 VIRTUAL_ROOT_PENALTY
+    // mabaketan：詞庫的 baket（ma- ＋ -an，0.4）比 baketan、mabaket（一個詞綴 0.2 ＋ 0.03 × 7 ＝ 0.41）便宜
+    // dakudan：dakud ＋ -an 是 0.2 ＋ 0.03 × 5 ＝ 0.35，比詞庫的 dakut ＋ -an（t → d，0.25）貴
     expect(graph.virtual).toEqual(['bubuer'])
+    expect(virtualRootCost('bubuer', v.virtualRootSearch?.spec ?? { virtualRootLengthCost: 0 })).toBeCloseTo(0.18, 9)
     expect(isVirtualRootShape('bubuer', { minStem: 3, vowels: 'aeiou' })).toBe(true)
     expect(isVirtualRootShape('raw', { minStem: 3, vowels: 'aeiou' })).toBe(false)
   })
@@ -266,11 +271,11 @@ describe('虛擬詞根與自動同根：共同的詞根不在詞庫中（查 bin
     const res = v.search('binubuer', { fields: ['native'] })
     const hit = res.entries.find((h) => h.doc.id === 'dict:mabubuer')
     expect(hit?.matchType).toBe('sibling')
-    expect(hit?.analysis).toMatchObject({ stem: 'bubuer', sibling: { root: 'bubuer', cost: 0.2, penalty: VIRTUAL_ROOT_PENALTY } })
+    expect(hit?.analysis).toMatchObject({ stem: 'bubuer', sibling: { root: 'bubuer', cost: 0.2, penalty: 0.18, lexical: false } })
     expect(hit?.analysis?.sibling?.steps.map((st) => `${st.type}:${st.form}`)).toEqual(['infix:in'])
     expect(hit?.analysis?.steps.map((st) => st.form)).toEqual(['ma'])
-    // 0.4 ＋ 拆解 0.2 ＋ 詞庫外的詞根 0.1 ＋ 往下 0.2
-    expect(hit?.score).toBeCloseTo(0.9, 9)
+    // 0.4 ＋ 拆解 0.2 ＋ 詞庫外的詞根 0.03 × 6 ＋ 往下 0.2
+    expect(hit?.score).toBeCloseTo(0.98, 9)
     // 例句也找得到
     expect(res.occurrences.find((o) => o.doc.id === 'dict:s1')?.matches[0]).toMatchObject({ matchType: 'sibling', token: 'mabubuer' })
   })
@@ -312,12 +317,162 @@ describe('虛擬詞根的對稱：建置與查詢用同一個函式、同樣的�
   it('samian 是 masamian、musamian 的詞根，本身就是根：不再拆成 sa- ＋ 虛擬詞根 mian；mumian 不是根，照樣拆出 mian', () => {
     expect(virtualOf('samian')).toEqual([])
     expect(virtualOf('mumian')).toEqual(['mian'])
+    // 查詢端同樣的條件：查 samian 不往上拆，找不到 mumian
+    expect(s.search('samian', { fields: ['native'] }).entries.some((h) => h.matchType === 'sibling')).toBe(false)
   })
 
   it('查 masamian：自動拆解已有 ma- ＋ samian，不再拆成 masa- ＋ mian 去找同根詞（mumian）', () => {
     const res = s.search('masamian', { fields: ['native'] })
     expect(res.entries.find((h) => h.doc.id === 'dict:samian')?.matchType).toBe('lemma')
-    expect(res.entries.some((h) => h.matchType === 'sibling')).toBe(false)
+    expect(res.entries.some((h) => h.doc.id === 'dict:kamian')).toBe(false)
+    expect(res.entries.filter((h) => h.matchType === 'sibling').every((h) => h.analysis?.sibling?.lexical)).toBe(true)
+  })
+})
+
+describe('自動同根：詞根在詞庫中（查詢自動拆解出的詞根往下走）', () => {
+  const MORPH = { cost: 0.1, minStem: 3, prefixes: [{ form: 'ma' }, { form: 'mu' }, { form: 'sa' }], suffixes: [{ form: 'an' }] }
+  const list = [
+    rec('samian', 'word', 'samian'),
+    rec('masamian', 'word', 'masamian'),
+    rec('musamian', 'word', 'musamian'),
+    rec('s1', 'sentence', 'musamian lia'),
+    // musamian ＋ -an：samian 的孫輩，不是同根（同根只取詞根的直接子詞）
+    rec('musamianan', 'word', 'musamianan'),
+    // kitiku 的子詞；查詢 makétéko 要三個方言音變（0.3）才拆到 kitiku，不往上找同根
+    rec('kitiku', 'word', 'kitiku'),
+    rec('makitiku', 'word', 'makitiku'),
+    rec('mukitiku', 'word', 'mukitiku'),
+  ]
+  const data = JSON.parse(JSON.stringify(buildSearchIndex({ items: list.map((record) => ({ record, shard: 'all' })), groups: [], sourceIds: ['dict'], profile: { ...PAZEH_PROFILE, morphology: MORPH } })))
+  const s = new SearchEngine({ ...data, derivations: buildDerivationGraph(data) })
+
+  it('查 masamian：自動拆解出詞庫中的 samian，往下找到 musamian（自動同根，詞根在詞庫中，沒有詞庫外的代價）', () => {
+    const res = s.search('masamian', { fields: ['native'] })
+    const hit = res.entries.find((h) => h.doc.id === 'dict:musamian')
+    expect(hit?.matchType).toBe('sibling')
+    expect(hit?.analysis).toMatchObject({ stem: 'samian', sibling: { root: 'samian', cost: 0.1, penalty: 0, lexical: true } })
+    expect(hit?.analysis?.sibling?.steps.map((st) => `${st.type}:${st.form}`)).toEqual(['prefix:ma'])
+    // 0.4 ＋ 拆解 0.1 ＋ 往下 0.1
+    expect(hit?.score).toBeCloseTo(0.6, 9)
+    expect(res.occurrences.find((o) => o.doc.id === 'dict:s1')?.matches[0]).toMatchObject({ matchType: 'sibling', token: 'musamian' })
+    // 查詢本身不算；孫輩 musamianan 不是同根
+    expect(res.entries.some((h) => h.doc.id === 'dict:masamian' && h.matchType === 'sibling')).toBe(false)
+    expect(res.entries.some((h) => h.doc.id === 'dict:musamianan')).toBe(false)
+  })
+
+  it('兩條邊都要是可靠的拆法：查詢拆到詞根的音變超過 SIBLING_MAX_SOUND 時不往上', () => {
+    const near = s.search('makétiku', { fields: ['native'] })
+    expect(near.entries.find((h) => h.doc.id === 'dict:kitiku')?.matchType).toBe('lemma')
+    expect(near.entries.find((h) => h.doc.id === 'dict:mukitiku')?.matchType).toBe('sibling')
+    const far = s.search('makétéko', { fields: ['native'] })
+    expect(far.entries.find((h) => h.doc.id === 'dict:kitiku')?.matchType).toBe('lemma')
+    expect(far.entries.some((h) => h.doc.id === 'dict:mukitiku' && h.matchType === 'sibling')).toBe(false)
+  })
+
+  it('排序：自動同根在原本的命中之後，即使分數比較好', () => {
+    const doc = { role: 'head', text: 'x', index: 0 }
+    const sibling = { score: 0.2, matchType: /** @type {const} */ ('sibling'), term: 'x', kind: /** @type {const} */ ('head'), doc, distance: 0.2 }
+    const weak = { score: 0.9, matchType: /** @type {const} */ ('substring'), term: 'x', kind: /** @type {const} */ ('head'), doc, distance: 0.9 }
+    expect(compareHits(weak, sibling)).toBeLessThan(0)
+    expect(compareOccurrences(weak, sibling)).toBeLessThan(0)
+  })
+
+  it('自動同根排在原本的命中之後，不佔上限：limit 只算原本的命中，同根詞另外全列', () => {
+    const res = s.search('masamian', { fields: ['native'], limit: 1 })
+    const own = res.entries.filter((h) => h.matchType !== 'sibling')
+    expect(own.length).toBe(1)
+    expect(res.entries.at(-1)?.matchType).toBe('sibling')
+    // 排序：所有原本的命中都在自動同根之前
+    const tiers = res.entries.map((h) => (h.matchType === 'sibling' ? 1 : 0))
+    expect(tiers).toEqual([...tiers].sort((a, b) => a - b))
+    expect(res.entryGroups.at(-1)?.best.matchType).toBe('sibling')
+  })
+
+  it('同根只取詞根的直接子詞，兩條邊的音變都不超過 SIBLING_MAX_SOUND', () => {
+    // 合成的圖：r（詞 0）→ a（0.1）、b（0.3，其中音變 0.25）、a → c（孫輩）
+    const g = new DerivationGraph(
+      {
+        version: 2,
+        count: 4,
+        virtual: [],
+        steps: [{ type: 'prefix', form: 'x', gloss: null, cost: 0.05 }],
+        analyses: [
+          [0.1, [0], []],
+          [0.3, [0], []],
+        ],
+        edges: [1, 0, 0, 1, 0, 1, 1, 1, 0],
+      },
+      ['r', 'a', 'b', 'c'],
+    )
+    const seeds = [{ id: 0, distance: 0.1 }]
+    expect(g.childrenOf(seeds, { maxPath: 1, maxSound: 0.2 }).map((x) => x.word)).toEqual([1])
+    expect(g.childrenOf(seeds, { maxPath: 1, maxSound: 0.3 }).map((x) => x.word)).toEqual([1, 2])
+    // 路徑上限含起點的距離
+    expect(g.childrenOf(seeds, { maxPath: 0.15, maxSound: 1 })).toEqual([])
+    // 子樹（descendants）才會走到孫輩 c
+    expect(g.descendants(seeds, 1).map((x) => x.word)).toContain(3)
+  })
+
+  it('查詢本身是別的詞的詞根時不往上（samian 是 masamian、musamian 的詞根）；詞庫外的查詢也找得到', () => {
+    expect(s.search('samian', { fields: ['native'] }).entries.some((h) => h.matchType === 'sibling')).toBe(false)
+    // sasamian 不在詞庫中：自動拆解得到 samian（sa-），再往下找到兩個同根詞
+    const res = s.search('sasamian', { fields: ['native'] })
+    expect(res.entries.find((h) => h.doc.id === 'dict:samian')?.matchType).toBe('lemma')
+    const siblings = res.entries.filter((h) => h.matchType === 'sibling').map((h) => h.doc.id)
+    expect(siblings.sort()).toEqual(['dict:masamian', 'dict:musamian'])
+  })
+})
+
+describe('虛擬詞根的三個原則：字面、詞綴精確、詞庫外的詞根越長越貴', () => {
+  /** @param {any} morph @param {string[]} words */
+  const graphOf = (morph, words) => {
+    const data = JSON.parse(JSON.stringify(buildSearchIndex({ items: words.map((w) => ({ record: rec(w, 'word', w), shard: 'all' })), groups: [], sourceIds: ['dict'], profile: { ...PAZEH_PROFILE, morphology: morph } })))
+    const graph = buildDerivationGraph(data)
+    const engine = new SearchEngine({ ...data, derivations: graph })
+    /** @param {string} w */
+    const virtualOf = (w) => {
+      const terms = engine.index.terms
+      const out = []
+      for (let k = 0, word = 0; k < graph.edges.length; k += 3) {
+        word += graph.edges[k]
+        if (terms[word] === w && graph.edges[k + 1] >= terms.length) out.push(graph.virtual[graph.edges[k + 1] - terms.length])
+      }
+      return out
+    }
+    return { graph, engine, virtualOf }
+  }
+
+  it('長的詞庫外詞根輸給詞庫的拆法：pinahazaban ＝ pina-hazap-an，不另建 pinahazab（9 個字元，0.1 ＋ 0.27）', () => {
+    // pina- 是 p‹in›a-（構詞文法展開後是一個前綴）
+    const { virtualOf } = graphOf(
+      { cost: 0.1, minStem: 3, prefixes: [{ form: 'pina' }, { form: 'pa' }], infixes: [{ form: 'in' }], suffixes: [{ form: 'an' }], alternations: [{ underlying: 'p', surface: 'b', cost: 0.05 }] },
+      ['hazap', 'pinahazaban'],
+    )
+    // 詞庫的拆法 0.25（兩個步驟 ＋ 交界濁化）；固定懲罰 0.1 的舊版會建 pinahazab（0.1 ＋ 0.1 ＜ 0.25）。
+    // 原樣的 hazab（pina- ＋ -an）也是 0.2 ＋ 0.15，比詞庫的貴
+    expect(virtualOf('pinahazaban')).toEqual([])
+  })
+
+  it('分數相同的拆法取剝得最乾淨的：mabubuer 只建 bubuer（ma-），不建 abubuer（m-）', () => {
+    const { virtualOf } = graphOf({ cost: 0.1, minStem: 3, prefixes: [{ form: 'ma' }, { form: 'm' }] }, ['mabubuer'])
+    expect(virtualOf('mabubuer')).toEqual(['bubuer'])
+  })
+
+  it('詞綴必須原樣出現：mobubuer（mu- 的方言寫法 mo-）不拆出 bubuer', () => {
+    const { virtualOf } = graphOf({ cost: 0.1, minStem: 3, prefixes: [{ form: 'mu' }] }, ['mububuer', 'mobubuer'])
+    expect(virtualOf('mububuer')).toEqual(['bubuer'])
+    expect(virtualOf('mobubuer')).toEqual([])
+  })
+
+  it('詞根是詞中原樣的一段：abuk 不會靠閃音規則（ara ↔ a）發明出 rabuk', () => {
+    const { graph } = graphOf({ cost: 0.1, minStem: 3, prefixes: [{ form: 'a' }] }, ['abuk', 'arabuk'])
+    expect(graph.virtual).not.toContain('rabuk')
+  })
+
+  it('構詞音變在詞幹與後綴的交界還原：kabadan 的詞根是 kabat（kabad ＋ t → d 只差 0.05，取原樣的 kabad 較便宜）', () => {
+    const { graph } = graphOf({ cost: 0.1, minStem: 3, suffixes: [{ form: 'an' }], alternations: [{ underlying: 't', surface: 'd', cost: 0.05 }] }, ['kabadan', 'kabadi'])
+    // 兩個都是原樣的 kabad（成本較低）；kabat 要多 0.05
+    expect(graph.virtual).toEqual(['kabad'])
   })
 })
 

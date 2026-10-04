@@ -1,5 +1,5 @@
 /**
- * @file 自動派生圖與拆解表的建置執行緒（src/site/derivations.js）：收到詞編號範圍就回傳那幾個詞的邊與拆法。
+ * @file 自動派生圖與拆解表的建置執行緒（src/site/derivations.js）：收到詞編號範圍就回傳那幾個詞的邊、拆法與虛擬詞根的候選。
  */
 
 import { parentPort, workerData } from 'node:worker_threads'

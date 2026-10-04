@@ -9,6 +9,7 @@
 
 import { describe, expect, it } from 'vitest'
 import { createAnalyzer, createMorphSearch, EPSILON, FuzzyIndex, REDUPLICATION_PATTERNS, roundCost, RuleSet, WeightedEditDistance } from '../../src/fuzzy/index.js'
+import { alternationRules } from '../../src/fuzzy/morphology.js'
 import { createRandom, pick, randomString } from './helpers.js'
 import { metricFor, randomDerived, randomMorphSetup } from './random-morph.js'
 import { refContext, refDistance } from './reference/ref-distance.js'
@@ -111,6 +112,81 @@ describe('參考實作：BCDP 模型', () => {
     for (const kind of [...REDUPLICATION_PATTERNS, 'infix', 'alternation', 'crossing', 'glottal', 'circumfix:prefix', 'circumfix:infix', 'circumfix:reduplication', 'wrap:outer', 'wrap:no-suffix', 'wrap:vowel-stem']) {
       expect(reached.get(kind) ?? 0, `${kind}：${JSON.stringify([...reached])}`).toBeGreaterThanOrEqual(3)
     }
+  })
+})
+
+describe('參考實作：字面的開放詞幹（虛擬詞根用，openStems）', () => {
+  /**
+   * 開放詞幹的成本由交界列直接讀出（定理 A，docs/bcdp.md 10.5），不走訪詞圖。這裡用窮舉仲裁：
+   * 距離函式只有構詞音變（一般的編輯不可能），詞庫是所有候選詞幹——各通道查詢（含還原變體）的子字串，
+   * 加上構詞音變在兩端的反像。窮舉在這個詞庫上找到的每個詞幹與成本，都要與 openStems 相同。
+   */
+  const reached = new Map()
+  const reach = (/** @type {string} */ kind) => reached.set(kind, (reached.get(kind) ?? 0) + 1)
+  it.each([1, 2, 3, 4, 5, 6])('種子 %i：每個開放詞幹與成本都等於窮舉', { timeout: 120_000 }, (seed) => {
+    const random = createRandom(seed * 15485863)
+    let compared = 0
+    for (let round = 0; round < 5; round++) {
+      const setup = randomMorphSetup(random)
+      const { spec, analyzer } = setup
+      // 構詞音變多兩種：詞幹末的增生（u → uk）、詞幹開頭的（a → na，initial），兩端的還原都測到
+      const alternations = [
+        ...spec.alternations,
+        ...(random() < 0.6 ? [{ underlying: 'u', surface: 'uk', position: /** @type {const} */ ('final'), cost: 0.1 }] : []),
+        ...(random() < 0.6 ? [{ underlying: 'a', surface: 'na', position: /** @type {const} */ ('initial'), cost: 0.1 }] : []),
+      ]
+      const metric = new WeightedEditDistance({ rules: RuleSet.fromTable(alternationRules({ alternations })), normalize: (s) => s, costs: { substitute: 1e6, delete: 1e6, insert: 1e6 } })
+      const open = createMorphSearch({ analyzer, metric, index: new FuzzyIndex(metric) })
+      const ctx = refJointContext(metric)
+      for (let k = 0; k < 5; k++) {
+        const query = randomDerived(random, setup)
+        const maxDistance = pick(random, [0.8, 1])
+        const prepared = open.prepare(query, maxDistance)
+        if (!prepared || prepared.truncated) continue
+        const results = open.openStems(prepared, { keep: (s) => s !== query, bound: maxDistance })
+        /** @type {Map<string, number>} */
+        const got = new Map()
+        for (const list of results) for (const r of list) got.set(r.term, Math.min(got.get(r.term) ?? Infinity, r.distance))
+        /** @type {Set<string>} */
+        const lexicon = new Set(got.keys())
+        for (const ch of prepared.channels) {
+          const q = ch.query
+          for (let i = 0; i < q.length; i++) {
+            for (let j = i + 1; j <= q.length; j++) {
+              const s = q.slice(i, j).join('')
+              if (s.includes(' ')) break
+              lexicon.add(s)
+              for (const a of alternations) {
+                if (a.position !== 'initial' && s.endsWith(a.surface)) lexicon.add(s.slice(0, s.length - a.surface.length) + a.underlying)
+                if (a.position !== 'final' && s.startsWith(a.surface)) lexicon.add(a.underlying + s.slice(a.surface.length))
+              }
+            }
+          }
+        }
+        // 窮舉的相對上限：與 openStems 相同（不截斷），只比成本
+        const want = refMorph(ctx, { query, lexicon: [...lexicon], spec: { ...spec, lemmaSpread: 100 }, maxDistance })
+        for (const t of new Set([...got.keys(), ...want.keys()])) {
+          expect(got.get(t) ?? Infinity, `seed=${seed} round=${round} query=${query} stem=${t}；構詞音變：${JSON.stringify(alternations)}`).toBeCloseTo(want.get(t) ?? Infinity, 7)
+          const c = got.get(t) ?? Infinity
+          if (c < Infinity) {
+            if (!query.includes(t)) reach('restored') // 詞幹經過還原（中綴、重疊，或兩端的構詞音變）
+            if (alternations.some((a) => a.position === 'initial' && t.startsWith(a.underlying) && query.includes(a.surface + t.slice(a.underlying.length, a.underlying.length + 2)))) reach('initial')
+          }
+        }
+        // 說明：finish 對開放詞幹也成立，對齊加上步驟成本就是命中的成本
+        for (const h of open.finish(prepared, results, maxDistance)) {
+          const steps = h.steps.reduce((a, s) => a + s.cost, 0)
+          expect(roundCost(open.explainHit(prepared, h).explanation.distance + steps), `${query} → ${h.term}`).toBeCloseTo(h.distance, 7)
+          if (open.notesOf(prepared, h).some((n) => n.category === '構詞音變')) reach('alternation')
+        }
+        compared++
+      }
+    }
+    expect(compared).toBeGreaterThan(15)
+  })
+
+  it('reaching check：還原的詞幹、構詞音變（含詞幹開頭的）都真的出現', () => {
+    for (const kind of ['restored', 'alternation', 'initial']) expect(reached.get(kind) ?? 0, `${kind}：${JSON.stringify([...reached])}`).toBeGreaterThanOrEqual(3)
   })
 })
 

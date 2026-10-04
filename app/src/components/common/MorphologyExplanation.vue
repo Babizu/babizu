@@ -8,8 +8,9 @@
  *   （例如 takitaw 的 aa → a 跨越詞幹與後綴的交界）
  * - 自動派生經過其他詞時（上一層本身也是自動派生的），逐層列出上面幾層
  * - 由查詢的相近寫法出發時（寬鬆查 sugut，經 sungut），列出兩者的差異
- * - 自動同根（查 binubuer 找到 mabubuer）：兩個詞推定來自同一個詞庫外的詞根（bubuer），
- *   分別列出查詢怎麼拆到它、這個詞怎麼由它衍生，以及「詞庫外的詞根」的代價
+ * - 自動同根：兩個詞推定來自同一個詞根，分別列出查詢怎麼拆到它、這個詞怎麼由它衍生。
+ *   詞根可以是詞庫中的詞（查 masamian 找到 musamian，詞根 samian），或詞庫外的虛擬詞根
+ *   （查 binubuer 找到 mabubuer，詞根 bubuer；另列「詞庫外的詞根」的代價）
  * - 句型搜尋的構詞樣式比對的是依模糊程度取到的拆法（babizu/pattern 的 PARSE_SELECTION），
  *   不是這個詞最好的拆法時（analysis.bestCost 比 cost 小）標「次佳」並說明；詞根是虛擬詞根時（analysis.virtual）說明它不在詞庫中
  */
@@ -44,7 +45,7 @@ const props = defineProps({
 /** 句型搜尋：比到的是次佳的拆法（這個詞最好的拆法成本較低） */
 const alternative = computed(() => props.analysis.bestCost !== undefined && props.analysis.cost > props.analysis.bestCost + 1e-9)
 /** 自動同根：查詢拆出的虛擬詞根與拆法（見 babizu/search 的 LemmaAnalysis.sibling） */
-const sibling = computed(() => /** @type {{root: string, steps: any[], cost: number, penalty: number} | null} */ (props.analysis.sibling ?? null))
+const sibling = computed(() => /** @type {{root: string, steps: any[], cost: number, penalty: number, lexical?: boolean} | null} */ (props.analysis.sibling ?? null))
 const summary = computed(() => (sibling.value ? sibling.value.root : morphSummary(props.analysis)))
 const intro = computed(() =>
   props.matchType === 'lemma'
@@ -84,7 +85,9 @@ const derived = computed(() => props.matchType === 'derived')
  * （建置時就是這樣對每個詞跑 BCDP，求得最好的詞根）。自動同根的詞根不在詞庫中，實驗室重現不了
  */
 const lab = computed(() => {
-  if (sibling.value || props.analysis.virtual) return null
+  if (props.analysis.virtual) return null
+  // 自動同根：詞根在詞庫中時，最後一層（這個詞 → 上一層）與自動派生相同；虛擬詞根不在詞庫中，重現不了
+  if (sibling.value) return sibling.value.lexical && props.term ? { q: props.term, t: props.analysis.stem } : null
   if (derived.value) return props.term ? { q: props.term, t: props.analysis.stem } : null
   return props.query && props.term ? { q: props.query, t: props.term } : null
 })
@@ -135,14 +138,18 @@ const partLabel = (part, k) => (part.type === 'prefix' ? `${part.form}-` : part.
       <!-- 自動同根：詞根不在詞庫中；先列出查詢怎麼拆到它，下面是這個詞怎麼由它衍生 -->
       <div v-if="sibling" class="mt-1 text-xs">
         <p class="text-muted-foreground">
-          {{ t('兩個詞推定來自同一個詞根「{root}」。這個詞根不在詞庫中，是演算法由詞形拆出來的。', { root: sibling.root }) }}
+          {{
+            sibling.lexical
+              ? t('兩個詞推定來自同一個詞根「{root}」（詞庫中的詞）。', { root: sibling.root })
+              : t('兩個詞推定來自同一個詞根「{root}」。這個詞根不在詞庫中，是演算法由詞形拆出來的。', { root: sibling.root })
+          }}
         </p>
         <ul class="border-border mt-1.5 ml-1 space-y-0.5 border-l pl-2">
           <li class="flex items-baseline justify-between gap-3">
             <span class="native-text min-w-0">{{ query }} ＝ {{ morphSummary({ stem: sibling.root, steps: sibling.steps }) }}</span>
             <span class="text-muted-foreground font-mono tabular-nums">+{{ formatDistance(sibling.cost) }}</span>
           </li>
-          <li class="flex items-baseline justify-between gap-3">
+          <li v-if="!sibling.lexical" class="flex items-baseline justify-between gap-3">
             <span class="text-muted-foreground min-w-0">{{ t('詞庫外的詞根') }}</span>
             <span class="text-muted-foreground font-mono tabular-nums">+{{ formatDistance(sibling.penalty) }}</span>
           </li>

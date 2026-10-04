@@ -34,6 +34,13 @@ describe('同一個詞的構詞命中與原本的命中（mergeMorphMatch）', (
     expect(mergeMorphMatch(cheap, m({ term: 'musa', matchType: 'substring' }), 'usa').score).toBeCloseTo(0.6, 9)
   })
 
+  it('自動同根不取代任何命中，開頭相符、包含也不例外（它排在最後，取代等於把原本的命中擠到最後）', () => {
+    const prefix = m({ term: 'maatebeteber', matchType: 'prefix' })
+    const sibling = m({ term: 'maatebeteber', matchType: 'sibling', distance: 0.1 })
+    expect(mergeMorphMatch(sibling, prefix, 'maatebe')).toMatchObject({ matchType: 'prefix', others: [{ matchType: 'sibling' }] })
+    expect(mergeMorphMatch(sibling, m({ term: 'maatebeteber', matchType: 'substring' }), 'maatebe').matchType).toBe('substring')
+  })
+
   it('與模糊命中之間取分數較好的；同分時模糊命中優先', () => {
     const fuzzy = m({ term: 'razem', distance: 1.2 })
     const lemma = m({ term: 'razem', matchType: 'lemma', distance: 0.2 })

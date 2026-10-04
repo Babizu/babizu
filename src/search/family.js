@@ -31,7 +31,7 @@
  * - 同形詞組排在其中最前面那一筆原本的位置。
  */
 
-import { DICTIONARY_KINDS } from './scoring.js'
+import { DICTIONARY_KINDS, siblingTier } from './scoring.js'
 
 /** 分數比較容許的浮點誤差（分數是幾個小數相加） */
 const EPSILON = 1e-9
@@ -239,6 +239,8 @@ export function buildEntryGroups(hits, { parent, children = () => [], doc, key, 
   })
   groups.sort(
     (a, b) =>
+      // 只有自動同根的家族排在後面（最好的命中依 compareHits 選，自動同根在後，所以它是自動同根就表示全部都是）
+      siblingTier(a.best) - siblingTier(b.best) ||
       (Math.abs(a.best.score - b.best.score) > EPSILON ? a.best.score - b.best.score : 0) ||
       b.atBest - a.atBest ||
       b.related - a.related ||

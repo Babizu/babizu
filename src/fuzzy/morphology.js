@@ -1,15 +1,13 @@
 /**
- * @file 構詞分析：依語言設定檔的 `morphology` 規格，雙向處理詞綴。
+ * @file 構詞規格：依語言設定檔的 `morphology` 規格，檢查、正規化詞綴與重疊模板，供構詞搜尋 BCDP（morph-search.js）使用。
  *
- * - `analyze(word)`：去詞綴。列出「這個詞形可能是由哪個詞幹加上哪些詞綴構成」
- *   （例如 `binaket` → 詞幹 `baket`＋中綴 `<in>`）。
- * - `generate(stem, steps)`：還原詞綴。把詞幹依步驟加回詞綴，得到詞形；
- *   `analyze` 的每一個結果都保證能用 `generate` 還原成原詞形（測試會檢查）。
+ * - `spec`：正規化後的規格（詞綴、環綴、重疊型式、構詞音變，各自帶成本與說明的順序）；
+ * - `onset`、`reduplicant`、`reduplicantStems`：中綴位置與重疊模板，BCDP 在查詢上還原中綴、重疊時用；
+ * - `generate(stem, steps)`：還原詞綴。把詞幹依 BCDP 命中的步驟加回詞綴，得到底層的詞形（測試用它檢查分析）。
  *
- * 規格是宣告式的純資料，概念上對應有限狀態構詞（FST）中的詞綴槽位、中綴、重疊與詞幹交替，
- * 但不編譯成轉錄器：分析是有界的列舉（步驟數有上限），候選是否為真正的詞幹，
- * 由使用端用詞庫檢查（搜尋引擎只採用詞庫中存在的詞幹）。這樣不需要完整的構詞語法，
- * 也不會因為規格不完整而產生大量假分析。
+ * 去詞綴只有一套演算法：BCDP。詞根在詞庫中時走訪詞圖；詞根不在詞庫中（虛擬詞根）時，
+ * 同一個 DP 的交界列直接給出「字面的開放詞幹」（morph-search.js 的 openStems，docs/bcdp.md 10.5）。
+ * 規格是宣告式的純資料，概念上對應有限狀態構詞（FST）中的詞綴槽位、中綴、重疊與詞幹交替，但不編譯成轉錄器。
  *
  * ```json
  * "morphology": {
@@ -108,6 +106,8 @@ export const GLIDE_PATTERNS = Object.freeze(['CGV', 'CVG'])
  * @property {number} [minStem=3] 詞根（詞庫詞）最短長度（code point）；查詢至少要多一個字元
  * @property {number} [maxSteps=3] 前綴、後綴各自最多幾個（另加至多一個包覆單位：中綴、重疊或環綴；見 docs/bcdp.md 1.6）
  * @property {number} [lemmaSpread=0.6] 構詞命中只保留成本在「最佳 ＋ lemmaSpread」之內的詞，控制候選數
+ * @property {number} [virtualRootLengthCost=0.03] 詞庫外的詞根（虛擬詞根）每個字元的成本：詞庫中的詞根只要指出是哪一個，
+ *   詞庫外的要逐字寫出來，所以越長越貴（最小描述長度，docs/bcdp.md 10.5）。預設值以巴宰–噶哈巫語的資料校準
  * @property {string} [vowels='aeiouéə'] 元音字母（決定「首輔音」「首元音」與中綴位置）
  * @property {string} [glides=''] 可以當滑音的元音（`vowels` 的子集；巴宰語是 `iu`）。重疊型式 CGV、CVG 要用到，
  *   框架不預設：哪些元音會念成滑音是語言的知識
@@ -121,8 +121,8 @@ export const GLIDE_PATTERNS = Object.freeze(['CGV', 'CVG'])
 
 /**
  * @typedef {object} MorphStep 一個構詞步驟（由外而內，也就是剝除的順序）
- * @property {'prefix' | 'suffix' | 'infix' | 'reduplication' | 'alternation' | 'circumfix'} type
- * @property {string} form 詞綴；重疊為實際的重疊部分；交替為 `underlying>surface`；環綴為 `左邊…後綴`
+ * @property {'prefix' | 'suffix' | 'infix' | 'reduplication' | 'circumfix'} type
+ * @property {string} form 詞綴；重疊為實際的重疊部分；環綴為 `左邊…後綴`
  * @property {ReduplicationPattern} [pattern] 重疊的型式
  * @property {{type: 'prefix' | 'infix' | 'reduplication', form: string, pattern?: ReduplicationPattern}} [left]
  *   環綴左邊的部分：前綴，或詞幹上的中綴、重疊（重疊的 form 是實際的重疊部分）
@@ -133,18 +133,12 @@ export const GLIDE_PATTERNS = Object.freeze(['CGV', 'CVG'])
  * @property {Part[]} [parts] 構詞文法：由哪些詞素構成（推導順序）
  */
 
-/**
- * @typedef {object} Analysis
- * @property {string} stem 詞幹（搜尋鍵形式）
- * @property {MorphStep[]} steps 由外而內的構詞步驟
- * @property {number} cost 各步驟成本的總和
- */
-
 const DEFAULTS = Object.freeze({
   cost: 0.3,
   minStem: 3,
   maxSteps: 3,
   lemmaSpread: 0.6,
+  virtualRootLengthCost: 0.03,
   vowels: 'aeiouéə',
 })
 
@@ -158,14 +152,22 @@ const REMOVED_KEYS = {
 }
 const POSITIONS = new Set(['final', 'initial', 'any'])
 
-/** 同一個詞最多回傳幾個分析，避免規格過寬時列舉爆量 */
-const MAX_ANALYSES = 64
-
-/** analyze 的備忘最多記幾個詞（最久沒用的先丟）。同一批詞常被反覆分析（多詞查詢、實驗室） */
-const ANALYZE_MEMO_LIMIT = 4096
-
 /** 規格頂層允許的欄位（拼錯的欄位會被默默忽略，所以列為錯誤） */
-const SPEC_KEYS = new Set(['cost', 'minStem', 'maxSteps', 'lemmaSpread', 'vowels', 'glides', 'prefixes', 'suffixes', 'infixes', 'reduplication', 'circumfixes', 'alternations'])
+const SPEC_KEYS = new Set([
+  'cost',
+  'minStem',
+  'maxSteps',
+  'lemmaSpread',
+  'virtualRootLengthCost',
+  'vowels',
+  'glides',
+  'prefixes',
+  'suffixes',
+  'infixes',
+  'reduplication',
+  'circumfixes',
+  'alternations',
+])
 /** 各種項目允許的欄位；ref（出處）與 note（說明）供語言設定檔記錄依據，搜尋不使用 */
 const ENTRY_KEYS = {
   affix: new Set(['form', 'gloss', 'cost', 'ref', 'note']),
@@ -202,7 +204,7 @@ export function validateMorphology(spec) {
     if (key in REMOVED_KEYS) errors.push(`morphology.${key} ${REMOVED_KEYS[/** @type {keyof typeof REMOVED_KEYS} */ (key)]}`)
     else if (!SPEC_KEYS.has(key)) errors.push(`morphology.${key} 是未知的欄位`)
   }
-  for (const key of ['cost', 'lemmaSpread']) {
+  for (const key of ['cost', 'lemmaSpread', 'virtualRootLengthCost']) {
     if (s[key] !== undefined && !isCost(s[key])) errors.push(`morphology.${key} 必須是非負的有限數`)
   }
   if (s.minStem !== undefined && !(Number.isInteger(s.minStem) && s.minStem >= 1)) errors.push('morphology.minStem 必須是 ≥ 1 的整數')
@@ -311,10 +313,7 @@ export function alternationRules(spec) {
 }
 
 /**
- * @typedef {object} Analyzer
- * @property {(word: string) => ReadonlyArray<Readonly<Analysis>>} analyze 去詞綴：所有可能的（詞幹, 步驟）；已正規化的輸入。
- *   結果有備忘，所以是深度凍結的（不能修改）
- * @property {() => void} clearCache 清掉 analyze 的備忘（量測冷快取時用）
+ * @typedef {object} Analyzer 構詞規格與 BCDP 要用到的模板（去詞綴本身是 BCDP，morph-search.js）
  * @property {(stem: string, steps: MorphStep[]) => string} generate 還原詞綴
  * @property {(w: string) => string} onset 詞首的輔音（群）
  * @property {(pattern: ReduplicationPattern, base: string) => string | null} reduplicant 詞幹 base 套用重疊模式時前面要加的字串
@@ -338,6 +337,7 @@ export function createAnalyzer(spec, normalize = (s) => s) {
   const minStem = spec.minStem ?? DEFAULTS.minStem
   const maxSteps = spec.maxSteps ?? DEFAULTS.maxSteps
   const lemmaSpread = spec.lemmaSpread ?? DEFAULTS.lemmaSpread
+  const virtualRootLengthCost = spec.virtualRootLengthCost ?? DEFAULTS.virtualRootLengthCost
   const vowels = new Set(Array.from(normalize(spec.vowels ?? DEFAULTS.vowels)))
   const glides = new Set(Array.from(normalize(spec.glides ?? '')))
 
@@ -404,33 +404,6 @@ export function createAnalyzer(spec, normalize = (s) => s) {
 
   /** @param {string} s */
   const len = (s) => Array.from(s).length
-  /** 第一個、最後一個 code point @param {string} w */
-  const firstChar = (w) => String.fromCodePoint(/** @type {number} */ (w.codePointAt(0)))
-  const lastChar = (/** @type {string} */ w) => {
-    const lo = w.charCodeAt(w.length - 1)
-    const hi = w.charCodeAt(w.length - 2)
-    return lo >= 0xdc00 && lo <= 0xdfff && hi >= 0xd800 && hi <= 0xdbff ? w.slice(-2) : w.slice(-1)
-  }
-  /**
-   * 依第一個（或最後一個）字元分組的詞綴，附上長度。組內保持規格的順序，所以 analyze 的走訪順序
-   * （也就是同成本時留下哪一個分析）與逐一比對所有詞綴完全相同，只是略過不可能相符的。
-   * @param {Array<{form: string, gloss: Gloss, cost: number}>} list
-   * @param {(form: string) => string} key
-   */
-  const bucket = (list, key) => {
-    /** @type {Map<string, Array<{affix: typeof list[number], length: number}>>} */
-    const map = new Map()
-    for (const affix of list) {
-      const k = key(affix.form)
-      if (!map.has(k)) map.set(k, [])
-      map.get(k)?.push({ affix, length: len(affix.form) })
-    }
-    return map
-  }
-  const prefixesByFirst = bucket(prefixes, firstChar)
-  const suffixesByLast = bucket(suffixes, lastChar)
-  /** @type {Array<{affix: typeof prefixes[number], length: number}>} */
-  const none = []
   /** 詞首的輔音（群）：第一個元音之前的所有字元 @param {string} w */
   const onset = (w) => {
     const chars = Array.from(w)
@@ -455,7 +428,7 @@ export function createAnalyzer(spec, normalize = (s) => s) {
 
   /**
    * 模板的本體：套用在 chars[from..) 上的結果，表示成「chars[from..end) 再接 extra」（extra 是空字串或一個字元），
-   * 不適用時為 null。直接在字元陣列上計算、不配置字串，analyze 每個切點都要算一次。
+   * 不適用時為 null。直接在字元陣列上計算、不配置字串。
    * @param {ReduplicationPattern} pattern
    * @param {string[]} chars
    * @param {number} from
@@ -526,171 +499,18 @@ export function createAnalyzer(spec, normalize = (s) => s) {
   }
 
   /**
-   * 模板在 chars[k..) 上的結果 t 是否正好等於 chars[0..k)（即 reduplicant(pattern, chars[k..]) === chars[0..k)）。
-   * @param {string[]} chars
-   * @param {number} k
-   * @param {{end: number, extra: string}} t
-   */
-  const sameAsPrefix = (chars, k, t) => {
-    const body = t.end - k
-    if (body + (t.extra ? 1 : 0) !== k) return false
-    for (let j = 0; j < body; j++) if (chars[j] !== chars[k + j]) return false
-    return !t.extra || chars[k - 1] === t.extra
-  }
-
-  /** @type {Map<string, ReadonlyArray<Readonly<Analysis>>>} 最近用過的在最後（Map 保持插入順序） */
-  const memo = new Map()
-
-  /**
-   * @param {string} word
-   * @returns {ReadonlyArray<Readonly<Analysis>>}
-   */
-  function analyze(word) {
-    const cached = memo.get(word)
-    if (cached) {
-      memo.delete(word)
-      memo.set(word, cached)
-      return cached
-    }
-    const result = Object.freeze(
-      enumerate(word).map((a) => {
-        for (const s of a.steps) Object.freeze(s)
-        Object.freeze(a.steps)
-        return Object.freeze(a)
-      }),
-    )
-    memo.set(word, result)
-    if (memo.size > ANALYZE_MEMO_LIMIT) memo.delete(/** @type {string} */ (memo.keys().next().value))
-    return result
-  }
-
-  /**
-   * analyze 的本體（沒有備忘）。
-   * @param {string} word
-   * @returns {Analysis[]}
-   */
-  function enumerate(word) {
-    /** @type {Map<string, Analysis>} */
-    const best = new Map()
-    /**
-     * 步數預算與 BCDP 相同（docs/bcdp.md 1.2、1.6）：
-     * - 前綴、後綴各自至多 maxSteps 個；另加至多一個非串接步驟（中綴、重疊或詞幹交替）
-     * - 中綴與重疊位在「前綴鏈之內」的詞幹開頭：做了之後不能再剝前綴
-     * - 重疊的模板只套用在詞幹上（不含後綴）：做了之後也不能再剝後綴
-     * - 詞幹交替位在詞幹結尾、緊接最內層的後綴：做了之後不能再剝後綴；
-     *   它是只在交界適用的規則，不另外佔用詞綴的步數
-     * @param {string} w 目前剩下的詞形
-     * @param {MorphStep[]} steps
-     * @param {number} total
-     * @param {number} pre 已剝的前綴數
-     * @param {number} suf 已剝的後綴數
-     * @param {boolean} op 已用掉非串接步驟
-     * @param {boolean} preClosed 前綴端已封閉（做過中綴或重疊）
-     * @param {boolean} sufClosed 後綴端已封閉（做過詞幹交替或重疊）
-     */
-    const visit = (w, steps, total, pre, suf, op, preClosed, sufClosed) => {
-      if (steps.length > 0) {
-        const prev = best.get(w)
-        if (!prev || total < prev.cost) best.set(w, { stem: w, steps, cost: round(total) })
-      }
-      if (best.size >= MAX_ANALYSES) return
-      const n = len(w)
-
-      if (!preClosed && pre < maxSteps && w) {
-        for (const { affix: p, length } of prefixesByFirst.get(firstChar(w)) ?? none) {
-          if (w.startsWith(p.form) && n - length >= minStem) {
-            visit(w.slice(p.form.length), [...steps, step('prefix', p.form, p.gloss, p.cost, p.parts)], total + p.cost, pre + 1, suf, op, preClosed, sufClosed)
-          }
-        }
-      }
-      if (!sufClosed && w) {
-        for (const { affix: s, length } of suffixesByLast.get(lastChar(w)) ?? none) {
-          if (!w.endsWith(s.form) || n - length < minStem) continue
-          const rest = w.slice(0, w.length - s.form.length)
-          const next = [...steps, step('suffix', s.form, s.gloss, s.cost, s.parts)]
-          if (suf < maxSteps) visit(rest, next, total + s.cost, pre, suf + 1, op, preClosed, sufClosed)
-          // 詞幹交替（構詞音變）只在剛剝掉的後綴前面發生；它是規則，不另外佔用詞綴的步數
-          if (op || suf >= maxSteps) continue
-          for (const a of alternations) {
-            if (a.position === 'initial' || !rest.endsWith(a.surface)) continue
-            const restored = rest.slice(0, rest.length - a.surface.length) + a.underlying
-            if (len(restored) < minStem) continue
-            visit(restored, [...next, step('alternation', `${a.underlying}>${a.surface}`, null, a.cost)], total + s.cost + a.cost, pre, suf + 1, true, preClosed, true)
-          }
-        }
-      }
-      // 環綴緊貼詞幹（最內層）：剝掉之後兩端都封閉；它算一個構詞步驟，不佔用前綴、後綴的步數，
-      // 也是那一個非串接步驟（之後不能再有中綴或重疊）
-      if (!op && !preClosed && !sufClosed && w) {
-        for (const c of circumfixes) {
-          if (!w.endsWith(c.suffix)) continue
-          let rest = w.slice(0, w.length - c.suffix.length)
-          // 左邊是中綴、重疊時，緊貼詞幹的前綴在它們外面：先剝掉
-          if (c.outer) {
-            if (!rest.startsWith(c.outer)) continue
-            rest = rest.slice(c.outer.length)
-          }
-          if (c.kind === 'prefix') {
-            if (!rest.startsWith(c.left) || len(rest) - len(c.left) < minStem) continue
-            const stem = rest.slice(c.left.length)
-            if (c.vowelStem && !vowels.has(firstChar(stem))) continue
-            visit(stem, [...steps, circumfixStep(c, c.left)], total + c.cost, pre, suf, true, true, true)
-          } else if (c.kind === 'infix') {
-            const head = onset(rest)
-            if (!rest.startsWith(c.left, head.length) || len(rest) - len(c.left) < minStem) continue
-            const inner = head + rest.slice(head.length + c.left.length)
-            if (onset(inner) !== head) continue
-            visit(inner, [...steps, circumfixStep(c, c.left)], total + c.cost, pre, suf, true, true, true)
-          } else {
-            const rc = Array.from(rest)
-            for (let k = 1; k <= rc.length - minStem; k++) {
-              const t = template(/** @type {ReduplicationPattern} */ (c.left), rc, k)
-              if (!t || !sameAsPrefix(rc, k, t)) continue
-              visit(rc.slice(k).join(''), [...steps, circumfixStep(c, rc.slice(0, k).join(''))], total + c.cost, pre, suf, true, true, true)
-            }
-          }
-        }
-      }
-      if (op) return
-      const chars = infixes.length || reduplication.length ? Array.from(w) : []
-      let h = 0
-      while (h < chars.length && !vowels.has(chars[h])) h++
-      const head = chars.slice(0, h).join('') // onset(w)
-      for (const x of infixes) {
-        // 中綴位於首輔音（群）之後；拿掉之後，詞幹首輔音後面必須接元音，還原時位置才會一致
-        if (!w.startsWith(x.form, head.length) || n - len(x.form) < minStem) continue
-        const rest = head + w.slice(head.length + x.form.length)
-        if (onset(rest) !== head) continue
-        visit(rest, [...steps, step('infix', x.form, x.gloss, x.cost, x.parts)], total + x.cost, pre, suf, true, true, sufClosed)
-      }
-      for (const r of reduplication) {
-        // 重疊部分在最前面：試每一種切法 k，看剩下的詞幹 chars[k..) 套用同一模式是否正好得到 chars[0..k)。
-        // 模板只看詞幹，所以重疊是最內層的步驟，剩下的就是詞幹（兩端都封閉）
-        for (let k = 1; k <= n - minStem; k++) {
-          const t = template(r.pattern, chars, k)
-          if (!t || !sameAsPrefix(chars, k, t)) continue
-          const red = chars.slice(0, k).join('')
-          const base = chars.slice(k).join('')
-          visit(base, [...steps, { type: 'reduplication', form: red, pattern: r.pattern, gloss: r.gloss, cost: r.cost, ...(r.parts ? { parts: r.parts } : {}) }], total + r.cost, pre, suf, true, true, true)
-        }
-      }
-    }
-    visit(word, [], 0, 0, 0, false, false, false)
-    return [...best.values()].sort((a, b) => a.cost - b.cost || (a.stem < b.stem ? -1 : a.stem > b.stem ? 1 : 0))
-  }
-
-  /**
-   * 還原詞綴：由內而外套回各步驟。
+   * 還原詞綴，得到底層的詞形（構詞音變不在步驟裡：它是交界上的規則，在 BCDP 的對齊中）。
+   * 用來檢查 BCDP 的分析（測試由步驟重建底層字串，與詞形比對）。
+   *
+   * 步驟是 BCDP 命中的形狀：前綴（由外而內）、包覆單位（中綴、重疊或環綴，緊貼詞幹，至多一個）、後綴（由外而內）。
+   * 包覆單位一定是最內層，所以先套它（重疊的模板只看詞幹本身），再由內而外接上後綴與前綴。
    * @param {string} stem
-   * @param {MorphStep[]} steps 由外而內（即 analyze 回傳的順序）
+   * @param {MorphStep[]} steps
    */
   function generate(stem, steps) {
     let w = stem
-    for (let i = steps.length - 1; i >= 0; i--) {
-      const s = steps[i]
-      if (s.type === 'prefix') w = s.form + w
-      else if (s.type === 'suffix') w = w + s.form
-      else if (s.type === 'infix') {
+    for (const s of steps) {
+      if (s.type === 'infix') {
         const head = onset(w)
         w = head + s.form + w.slice(head.length)
       } else if (s.type === 'reduplication') {
@@ -703,27 +523,25 @@ export function createAnalyzer(spec, normalize = (s) => s) {
           w = head + l.form + w.slice(head.length)
         } else w = (reduplicant(/** @type {ReduplicationPattern} */ (l.pattern), w) ?? '') + w
         w = (s.outer ?? '') + w + (s.suffix ?? '')
-      } else if (s.type === 'alternation') {
-        const [underlying, surface] = s.form.split('>')
-        if (w.endsWith(underlying)) w = w.slice(0, w.length - underlying.length) + surface
       }
     }
+    for (let i = steps.length - 1; i >= 0; i--) if (steps[i].type === 'suffix') w = w + steps[i].form
+    for (let i = steps.length - 1; i >= 0; i--) if (steps[i].type === 'prefix') w = steps[i].form + w
     return w
   }
 
   return {
-    analyze,
-    clearCache: () => memo.clear(),
     generate,
     onset,
     reduplicant,
     reduplicantStems,
-    // 深度凍結：analyze 的備忘依賴規格不變，而分析器內部直接使用這些陣列
+    // 深度凍結：BCDP（morph-search.js）直接使用這些陣列
     spec: Object.freeze({
       cost,
       minStem,
       maxSteps,
       lemmaSpread,
+      virtualRootLengthCost,
       vowels: [...vowels].join(''),
       glides: [...glides].join(''),
       prefixes: Object.freeze(prefixes),
@@ -734,18 +552,6 @@ export function createAnalyzer(spec, normalize = (s) => s) {
       alternations: Object.freeze(alternations.map((a) => Object.freeze({ ...a }))),
     }),
   }
-}
-
-/**
- * @param {MorphStep['type']} type
- * @param {string} form
- * @param {Gloss} gloss
- * @param {number} cost
- * @param {ReadonlyArray<Part>} [parts] 構詞文法：由哪些詞素構成
- * @returns {MorphStep}
- */
-function step(type, form, gloss, cost, parts) {
-  return { type, form, gloss, cost, ...(parts ? { parts: /** @type {Part[]} */ (parts) } : {}) }
 }
 
 /**
@@ -766,9 +572,4 @@ export function circumfixStep(c, leftForm) {
     cost: c.cost,
     ...(c.parts ? { parts: /** @type {Part[]} */ (c.parts) } : {}),
   }
-}
-
-/** @param {number} x */
-function round(x) {
-  return Math.round(x * 1e9) / 1e9
 }

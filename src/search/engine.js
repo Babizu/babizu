@@ -15,12 +15,12 @@
  * 除了詞圖之外，其餘索引都在第一次用到時才建立（lazy）。
  */
 
-import { createMorphSearch, FuzzyIndex, roundCost } from '../fuzzy/index.js'
+import { createMorphSearch, EPSILON, FuzzyIndex, roundCost } from '../fuzzy/index.js'
 import { atomsOf } from '../pattern/ast.js'
 import { PatternError } from '../pattern/errors.js'
 import { parsePattern } from '../pattern/parser.js'
 import { PatternSearch } from '../pattern/search.js'
-import { DerivationGraph, isLexicalRoot, VIRTUAL_ROOT_PENALTY, virtualRoots } from './derivations.js'
+import { createVirtualRootSearch, DerivationGraph, isLexicalRoot, SIBLING_MAX_SOUND, soundOf, virtualRootCost, virtualRoots } from './derivations.js'
 import { buildEntryGroups, collectHits, mergeSpellings } from './family.js'
 import { ParseChart } from './parses.js'
 import { decodePosting, docAt, INDEX_FORMAT_VERSION } from './format.js'
@@ -38,6 +38,7 @@ import {
   ROLE_RANK,
   SEARCH_METHOD_GROUPS,
   SEARCH_METHODS,
+  siblingTier,
   termScore,
 } from './scoring.js'
 import { createTextTools, detectQueryMode, glossTokens, zhNormalize } from './text.js'
@@ -124,9 +125,11 @@ export const FUZZINESS = Object.freeze({
  *   自動派生經過其他詞時，由起點往下的每一層（不含最後一層，那一層就是 stem、steps）：
  *   查 sungut 找到 pausunguday，chain 是 [pusungut ＝ pu- ＋ sungut]，stem 是 pusungut
  * @property {MorphNote[] | null} [notes] 整個詞的音變說明（自動拆解只為前幾筆結果計算）
- * @property {{root: string, steps: Array<import('../fuzzy/morph-search.js').MorphStepHit>, cost: number, penalty: number}} [sibling]
- *   自動同根（matchType 'sibling'）：查詢拆出的虛擬詞根 root（詞庫中沒有）與拆法；stem、steps、chain 是這個詞往上到 root 的路。
- *   查 binubuer：root 是 bubuer（b<in>ubuer），這個詞 mabubuer ＝ ma- ＋ bubuer
+ * @property {{root: string, steps: Array<import('../fuzzy/morph-search.js').MorphStepHit>, cost: number, penalty: number, lexical: boolean}} [sibling]
+ *   自動同根（matchType 'sibling'）：查詢拆出的詞根 root 與拆法；stem、steps、chain 是這個詞往上到 root 的路。
+ *   lexical：root 是詞庫中的詞（查 kali'angidan：root 是 angit，這個詞 'inangidan ＝ ‹in› ＋ 'angit ＋ -an，penalty 是 0）；
+ *   否則是虛擬詞根（查 binubuer：root 是 bubuer（b<in>ubuer），這個詞 mabubuer ＝ ma- ＋ bubuer；
+ *   penalty 是詞庫外詞根的代價 virtualRootCost）
  * @property {number} [bestCost] 句型搜尋的構詞樣式：這個詞最好的拆法的成本；比 cost 小時，這一種是次佳的拆法
  * @property {boolean} [virtual] 句型搜尋的構詞樣式：詞根（stem）是虛擬詞根，不在詞庫中
  */
@@ -229,6 +232,8 @@ export class SearchEngine {
     this.morphSearch = this.text.morphology
       ? createMorphSearch({ analyzer: this.text.morphology, metric: this.metric, index: this.index })
       : null
+    /** @type {ReturnType<typeof createMorphSearch> | null} 虛擬詞根用的構詞搜尋（第一次用到時建立，virtualRootSearch） */
+    this._virtualRootSearch = null
     /** @type {Map<string, number> | null} */
     this._idIndex = null
     /** @type {Map<number, number[]> | null} 下層記錄（_childrenOf） */
@@ -334,11 +339,21 @@ export class SearchEngine {
   }
 
   /**
-   * 清掉跨查詢的快取（構詞分析的備忘、詞綴掃描），不影響結果。量測「沒有快取」的耗時時用。
+   * 清掉跨查詢的快取（構詞搜尋的詞綴鏈），不影響結果。量測「沒有快取」的耗時時用。
    */
   clearCaches() {
-    this.text.morphology?.clearCache()
     this.morphSearch?.clearCache()
+    this._virtualRootSearch?.clearCache()
+  }
+
+  /**
+   * 虛擬詞根用的構詞搜尋（只有構詞音變的距離函式，derivations.js 的 createVirtualRootSearch）；
+   * 語言設定檔沒有 morphology 時為 null。第一次用到時建立。
+   * @returns {ReturnType<typeof createMorphSearch> | null}
+   */
+  get virtualRootSearch() {
+    if (!this.morphSearch) return null
+    return (this._virtualRootSearch ??= createVirtualRootSearch(this.text, this.index))
   }
 
   /** 記錄總數 */
@@ -436,9 +451,15 @@ export class SearchEngine {
       occurrences: response.occurrences.length,
       glosses: response.glosses.length,
     }
-    response.entries = response.entries.slice(0, limit)
-    response.entryGroups = response.entryGroups.slice(0, limit)
-    response.occurrences = response.occurrences.slice(0, limit)
+    // 上限只算原本的命中；自動同根（已排在最後）另外全列，不擠掉原本的（siblingTier）
+    /** @template T @param {T[]} list @param {(x: T) => number} tier */
+    const capped = (list, tier) => {
+      const own = list.filter((x) => tier(x) === 0)
+      return own.length < list.length ? [...own.slice(0, limit), ...list.filter((x) => tier(x) !== 0)] : list.slice(0, limit)
+    }
+    response.entries = capped(response.entries, siblingTier)
+    response.entryGroups = capped(response.entryGroups, (g) => siblingTier(g.best))
+    response.occurrences = capped(response.occurrences, siblingTier)
     response.glosses = response.glosses.slice(0, limit)
     response.stats.elapsedMs = Math.round((now() - started) * 10) / 10
     return response
@@ -980,8 +1001,7 @@ export class SearchEngine {
       const variants = [...matches.values()].filter((m) => m.matchType === 'fuzzy' && this._isDerivationVariant(key, level, m))
       // 同一個詞有多種命中方式時的取捨見 scoring.js 的 mergeMorphMatch：開頭相符、包含的詞能自動拆解或派生時
       // 改以構詞命中呈現、分數取較好的；與模糊命中之間取分數較好的
-      const lemmaBest = Math.min(Infinity, ...lemma.map((m) => m.distance))
-      for (const m of [...lemma, ...this._derivedTerms(key, variants, this._lemmaMax(key, level), lemmaBest)]) {
+      for (const m of [...lemma, ...this._derivedTerms(key, variants, this._lemmaMax(key, level), lemma)]) {
         matches.set(m.term, mergeMorphMatch(m, matches.get(m.term), key))
       }
     }
@@ -1026,7 +1046,7 @@ export class SearchEngine {
    * 一般搜尋的自動派生與句型搜尋共用，兩邊的說明一致。
    * @param {string} key 查詢（或句型中寫出的詞根）
    * @param {import('./derivations.js').DerivedReach} r 路徑
-   * @param {{term: string, distance: number, split?: {cost: number, steps: any[]}}} seed 起點
+   * @param {{term: string, distance: number, split?: {cost: number, steps: any[], penalty: number, lexical: boolean}}} seed 起點
    * @param {number} cost 總分（起點距離＋路徑成本，經過虛擬詞根時另加代價）
    * @param {Map<string, AlignmentNote[]>} [variantNotes] 查詢 → 起點的對齊說明（同一次搜尋共用）
    * @returns {LemmaAnalysis}
@@ -1047,8 +1067,8 @@ export class SearchEngine {
         : {}),
     }
     if (seed.split) {
-      // 自動同根：查詢拆出的詞根就是這個詞往上的詞根（詞庫中沒有這個詞）
-      analysis.sibling = { root: seed.term, steps: seed.split.steps, cost: seed.split.cost, penalty: VIRTUAL_ROOT_PENALTY }
+      // 自動同根：查詢拆出的詞根就是這個詞往上的詞根（詞庫中的詞，或詞庫中沒有的虛擬詞根）
+      analysis.sibling = { root: seed.term, steps: seed.split.steps, cost: seed.split.cost, penalty: seed.split.penalty, lexical: seed.split.lexical }
     } else if (seed.distance > 0) {
       analysis.variantOf = key
       analysis.variantDistance = seed.distance
@@ -1065,50 +1085,73 @@ export class SearchEngine {
    * 派生詞的派生詞也走得到。分數是起點距離加上路徑上各條邊的成本；路徑本身的成本不超過自動拆解方向的上限
    * （_lemmaMax：同一個模糊程度，兩個方向的上限相同）。
    *
+   * 自動同根：先往上到查詢的詞根，再往下走（命中方式 sibling）。詞根有兩種，都以建置時同一個定義取得：
+   * - 詞庫中的詞根：自動拆解最好的詞庫詞根（同分全收，比查詢短、單一個詞；與自動派生圖的邊同一個定義）。
+   *   只取它的直接子詞（同一個詞根，不含孫輩），兩條邊的音變都不超過 SIBLING_MAX_SOUND：
+   *   詞庫的詞根常有幾十個派生詞，兩條巧合的邊接起來尤其不可靠；
+   * - 虛擬詞根：以建置時同一個函式、同樣的條件拆查詢本身（virtualRoots；詞庫中最好的詞根取自動拆解的結果），
+   *   起點的距離另加詞庫外詞根的代價 virtualRootCost。
+   * 查詢本身是別的詞的詞根時不往上（與虛擬詞根的條件相同：samian 不拆成 sa- ＋ mian）。
+   *
    * @param {string} key
    * @param {TermMatch[]} variants 查詢的相近寫法（模糊命中的詞）
    * @param {number} maxPath 路徑成本的上限
-   * @param {number} [lemmaBest] 自動拆解在詞庫中最好的詞根的成本（虛擬詞根的條件 1，與建置時相同）
+   * @param {TermMatch[]} [lemma] 自動拆解的命中（詞庫中的詞根；虛擬詞根的條件也取它最好的成本，與建置時相同）
    * @returns {TermMatch[]}
    * @private
    */
-  _derivedTerms(key, variants, maxPath, lemmaBest = Infinity) {
+  _derivedTerms(key, variants, maxPath, lemma = []) {
     const graph = this.derivations
     if (!graph) return []
-    /** @type {Array<{id: number, distance: number, term: string, split?: {cost: number, steps: any[]}}>} */
+    /** @typedef {{id: number, distance: number, term: string, split?: {cost: number, steps: any[], penalty: number, lexical: boolean}}} Seed */
+    /** @type {Seed[]} */
     const seeds = []
     for (const s of [{ term: key, distance: 0 }, ...variants]) {
       const id = this.index.dawg.lookup(s.term)
       if (id !== -1) seeds.push({ id, distance: s.distance, term: s.term })
     }
-    // 虛擬詞根：以建置時同一個函式、同樣的條件拆查詢本身（virtualRoots；詞庫中最好的詞根取自動拆解的結果，
-    // 查詢是別的詞的詞根時不拆），拆出的虛擬詞根往下找同根詞（見 derivations.js 檔頭）。
-    // 起點的距離是拆解的成本加上一次 VIRTUAL_ROOT_PENALTY
     const self = this.index.dawg.lookup(key)
-    /** @type {typeof seeds} */
+    const lemmaBest = Math.min(Infinity, ...lemma.map((m) => m.distance))
+    /** @type {Seed[]} */
+    const lexicalSeeds = []
+    /** @type {Seed[]} */
     const virtualSeeds = []
     if (!isLexicalRoot(this.index, self, (id) => graph.hasChildren(id))) {
-      for (const v of virtualRoots(key, /** @type {NonNullable<typeof this.text.morphology>} */ (this.text.morphology), this.index, lemmaBest)) {
+      const length = Array.from(key).length
+      for (const m of lemma) {
+        if (m.distance > lemmaBest + EPSILON || m.term.includes(' ') || Array.from(m.term).length >= length || !m.analysis) continue
+        if (soundOf({ cost: m.distance, steps: m.analysis.steps }) > SIBLING_MAX_SOUND + EPSILON) continue
+        const id = this.index.dawg.lookup(m.term)
+        if (id !== -1) lexicalSeeds.push({ id, distance: m.distance, term: m.term, split: { cost: m.distance, steps: m.analysis.steps, penalty: 0, lexical: true } })
+      }
+      const open = /** @type {NonNullable<SearchEngine['virtualRootSearch']>} */ (this.virtualRootSearch)
+      for (const v of virtualRoots(key, open, this.index, lemmaBest)) {
         const id = graph.virtualIds.get(v.stem)
-        if (id !== undefined) virtualSeeds.push({ id, distance: roundCost(v.cost + VIRTUAL_ROOT_PENALTY), term: v.stem, split: { cost: v.cost, steps: v.steps } })
+        const penalty = virtualRootCost(v.stem, open.spec)
+        if (id !== undefined) virtualSeeds.push({ id, distance: roundCost(v.cost + penalty), term: v.stem, split: { cost: v.cost, steps: v.steps, penalty, lexical: false } })
       }
     }
-    // 分兩次走：先由查詢與它的相近寫法（與沒有虛擬詞根時完全相同），再由虛擬詞根，只補上第一次沒走到的詞。
-    // 自動同根不取代其他命中（scoring.js 的 mergeMorphMatch），在圖上也一樣
+    // 分三次走，後面的只補上前面沒走到的詞：先由查詢與它的相近寫法（與沒有自動同根時完全相同），
+    // 再由詞庫中的詞根，最後由虛擬詞根（把握最小）。自動同根不取代其他命中（scoring.js 的 mergeMorphMatch），在圖上也一樣
     const direct = graph.descendants(seeds, maxPath).map((r) => ({ ...r, from: seeds[r.seed] }))
     const reached = new Set(direct.map((r) => r.word))
+    const viaLexical = graph
+      .childrenOf(lexicalSeeds, { maxPath, maxSound: SIBLING_MAX_SOUND })
+      .map((r) => ({ ...r, from: lexicalSeeds[r.seed] }))
+      .filter((r) => !reached.has(r.word) && r.word !== self)
+    for (const r of viaLexical) reached.add(r.word)
     const viaVirtual = virtualSeeds.length
       ? graph
           .descendants(virtualSeeds, maxPath)
           .map((r) => ({ ...r, from: virtualSeeds[r.seed] }))
-          // 查詢本身也在詞庫中時不算自己；整條（拆解 ＋ 往下）也不超過同一個上限
-          .filter((r) => !reached.has(r.word) && r.word !== self && r.cost - VIRTUAL_ROOT_PENALTY <= maxPath + 1e-9)
+          // 查詢本身也在詞庫中時不算自己；整條（拆解 ＋ 往下）也不超過同一個上限（詞庫外詞根的代價不算在內）
+          .filter((r) => !reached.has(r.word) && r.word !== self && r.cost - (r.from.split?.penalty ?? 0) <= maxPath + EPSILON)
       : []
     /** @type {Map<string, AlignmentNote[]>} 查詢 → 起點的對齊說明（每個起點算一次） */
     const variantNotes = new Map()
     /** @type {TermMatch[]} */
     const out = []
-    for (const r of [...direct, ...viaVirtual]) {
+    for (const r of [...direct, ...viaLexical, ...viaVirtual]) {
       const seed = r.from
       const analysis = this._reachAnalysis(key, r, seed, r.cost, variantNotes)
       out.push({

@@ -26,7 +26,7 @@ import { createPatternMorphology, PARSE_SELECTION, readingOfSteps, satisfies, se
 import { parsePattern } from './parser.js'
 import { segmentText } from './sentences.js'
 import { FuzzyIndex, roundCost } from '../fuzzy/index.js'
-import { analyzeWord, DERIVATION_MAX_COST, virtualRoots } from '../search/derivations.js'
+import { analyzeWord, DERIVATION_MAX_COST } from '../search/derivations.js'
 import { parsedAnalysis, sortParses } from '../search/parses.js'
 import { alternativesOf, rankScore, recordScore, termScore } from '../search/scoring.js'
 
@@ -502,7 +502,7 @@ export class PatternSearch {
   /**
    * 不在詞庫中的詞的拆法：語料中的詞幾乎都在詞庫中，例外是例句體例展開的讀法
    * （ma(ki)kiahan 的 makiahan、makikiahan），建置時沒有算。查詢時用建置拆解表的同一個函式現算
-   * （derivations.js 的 analyzeWord 與 virtualRoots，條件相同），結果與這個詞在詞庫中時拆解表的內容相同。
+   * （derivations.js 的 analyzeWord，含虛擬詞根），結果與這個詞在詞庫中時拆解表的內容相同。
    * @param {string} key
    * @returns {{all: import('../search/parses.js').ParsedAnalysis[], floor: number}} 所有拆法（依成本排序）與 BCDP 在詞庫中最好的命中
    */
@@ -511,12 +511,10 @@ export class PatternSearch {
     if (!out) {
       const { morphSearch, index, text } = this.engine
       if (!morphSearch || !text.morphology) return { all: [], floor: Infinity }
-      const a = analyzeWord(key, index, morphSearch, false)
+      // 虛擬詞根的條件與建置時相同（詞庫中最好的詞根取自動派生圖這個詞的邊）；詞庫外的詞不會是別的詞的詞根
+      const a = analyzeWord(key, index, morphSearch, false, this.engine.virtualRootSearch)
       const lexical = a.parses.map((p) => parsedAnalysis(index.terms[p.root], false, p.analysis.cost, p.analysis.steps))
-      // 虛擬詞根的條件與建置時相同：比自動派生圖這個詞的邊（BCDP 最好的詞庫詞根）便宜 VIRTUAL_ROOT_PENALTY 以上；
-      // 詞庫外的詞不會是別的詞的詞根
-      const lexiconBest = Math.min(...a.edges.map((e) => e.analysis.cost))
-      const virtual = virtualRoots(key, text.morphology, index, lexiconBest).map((v) => parsedAnalysis(v.stem, true, roundCost(v.cost), v.steps))
+      const virtual = a.virtual.map((v) => parsedAnalysis(v.stem, true, roundCost(v.cost), v.steps))
       out = { all: sortParses([...lexical, ...virtual]), floor: Math.min(a.best ?? Infinity, ...lexical.map((p) => p.cost)) }
       this._unlisted.set(key, out)
     }

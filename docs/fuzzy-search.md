@@ -223,7 +223,7 @@ CPU 剖析顯示，時間的 43% 花在 `fillRow`，而其中大部分是這些�
    | 開頭相符（prefix） | 0.35 ＋ 多出來的字元數 × 0.05 | 開頭相符 |
    | 結尾相符（suffix） | 與包含相同（v0.5.7 起由包含分出來，只是分開標示、分開篩選） | 結尾相符 |
    | 自動拆解（lemma）、自動派生（derived） | 0.4 ＋ 構詞成本（`MORPHOLOGY_BASE_SCORE`） | 自動拆解／自動派生：詞綴結構 |
-   | 自動同根（sibling） | 0.4 ＋ 查詢的拆解成本 ＋ 0.1（詞庫外的詞根）＋ 往下的成本 | 自動同根：共同的詞根 |
+   | 自動同根（sibling） | 0.4 ＋ 查詢的拆解成本 ＋ 往下的成本；詞根不在詞庫中時另加 `virtualRootLengthCost` × 詞根長度 | 自動同根：共同的詞根 |
    | 包含（substring） | 0.90 ＋ 多出來的字元數 × 0.05 | 包含 |
 
 2. **記錄的分數**（`recordScore`）：那個詞和這一筆記錄的關係。
@@ -279,8 +279,13 @@ CPU 剖析顯示，時間的 43% 花在 `fillRow`，而其中大部分是這些�
 - `response.methodGroups`：每一組（`SEARCH_METHOD_GROUPS`：拼寫、部分符合、確定、自動）找得到幾筆記錄，是組內各方法的聯集，同樣不受排除影響；介面在收合的組名旁顯示。
 - 網址參數 `x=`（逗號分隔的排除清單）；預設全部顯示。
 
-詞條的排序（`compareHits`）：分數，再依命中方式、詞長、命中身分、角色、記錄長度。
-例句的排序（`compareOccurrences`）：分數（各查詢詞相加），再依最弱的命中方式、距離、句長。兩者共用 `scoring.js`，搜尋引擎只負責收集命中；以後改排序規則只改這一個檔案。
+詞條的排序（`compareHits`）：自動同根在後，再依分數、命中方式、詞長、命中身分、角色、記錄長度。
+例句的排序（`compareOccurrences`）：自動同根在後（句中最弱的命中方式是自動同根），再依分數（各查詢詞相加）、最弱的命中方式、距離、句長。
+兩者共用 `scoring.js`，搜尋引擎只負責收集命中；以後改排序規則只改這一個檔案。
+
+**自動同根排在原本的命中之後，不佔上限**（`siblingTier`）：同根詞的詞條與例句都列出，但一律排在其他命中之後；
+每個區塊的上限（`limit`，預設 500）只算原本的命中，同根詞另外全列。詞庫中常用詞根的同根詞可以出現在幾百句例句中，
+不這樣做時它們會把分數較差的原本命中擠出上限（minubizu 研究紀錄 U.21）。詞條家族同樣：只有自動同根的家族排在後面。
 
 ### 同一個詞有多種命中方式（`mergeMorphMatch`）
 
@@ -292,8 +297,9 @@ CPU 剖析顯示，時間的 43% 花在 `fillRow`，而其中大部分是這些�
   開頭相符只看字串，BCDP 分析得出來時說明比「開頭相符」有用，名次也不該因此變差。
   例：查 kita，kitakita'en 開頭相符（0.70）又是自動派生（kita'en 的重疊），標為自動派生、分數 0.70。
 - 構詞命中與模糊命中之間：**取等效距離較好的一種**，同分時模糊命中優先（直接相符）。
-- **自動同根不取代其他命中**：它經過詞庫中沒有的詞根（[bcdp.md](bcdp.md) 10.5），是把握最小的一種；只補上原本沒有的詞
-  （開頭相符、包含的詞照上面附上說明）。同一筆記錄有好幾個命中時也一樣（`replacesRecordHit`）。所以加上它之後，原本的結果一筆都不變。
+- **自動同根不取代其他命中**：它要先往上到查詢的詞根再往下（[bcdp.md](bcdp.md) 10.5），是把握最小的一種；只補上原本沒有的詞，
+  開頭相符、包含也不例外（它排在最後，取代原本的命中等於把它擠到最後）。同一筆記錄有好幾個命中時也一樣（`replacesRecordHit`）。
+  加上排在最後、不佔上限，原本的結果一筆都不變。
 
 只看命中方式是不夠的。模糊門檻隨查詢長度變大（「標準」7 個字元是 1.25），
 刪掉一個短前綴（p 1.0）加上一兩條方言規則就落在門檻內：查 `parazem` 時，`razem` 的模糊距離是 1.2，
@@ -433,7 +439,8 @@ DAWG 則是幾個 TypedArray（CSR 格式的 `edgeStart`／`edgeTarget`、邊標
 - **自動拆解**（`lemma`，程式中也稱詞根相符）：查衍生詞，演算法去掉詞綴找到詞根。例如 `minudox` → `daux-`：`minu-` ＋ `dox`，其中 dox → daux 是 o→au 的方言音變。
 - **自動派生**（`derived`）：查詞根，找到詞庫與例句中演算法推定由它衍生的詞，包括中綴、重疊形式，以及派生詞的派生詞。建置時對每個詞以 BCDP 求最好的詞根，存成自動派生圖（`search/derivations.json`），查詢時由查詢往下走（[bcdp.md](bcdp.md) 第 10 節）。寬鬆時查詢的所有模糊命中也當起點。
 
-- **自動同根**（`sibling`）：查詢與詞庫的詞推定來自同一個詞庫中沒有的詞根（虛擬詞根）。例如查 `binubuer`（b‹in›ubuer）找到 `mabubuer`（ma- ＋ bubuer），bubuer 不是任何記錄的詞形（[bcdp.md](bcdp.md) 10.5）。
+- **自動同根**（`sibling`）：查詢與詞庫的詞推定來自同一個詞根：先往上到查詢的詞根，再往下走。詞根在詞庫中時，例如查 `masamian` 經 `samian` 找到 `musamian`；
+  不在詞庫中時是虛擬詞根，例如查 `binubuer`（b‹in›ubuer）找到 `mabubuer`（ma- ＋ bubuer），bubuer 不是任何記錄的詞形（[bcdp.md](bcdp.md) 10.5）。
 
 三者都是推定的，介面標「自動拆解」「自動派生」「自動同根」；辭典標註的構詞關係另外標「確定拆解」「確定派生」「確定同根」（第 8 節「辭典的構詞關係」）。
 
@@ -468,9 +475,9 @@ const data = index.serialize() // FuzzyIndex.deserialize(data, metric)
 | `FuzzyIndex` | `add`、`addAll`、`lookup`、`search`、`searchWithStats`、`freeze`、`terms`、`payloads`、`dawg`、`serialize`／`deserialize` |
 | `createNormalizer(options)` | 建立正規化函式；`DEFAULT_CHAR_MAP` 是預設字元對應 |
 | `createMetricFromProfile`、`createRulesFromProfile`、`validateProfile` | 由語言設定檔建立 |
-| `createAnalyzer(spec, normalize)` | 構詞分析器：`analyze`（去詞綴）、`generate`（還原詞綴）；文法寫法的規格先展開 |
+| `createAnalyzer(spec, normalize)` | 構詞規格：正規化後的 `spec`、中綴位置與重疊模板（`onset`、`reduplicant`、`reduplicantStems`）、`generate`（還原詞綴）；文法寫法的規格先展開。去詞綴只有 BCDP 一套演算法 |
 | `expandGrammar(spec, normalize)`、`validateGrammar`、`isGrammarSpec` | 構詞文法（[morph-grammar.md](morph-grammar.md)）：展開成平面清單（每項帶 `parts`、`rank`）、驗證、判斷寫法 |
-| `createMorphSearch({ analyzer, metric, index })` | 構詞搜尋 BCDP（[bcdp.md](bcdp.md)）：`search`、`prepare`／`seed`／`finish`（搭配多通道走訪）、`explain`（演算法實驗室）、`notesOf` |
+| `createMorphSearch({ analyzer, metric, index })` | 構詞搜尋 BCDP（[bcdp.md](bcdp.md)）：`search`、`prepare`／`seed`／`finish`（搭配多通道走訪）、`openStems`（字面的開放詞幹，詞根不在詞庫中時；bcdp.md 10.5）、`explain`（演算法實驗室）、`notesOf` |
 | `FuzzyIndex.searchChannels(channels)` | 多通道走訪；每個通道可帶交界狀態 `from`（起點）、`to`（詞尾耦合）、`onJunction`（回報詞尾的交界狀態）、`lockBoundary`、`cutoff`（共用的相對上限）、`initialFrom`（以某些字元開頭的詞改由另一個交界狀態出發）；`start`／`end` 是沒有跨界表的簡寫 |
 | `Checklist`（`babizu/search`） | 檢查清單：`untreatedTokens`／`tokenPage`（例句中沒有辭典條目的詞，並列最接近的詞條與猜的類別）、`duplicateGroups`／`duplicatePage`（詞形完全相同的詞條）、`duplicateSentences`／`sentencePage`（所有來源中句子完全相同的例句，連續空白視為一個）、`summary` |
 | `mergeSpellings(groups)`、`spellingOf(text)`（`babizu/search`） | 同形詞組：寫法完全相同的單獨結果合成一項（見上「同形詞組」） |
