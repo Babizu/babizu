@@ -45,7 +45,7 @@ const WARNING_TEXT = {
   W_TRAILING_Q: msg('最後的 ? 表示「可有可無」，不是問號。'),
   W_AFFIX_VARIANT: msg('「{form}」不在構詞規格中，依方言規則視為「{to}」。'),
   W_ALSO_CONSTRUCTION: msg('「{form}」也是 {parts} 的寫法，這裡只找 {form}；兩者都要找請用擇一的寫法。'),
-  W_EXACT_MORPHOLOGY: msg('精確模式下，構詞樣式只取每個詞最好的拆法、不容許音變，找到的可能比標準模式少。'),
+  W_EXACT_MORPHOLOGY: msg('精確模式下，構詞樣式只取每個詞最好的拆法、不取次佳的，找到的可能比標準模式少。'),
   W_INNER_AFFIX: msg('列出的詞綴只算最外層；另有 {count} 個詞形的 {form} 在內層。'),
 }
 

@@ -85,19 +85,22 @@ describe('依模糊程度取拆法（PARSE_SELECTION）', () => {
   /** @param {number} cost @param {number} sound @param {string} root */
   const p = (cost, sound, root) => ({ cost, sound, root })
 
-  it('精確：最好的拆法（同分都取）、不容許音變；標準：差 0.1 以內、音變 ≤ 0.2；寬鬆：全部、音變 ≤ 0.4', () => {
-    const all = [p(0.1, 0, 'a'), p(0.1, 0, 'b'), p(0.2, 0, 'c'), p(0.3, 0, 'd'), p(0.5, 0.3, 'e'), p(0.6, 0.5, 'f')]
+  it('精確：最好的拆法（同分都取）；標準：差 0.1 以內；兩者音變 ≤ 0.2；寬鬆：全部、音變 ≤ 0.4', () => {
+    const all = [p(0.1, 0, 'a'), p(0.1, 0.05, 'b'), p(0.2, 0, 'c'), p(0.3, 0, 'd'), p(0.5, 0.3, 'e'), p(0.6, 0.5, 'f')]
     expect(selectParses(all, 'exact').map((x) => x.root)).toEqual(['a', 'b'])
     expect(selectParses(all, 'normal').map((x) => x.root)).toEqual(['a', 'b', 'c'])
     expect(selectParses(all, 'loose').map((x) => x.root)).toEqual(['a', 'b', 'c', 'd', 'e'])
     expect(selectParses([], 'loose')).toEqual([])
     expect(PARSE_SELECTION.normal).toEqual({ spread: 0.1, sound: 0.2 })
+    expect(PARSE_SELECTION.exact).toEqual({ spread: 0, sound: 0.2 })
   })
 
-  it('先求最好的再扣音變：最好的拆法要靠音變時，精確模式不改取比它差的無音變拆法', () => {
-    const all = [p(0.2, 0.1, 'sound'), p(0.3, 0, 'plain')]
+  it('先求最好的再扣音變：最好的拆法音變太多時，精確模式不改取比它差的拆法', () => {
+    const all = [p(0.4, 0.3, 'sound'), p(0.5, 0, 'plain')]
     expect(selectParses(all, 'exact')).toEqual([])
-    expect(selectParses(all, 'normal').map((x) => x.root)).toEqual(['sound', 'plain'])
+    expect(selectParses(all, 'normal').map((x) => x.root)).toEqual(['plain'])
+    // 少量音變（交界濁化 0.05）的最好拆法，精確模式照收
+    expect(selectParses([p(0.25, 0.05, 'hazap'), p(0.35, 0, 'other')], 'exact').map((x) => x.root)).toEqual(['hazap'])
   })
 
   it('從 BCDP 最好的命中算起：最好的命中不是拆法時（abak 最好的是 a- ＋ barak 0.25），差太多的拆法（a-pa-rak 0.55）標準不收', () => {
@@ -107,6 +110,30 @@ describe('依模糊程度取拆法（PARSE_SELECTION）', () => {
     expect(selectParses(all, 'loose', 0.25).map((x) => x.root)).toEqual(['rak'])
     // 沒有給起點時從最好的拆法算起
     expect(selectParses(all, 'exact').map((x) => x.root)).toEqual(['rak'])
+  })
+
+  it('虛擬詞根的拆法另外取、不把詞庫拆法擠掉：pinahazaban 的 pa-<in>hazap-an（0.25）不因 pinahazab-an（虛擬，0.1）而落選', () => {
+    /** @param {number} cost @param {number} sound @param {string} root @param {boolean} virtual */
+    const q = (cost, sound, root, virtual) => ({ cost, sound, root, virtual })
+    const all = [q(0.1, 0, 'pinahazab', true), q(0.1, 0, 'nahazaban', true), q(0.25, 0.05, 'hazap', false), q(0.45, 0.35, 'azapan', false)]
+    expect(selectParses(all, 'normal', 0.25).map((x) => x.root)).toEqual(['pinahazab', 'nahazaban', 'hazap'])
+    // 精確：詞庫的最好拆法（交界濁化 0.05）與虛擬詞根都收
+    expect(selectParses(all, 'exact', 0.25).map((x) => x.root)).toEqual(['pinahazab', 'nahazaban', 'hazap'])
+    expect(selectParses(all, 'loose', 0.25).map((x) => x.root)).toEqual(['pinahazab', 'nahazaban', 'hazap', 'azapan'])
+    // 沒有給起點時從最好的詞庫拆法算起（不是虛擬詞根）
+    expect(selectParses(all, 'normal').map((x) => x.root)).toContain('hazap')
+    // 不論有沒有虛擬詞根，取到的詞庫拆法都一樣
+    for (const f of ['exact', 'normal', 'loose']) {
+      expect(selectParses(all, f, 0.25).filter((x) => !x.virtual), f).toEqual(selectParses(all.filter((x) => !x.virtual), f, 0.25))
+    }
+  })
+
+  it('虛擬詞根的拆法不看與詞庫拆法差多少：最好的命中不是拆法時（abak 型，0.25），0.5 的虛擬詞根拆法照收（自動派生圖的邊）', () => {
+    /** @param {number} cost @param {string} root @param {boolean} virtual */
+    const q = (cost, root, virtual) => ({ cost, sound: 0, root, virtual })
+    const all = [q(0.5, 'v', true), q(0.55, 'rak', false)]
+    expect(selectParses(all, 'exact', 0.25).map((x) => x.root)).toEqual(['v'])
+    expect(selectParses(all, 'normal', 0.25).map((x) => x.root)).toEqual(['v'])
   })
 
   it('音變的上限：標準不收音變 0.3 的拆法，寬鬆收', () => {
@@ -172,5 +199,15 @@ describe('哪一段是詞根', () => {
     expect(pick('…-pa-…')).toMatchObject({ prefixesAnywhere: true })
     expect(pick('i-…')).toMatchObject({ prefixes: [{ label: 'i-' }] })
     expect(pick('…-i')).toMatchObject({ suffixes: [{ label: '-i' }] })
+  })
+
+  it('… 優先當詞根：tau-i-…（tau 是前綴也是詞庫中的詞，i 是前綴也是後綴）是前綴 tau-、i-，不是詞根 tau 加後綴 -i 與外側的 …', () => {
+    const flat = createTextTools({ ...PAZEH_PROFILE, morphology: { cost: 0.1, minStem: 3, prefixes: [{ form: 'tau' }, { form: 'i' }], suffixes: [{ form: 'i' }, { form: 'en' }] } })
+    const morph = createPatternMorphology(/** @type {any} */ (flat.morphology).spec, flat.searchKey, (a, b) => flat.createSearchMetric().distance(a, b), (k) => k === 'tau')
+    /** @param {string} q */
+    const pick = (q) => morph.resolve(/** @type {any} */ (parsePattern(q).conditions[0].body).atom.segments, [])
+    expect(pick('tau-i-…')).toMatchObject({ root: null, prefixes: [{ label: 'tau-' }, { label: 'i-' }], suffixes: [], prefixesAnywhere: false })
+    // … 當不成詞根時（en 不是前綴）才是外側的 …
+    expect(pick('tau-en-…')).toMatchObject({ root: 'tau', suffixes: [{ label: '-en' }], suffixesAnywhere: true })
   })
 })

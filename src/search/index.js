@@ -19,7 +19,7 @@ export {
   isVirtualRootShape,
   VIRTUAL_ROOT_PENALTY,
 } from './derivations.js'
-export { buildParseChart, encodeParses, ParseChart, PARSES_FORMAT_VERSION } from './parses.js'
+export { buildParseChart, encodeParses, ParseChart, PARSES_FORMAT_VERSION, parsedAnalysis, sortParses } from './parses.js'
 export { SearchEngine, FUZZINESS } from './engine.js'
 export { buildEntryGroups, collectHits, computeParents, mergeSpellings, spellingOf } from './family.js'
 export { Checklist, classify } from './checklist.js'

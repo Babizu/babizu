@@ -66,7 +66,7 @@ export const PATTERN_ERRORS = /** @type {const} */ ([
  * - W_TRAILING_Q：最後的 ? 表示「可有可無」，不是問號
  * - W_AFFIX_VARIANT：這個詞綴寫法不在規格中，依方言規則視為另一個（params.form → params.to）
  * - W_ALSO_CONSTRUCTION：這個寫法也是某個組合的整體寫法（params.form、params.parts），只找了詞素本身
- * - W_EXACT_MORPHOLOGY：精確模式下，構詞樣式只取每個詞最好的拆法、不容許音變（morph.js 的 PARSE_SELECTION），找到的可能比標準模式少
+ * - W_EXACT_MORPHOLOGY：精確模式下，構詞樣式只取每個詞最好的拆法、不取次佳的（morph.js 的 PARSE_SELECTION），找到的可能比標準模式少
  * - W_INNER_AFFIX：列出的前綴或後綴只算最外層；改成不錨定（`…-x-…`）可以多找到 params.count 個詞形
  *   （params.form 是那些詞綴，params.query 是改寫後的整個查詢，介面做成可以點的連結）
  */

@@ -66,6 +66,10 @@ export const RECORDS = [
   rec('s15', 'sentence', 'bakita ki hapuy'),
   rec('s16', 'sentence', 'mupakita yaku'),
   rec('s17', 'sentence', 'pabak isiw'),
+  // 例句體例：(ka) 可以省略，讀法 pakakita 不在詞庫中（查詢時現算它的拆法）
+  rec('s18', 'sentence', 'yaku pa(ka)kita isiw'),
+  // ma(s)ay：讀法 masay 不在詞庫中，它的拆法只有虛擬詞根 asay（括號內外的片段都比 minStem 短，不會變成別的詞的詞根）
+  rec('s19', 'sentence', 'ma(s)ay ki saw'),
 ]
 
 /**

@@ -25,7 +25,9 @@ import { findMatches, matchesAnywhere } from './match.js'
 import { createPatternMorphology, PARSE_SELECTION, readingOfSteps, satisfies, selectParses } from './morph.js'
 import { parsePattern } from './parser.js'
 import { segmentText } from './sentences.js'
-import { DERIVATION_MAX_COST } from '../search/derivations.js'
+import { FuzzyIndex, roundCost } from '../fuzzy/index.js'
+import { analyzeWord, DERIVATION_MAX_COST, virtualRoots } from '../search/derivations.js'
+import { parsedAnalysis, sortParses } from '../search/parses.js'
 import { alternativesOf, rankScore, recordScore, termScore } from '../search/scoring.js'
 
 /**
@@ -57,7 +59,7 @@ const EPSILON = 1e-9
 
 /**
  * @typedef {import('../search/parses.js').ParsedAnalysis & {best: number, reading: import('./morph.js').MorphReading}} SelectedParse
- *   依模糊程度取到的一種拆法；best 是這個詞最好的拆法的成本
+ *   依模糊程度取到的一種拆法；best 是同一種（詞庫詞根或虛擬詞根）拆法中最好的成本（介面說明「次佳」用）
  */
 
 /**
@@ -124,12 +126,17 @@ export class PatternSearch {
     this._selected = new Map()
     /** @type {Map<string, import('../search/engine.js').MorphNote[]>} (詞, 詞根) → 音變說明 */
     this._notes = new Map()
+    /** @type {Map<string, {all: import('../search/parses.js').ParsedAnalysis[], floor: number}>} 詞庫外的詞 → 它的拆法（_unlistedParses） */
+    this._unlisted = new Map()
+    /** @type {FuzzyIndex | null | undefined} 語料中不在詞庫的詞的詞圖（unlistedIndex） */
+    this._unlistedIndex = undefined
   }
 
   /** 拆解表換了（engine.attachParseChart）：丟掉依拆解表算的快取 */
   reset() {
     this._selected = new Map()
     this._notes = new Map()
+    this._unlisted = new Map()
     this._morphology = undefined
   }
 
@@ -154,6 +161,25 @@ export class PatternSearch {
     }
     this._corpus = { texts, docsOf }
     return this._corpus
+  }
+
+  /**
+   * 語料中不在詞庫的詞（例句體例展開的讀法，ma(ki)kiahan 的 makiahan）組成的小詞圖（第一次用到時建立）。
+   * 不加引號的詞在詞庫的詞圖之外也查這裡，用同一個距離函式、同樣的門檻（SearchEngine._fuzzyTerms 的選項），
+   * 拼寫完全相同或相近的讀法才比得到。沒有這種詞時為 null。
+   */
+  get unlistedIndex() {
+    if (this._unlistedIndex === undefined) {
+      const { index, metric } = this.engine
+      const tokens = [...this.corpus.docsOf.keys()].filter((k) => index.dawg.lookup(k) === -1)
+      if (tokens.length === 0) this._unlistedIndex = null
+      else {
+        const small = new FuzzyIndex(metric)
+        small.addAll(tokens.map((t) => [t, 0]))
+        this._unlistedIndex = small
+      }
+    }
+    return this._unlistedIndex
   }
 
   /** 構詞樣式的解析（語言設定檔沒有構詞規格時為 null） */
@@ -344,6 +370,11 @@ export class PatternSearch {
       for (const r of engine._fuzzyTerms(key, level, scratch).results) {
         put(r.term, { word: key, term: r.term, matchType: 'fuzzy', distance: r.distance, analysis: null, score: r.distance })
       }
+      // 詞庫外的讀法：同樣的選項查它們的小詞圖
+      const n = Array.from(key).length
+      for (const r of this.unlistedIndex?.search(key, { maxDistance: level.maxDistance(n), normalization: 'max', maxNormalized: level.maxNormalized }) ?? []) {
+        put(r.term, { word: key, term: r.term, matchType: 'fuzzy', distance: r.distance, analysis: null, score: r.distance })
+      }
       return out
     }
     if (atom.kind === 'glob') {
@@ -436,7 +467,9 @@ export class PatternSearch {
   }
 
   /**
-   * 詞依模糊程度取到的拆法（依成本排序），附上詞素（依模糊程度、詞快取）。
+   * 詞依模糊程度取到的拆法，附上詞素（依模糊程度、詞快取）。
+   * 詞庫詞根的拆法在前（依成本），虛擬詞根的拆法在後：兩種都符合條件時，證據用詞庫詞根的拆法，
+   * 與一般搜尋自動拆解列出的詞根相同（虛擬詞根的成本與 BCDP 的成本不能比，見 morph.js 的 selectParses）。
    * @param {string} key
    * @param {import('../search/engine.js').Fuzziness} fuzziness
    * @returns {SelectedParse[]}
@@ -450,13 +483,44 @@ export class PatternSearch {
       const engine = this.engine
       const id = engine.index.dawg.lookup(key)
       const chart = /** @type {NonNullable<typeof engine.parses>} */ (engine.parses)
-      const all = id === -1 ? [] : chart.of(id)
-      // best：最好的拆法（介面說明「次佳」用）；取拆法從 BCDP 最好的命中算起（bestOf，可能不是拆法）
-      const best = all.length ? all[0].cost : 0
-      list = selectParses(all, level, id === -1 ? Infinity : chart.bestOf(id)).map((x) => ({ ...x, best, reading: readingOfSteps(x.steps) }))
+      // 詞庫中的詞查拆解表；不在詞庫中的（例句體例展開的讀法）現算，用建置時同一個函式
+      const { all, floor } = id === -1 ? this._unlistedParses(key) : { all: chart.of(id), floor: chart.lexicalBestOf(id) }
+      // 詞庫詞根的拆法從 BCDP 在詞庫中最好的命中算起（lexicalBestOf，可能不是拆法）；虛擬詞根的拆法另外全收
+      const selected = selectParses(all, level, floor)
+      /** 同一種拆法中最好的成本（介面說明「次佳」用） @param {boolean} virtual */
+      const bestOfKind = (virtual) => Math.min(...all.filter((x) => x.virtual === virtual).map((x) => x.cost))
+      list = [...selected.filter((x) => !x.virtual), ...selected.filter((x) => x.virtual)].map((x) => ({
+        ...x,
+        best: bestOfKind(x.virtual),
+        reading: readingOfSteps(x.steps),
+      }))
       byWord.set(key, list)
     }
     return list
+  }
+
+  /**
+   * 不在詞庫中的詞的拆法：語料中的詞幾乎都在詞庫中，例外是例句體例展開的讀法
+   * （ma(ki)kiahan 的 makiahan、makikiahan），建置時沒有算。查詢時用建置拆解表的同一個函式現算
+   * （derivations.js 的 analyzeWord 與 virtualRoots，條件相同），結果與這個詞在詞庫中時拆解表的內容相同。
+   * @param {string} key
+   * @returns {{all: import('../search/parses.js').ParsedAnalysis[], floor: number}} 所有拆法（依成本排序）與 BCDP 在詞庫中最好的命中
+   */
+  _unlistedParses(key) {
+    let out = this._unlisted.get(key)
+    if (!out) {
+      const { morphSearch, index, text } = this.engine
+      if (!morphSearch || !text.morphology) return { all: [], floor: Infinity }
+      const a = analyzeWord(key, index, morphSearch, false)
+      const lexical = a.parses.map((p) => parsedAnalysis(index.terms[p.root], false, p.analysis.cost, p.analysis.steps))
+      // 虛擬詞根的條件與建置時相同：比自動派生圖這個詞的邊（BCDP 最好的詞庫詞根）便宜 VIRTUAL_ROOT_PENALTY 以上；
+      // 詞庫外的詞不會是別的詞的詞根
+      const lexiconBest = Math.min(...a.edges.map((e) => e.analysis.cost))
+      const virtual = virtualRoots(key, text.morphology, index, lexiconBest).map((v) => parsedAnalysis(v.stem, true, roundCost(v.cost), v.steps))
+      out = { all: sortParses([...lexical, ...virtual]), floor: Math.min(a.best ?? Infinity, ...lexical.map((p) => p.cost)) }
+      this._unlisted.set(key, out)
+    }
+    return out
   }
 
   /**

@@ -7,9 +7,10 @@
  * - 加上自動派生圖中 w 的虛擬詞根（詞庫外的共同詞根，derivations.js 的條件）。
  *
  * 建置時與自動派生圖是同一次 BCDP（derivations.js 的 analyzeAll），自動派生圖只取其中最好的。
- * 「最好」兩邊都以 BCDP 最好的命中為準：最好的命中不是拆法時（例如 abak 最接近的是另一個同樣長的詞，只有成本高得多的
- * rak 比它短），自動派生圖不建邊，拆解表另外記下那個命中的成本（best），依模糊程度取拆法時也從它算起，
- * 這種詞就不會把巧合的拆法當成最好的。所以拆解表中與最好的命中同分的詞庫詞根，就是自動派生圖這個詞的邊。
+ * 「最好」兩邊都以 BCDP 在詞庫中最好的命中為準（lexicalBestOf）：最好的命中不是拆法時（例如 abak 最好的命中是
+ * a- ＋ barak，詞根比詞長，只有成本高得多的 rak 比它短），自動派生圖不建邊，拆解表另外記下那個命中的成本（best），
+ * 依模糊程度取拆法時也從它算起，這種詞就不會把巧合的拆法當成最好的。所以拆解表中與最好的命中同分的詞庫詞根，
+ * 就是自動派生圖這個詞的邊。虛擬詞根的拆法是另外一種，成本不與詞庫拆法比較（與自動派生圖相同：虛擬詞根只補充，不取代）。
  *
  * 只拆一層，不沿詞根再往下拆：BCDP 一次分析就能剝掉好幾個詞綴（maxSteps），多層的詞多半直接拆得到；
  * 再往下疊只會多出巧合（實測見 minubizu 研究紀錄 U.19）。
@@ -69,6 +70,29 @@ export function encodeParses(parses, virtual, bests, count) {
 /** @typedef {import('./derivations.js').DerivationData & {best: number[]}} ParseData parses.json 的內容 */
 
 /**
+ * 一種拆法（拆解表與句型搜尋分析詞庫外的詞共用，音變的算法才會一致）。
+ * @param {string} root
+ * @param {boolean} virtual
+ * @param {number} cost
+ * @param {import('../fuzzy/morph-search.js').MorphStepHit[]} steps
+ * @returns {ParsedAnalysis}
+ */
+export function parsedAnalysis(root, virtual, cost, steps) {
+  return { root, virtual, cost, sound: Math.max(0, roundCost(cost - steps.reduce((sum, x) => sum + x.cost, 0))), steps }
+}
+
+/**
+ * 依成本排序（同分保持原本的順序：詞庫詞根在前、依詞根，接著是虛擬詞根）。
+ * @param {ParsedAnalysis[]} list
+ */
+export function sortParses(list) {
+  return list
+    .map((p, i) => ({ p, i }))
+    .sort((a, b) => a.p.cost - b.p.cost || a.i - b.i)
+    .map((x) => x.p)
+}
+
+/**
  * 建立拆解表（單執行緒；測試與評估工具用，網站建置另有平行版本，src/site/derivations.js）。
  * @param {{lexicon: import('../fuzzy/fuzzy-index.js').SerializedIndex, profile: import('../fuzzy/profile.js').LanguageProfile}} input
  * @returns {ParseData}
@@ -114,16 +138,10 @@ export class ParseChart {
   }
 
   /**
-   * 依模糊程度取拆法時從哪個成本算起：這個詞最好的拆法（含虛擬詞根），或 BCDP 在詞庫中最好的命中
-   * （它不是拆法時，例如 abak 最好的命中是 a- ＋ barak，詞根比詞長），取較低的。沒有任何命中時是 Infinity。
-   * @param {number} word
-   */
-  bestOf(word) {
-    return Math.min(this._best.get(word) ?? Infinity, this.of(word)[0]?.cost ?? Infinity)
-  }
-
-  /**
-   * BCDP 在詞庫中最好的命中的成本（不含虛擬詞根）：自動派生圖這個詞的邊，就是成本等於它的詞庫拆法。
+   * BCDP 在詞庫中最好的命中的成本：最好的詞庫拆法，或最好的命中不是拆法時的那個命中
+   * （例如 abak 最好的命中是 a- ＋ barak，詞根比詞長），取較低的；沒有任何命中時是 Infinity。
+   * 自動派生圖這個詞的邊，就是成本等於它的詞庫拆法；依模糊程度取詞庫拆法時也從它算起（pattern/morph.js 的 selectParses）。
+   * **不含虛擬詞根**：虛擬詞根的成本是精確列舉的步驟成本，與 BCDP 的成本不能比（混在一起時虛擬詞根會把詞庫拆法擠掉）。
    * @param {number} word
    */
   lexicalBestOf(word) {
@@ -147,16 +165,9 @@ export class ParseChart {
       if (k > /** @type {number} */ (start) && edges[k] !== 0) break
       const r = edges[k + 1]
       const [cost, ids] = analyses[edges[k + 2]]
-      const s = ids.map((id) => steps[id])
-      list.push({
-        root: r >= count ? virtual[r - count] : this.terms[r],
-        virtual: r >= count,
-        cost,
-        sound: Math.max(0, roundCost(cost - s.reduce((sum, x) => sum + x.cost, 0))),
-        steps: s,
-      })
+      list.push(parsedAnalysis(r >= count ? virtual[r - count] : this.terms[r], r >= count, cost, ids.map((id) => steps[id])))
     }
-    list = list.map((p, i) => ({ p, i })).sort((a, b) => a.p.cost - b.p.cost || a.i - b.i).map((x) => x.p)
+    list = sortParses(list)
     this._cache.set(word, list)
     return list
   }

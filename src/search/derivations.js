@@ -194,23 +194,45 @@ function analyzeRange(index, search, from, to) {
   /** @type {Array<[number, number]>} 拆解表：BCDP 最好的命中不是拆法（詞根不比詞短或含空白）的詞，與那個命中的成本 */
   const bests = []
   for (let word = from; word < Math.min(to, terms.length); word++) {
-    const w = terms[word]
-    const length = Array.from(w).length
-    const prepared = search.prepare(w, DERIVATION_MAX_COST)
-    const hits = prepared ? search.finish(prepared, index.searchChannels(search.seed(prepared).channels), DERIVATION_MAX_COST) : []
-    if (hits.length && (Array.from(hits[0].term).length >= length || hits[0].term.includes(' '))) bests.push([word, roundCost(hits[0].distance)])
-    for (const hit of hits) {
-      if (Array.from(hit.term).length >= length) continue
-      const root = index.dawg.lookup(hit.term)
-      // 拆解表：每個候選詞根（詞根比詞短、是單一個詞），不存音變說明（需要時現算）
-      if (!hit.term.includes(' ')) parses.push({ word, root, analysis: { cost: roundCost(hit.distance), steps: hit.steps, notes: [] } })
-      // 自動派生圖：BCDP 成本最低的詞庫詞根（同分全收），詞根比詞短
-      if (hit.distance > hits[0].distance + EPSILON) continue
-      const notes = search.notesOf(/** @type {NonNullable<typeof prepared>} */ (prepared), hit)
-      edges.push({ word, root, analysis: { cost: roundCost(hit.distance), steps: hit.steps, notes } })
-    }
+    const a = analyzeWord(terms[word], index, search)
+    for (const e of a.edges) edges.push({ word, ...e })
+    for (const p of a.parses) parses.push({ word, ...p })
+    if (a.best !== null) bests.push([word, a.best])
   }
   return { edges, parses, bests }
+}
+
+/**
+ * 一個詞的 BCDP 分析。建置自動派生圖與拆解表（analyzeRange），以及句型搜尋分析詞庫外的詞
+ * （例句體例展開的讀法，pattern/search.js 的 _unlistedParses）都用這個函式，所以兩邊的結果一定相同。
+ * @param {string} w
+ * @param {FuzzyIndex} index
+ * @param {ReturnType<typeof createMorphSearch>} search
+ * @param {boolean} [withNotes] 自動派生圖的邊附上音變說明（句型搜尋不需要）
+ * @returns {{edges: Array<{root: number, analysis: DerivationAnalysis}>, parses: Array<{root: number, analysis: DerivationAnalysis}>, best: number | null}}
+ *   edges 是自動派生圖的邊（BCDP 成本最低的詞庫詞根，同分全收，詞根比詞短）；parses 是拆解表（每個候選詞根，
+ *   詞根比詞短、是單一個詞）；best 是 BCDP 最好的命中不是拆法時（詞根不比詞短或含空白）那個命中的成本，否則 null
+ */
+export function analyzeWord(w, index, search, withNotes = true) {
+  const length = Array.from(w).length
+  /** @type {Array<{root: number, analysis: DerivationAnalysis}>} */
+  const edges = []
+  /** @type {Array<{root: number, analysis: DerivationAnalysis}>} */
+  const parses = []
+  const prepared = search.prepare(w, DERIVATION_MAX_COST)
+  const hits = prepared ? search.finish(prepared, index.searchChannels(search.seed(prepared).channels), DERIVATION_MAX_COST) : []
+  const best = hits.length && (Array.from(hits[0].term).length >= length || hits[0].term.includes(' ')) ? roundCost(hits[0].distance) : null
+  for (const hit of hits) {
+    if (Array.from(hit.term).length >= length) continue
+    const root = index.dawg.lookup(hit.term)
+    // 拆解表：每個候選詞根（詞根比詞短、是單一個詞），不存音變說明（需要時現算）
+    if (!hit.term.includes(' ')) parses.push({ root, analysis: { cost: roundCost(hit.distance), steps: hit.steps, notes: [] } })
+    // 自動派生圖：BCDP 成本最低的詞庫詞根（同分全收），詞根比詞短
+    if (hit.distance > hits[0].distance + EPSILON) continue
+    const notes = withNotes ? search.notesOf(/** @type {NonNullable<typeof prepared>} */ (prepared), hit) : []
+    edges.push({ root, analysis: { cost: roundCost(hit.distance), steps: hit.steps, notes } })
+  }
+  return { edges, parses, best }
 }
 
 /**

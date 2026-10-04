@@ -46,12 +46,12 @@ describe('拆解表', () => {
     expect(chart.of(1)).toEqual([])
   })
 
-  it('從哪裡算起：最好的命中不是拆法時是那個命中（abak 0.25），虛擬詞根也算；詞庫中最好的命中不含虛擬詞根', () => {
-    expect(chart.bestOf(0)).toBe(0.25)
+  it('BCDP 在詞庫中最好的命中：不是拆法時是那個命中（abak 0.25）；不含虛擬詞根（mausay 是 usa 0.3，不是虛擬詞根的 0.1）', () => {
     expect(chart.lexicalBestOf(0)).toBe(0.25)
-    expect(chart.bestOf(3)).toBe(0.1)
     expect(chart.lexicalBestOf(3)).toBe(0.3)
-    expect(chart.bestOf(1)).toBe(Infinity)
+    expect(chart.lexicalBestOf(1)).toBe(Infinity)
+    // 沒有「混在一起的最好成本」：虛擬詞根的成本與 BCDP 的不能比
+    expect(/** @type {any} */ (chart).bestOf).toBeUndefined()
   })
 
   it('格式版本或詞數不符時拒絕', () => {

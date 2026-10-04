@@ -17,8 +17,10 @@
  * ## 詞根段與外側的 …
  * 構詞樣式以 - 分段，詞根段是 … 或寫出的詞根。寫在**最外側**（第一段或最後一段）、與詞根之間隔著詞綴的 …，
  * 表示那一側不錨定：`…-pa-…` 是「前綴中有 pa-」。哪一段是詞根依語言知識決定（resolve）：
- * 逐一假設每一段是詞根，其他段都要解析得成那一側的詞綴，外側的 … 只能在頭尾、與詞根之間要有詞綴；
- * 只有一種讀法成立時就是它。`…-i-…` 的 i 是前綴也是後綴，兩種讀法都成立，報錯 E_AMBIGUOUS_SIDE。
+ * 逐一假設每一段是詞根，其他段都要解析得成那一側的詞綴，外側的 … 只能在頭尾、與詞根之間要有詞綴。
+ * **… 優先當詞根**：有 … 當得成詞根的讀法時只看這些（saa-i-… 是前綴 saa-、i-，不是詞根 saa 加後綴 -i 再加外側的 …）；
+ * … 都當不成詞根時才考慮寫出的詞根（kita-en-…、…-pa-kita）。只有一種讀法成立時就是它。
+ * `…-i-…` 的 i 是前綴也是後綴，兩個 … 都當得成詞根，報錯 E_AMBIGUOUS_SIDE。
  *
  * ## 比對規則（satisfies）
  * - 前綴：樣式中的前綴（由外而內）必須正好是這個拆法**最外面的幾個前綴**，而且彼此相連；後綴同樣，由最外面往內數。
@@ -27,10 +29,20 @@
  * - 列出的詞綴與詞根之間可以有沒列出的詞素（`pa-…`、`pa-kita` 都找到 pa-ka-kita）。
  * - 中綴、重疊不看位置，只要有（中綴的位置由語言決定，查詢的人不必知道它落在哪裡）。
  *
- * ## 取哪些拆法（PARSE_SELECTION，跟著模糊程度）
- * 先求這個詞的 best（所有拆法中成本最低的；BCDP 最好的命中不是拆法時是那個命中，與自動派生圖相同），
- * 取成本在 best ＋ spread 之內的，再去掉音變超過 sound 的。
- * 順序是刻意的：最好的拆法要靠方言音變時，比它差的「拼寫完全相同」的拆法多半是巧合，不改取它。
+ * ## 取哪些拆法（PARSE_SELECTION，跟著模糊程度；selectParses）
+ * 拆法有兩種，**分開取，不放在同一個尺度上比**（與自動派生圖的兩種邊相同）：
+ * - **詞庫詞根的拆法**（BCDP）：先求 best＝BCDP 在詞庫中最好的命中（ParseChart.lexicalBestOf；最好的命中不是拆法時是那個命中），
+ *   取成本在 best ＋ spread 之內的，再去掉音變超過 sound 的。
+ *   順序是刻意的：最好的拆法要靠方言音變時，比它差的「拼寫完全相同」的拆法多半是巧合，不改取它。
+ * - **虛擬詞根的拆法**：自動派生圖已經只留成本最低的（derivations.js 的條件），全部取（它們沒有音變）。
+ *   它們只是補充，**不會把詞庫詞根的拆法擠掉**：虛擬詞根的成本是精確列舉的步驟成本，剝掉的詞綴少就便宜，
+ *   與 BCDP 的成本不能比。曾經把兩種放在一起求 best，pinahazaban 的 pa-<in>hazap-an（0.25，交界濁化 0.05）
+ *   被虛擬詞根 pinahazab-an（0.1）擠掉，pina-…-an 找不到它；語料中 344 個詞受影響（研究紀錄 U.20）。
+ * 所以精確模式取到的，就是自動派生圖這個詞的邊（詞庫詞根同分全收、虛擬詞根）去掉音變超過上限的那些。
+ *
+ * 精確與標準的音變上限相同（0.2），差別只在要不要取次佳的拆法。精確曾經不容許任何音變：
+ * 交界濁化（pinahazaban 的 hazap → hazab-，0.05）這種規律的構詞音變也被擋掉，最好的拆法落選，
+ * 準確與召回都比較差（72.6%、60.2%，上限 0.2 時 75.4%、85.2%；研究紀錄 U.20）。
  */
 
 import { PatternError } from './errors.js'
@@ -39,17 +51,17 @@ import { PatternError } from './errors.js'
 export const AFFIX_VARIANT_MAX = 0.25
 
 /**
- * 依模糊程度取哪些拆法：spread 是比最好的拆法差多少以內，sound 是整個詞的音變上限。
+ * 依模糊程度取哪些拆法：spread 是詞庫詞根的拆法比 BCDP 在詞庫中最好的命中差多少以內，sound 是整個詞的音變上限。
  * 數字以潘德興詞彙表 184 個人工拆解（morphology.segmentation）為標準，量每個最外層詞綴條件的準確與召回
  * （minubizu tools/eval-parse-gold.mjs，研究紀錄 U.19；docs/pattern-query.md 3.6）：
  * | 模糊程度 | spread | sound | 準確 | 召回 |
- * | 精確 | 0（同分都取） | 0 | 72.6% | 60.2% |
- * | 標準 | 0.1 | 0.2 | 68.0% | 88.1% |
+ * | 精確 | 0（同分都取） | 0.2 | 75.4% | 85.2% |
+ * | 標準 | 0.1 | 0.2 | 68.1% | 88.6% |
  * | 寬鬆 | 全部 | 0.4 | 57.5% | 91.5% |
  * （v0.6.0：自動派生圖最好的詞根、詞綴在任何位置，標準 59.9%、87.5%）
  */
 export const PARSE_SELECTION = Object.freeze({
-  exact: Object.freeze({ spread: 0, sound: 0 }),
+  exact: Object.freeze({ spread: 0, sound: 0.2 }),
   normal: Object.freeze({ spread: 0.1, sound: 0.2 }),
   loose: Object.freeze({ spread: Infinity, sound: 0.4 }),
 })
@@ -57,19 +69,20 @@ export const PARSE_SELECTION = Object.freeze({
 const EPSILON = 1e-9
 
 /**
- * 依模糊程度取一個詞的拆法（PARSE_SELECTION）。
- * @template {{cost: number, sound: number}} T
+ * 依模糊程度取一個詞的拆法（PARSE_SELECTION；規則見檔頭「取哪些拆法」）。
+ * 詞庫詞根的拆法與虛擬詞根的拆法分開取：虛擬詞根的拆法再便宜，也不影響詞庫詞根的拆法取哪些。
+ * @template {{cost: number, sound: number, virtual?: boolean}} T
  * @param {T[]} parses 這個詞的所有拆法
  * @param {string} fuzziness
- * @param {number} [floor] 從哪個成本算起：BCDP 最好的命中（ParseChart.bestOf）；它不是拆法時（例如最接近的是另一個同樣長的詞）
- *   比所有拆法都低，與自動派生圖不建邊的條件相同。預設是最好的拆法
+ * @param {number} [floor] 詞庫詞根的拆法從哪個成本算起：BCDP 在詞庫中最好的命中（ParseChart.lexicalBestOf）；
+ *   它不是拆法時（例如最接近的是另一個同樣長的詞）比所有拆法都低，與自動派生圖不建邊的條件相同。預設是最好的詞庫拆法
  * @returns {T[]}
  */
 export function selectParses(parses, fuzziness, floor = Infinity) {
   if (parses.length === 0) return []
   const { spread, sound } = PARSE_SELECTION[/** @type {keyof typeof PARSE_SELECTION} */ (fuzziness)] ?? PARSE_SELECTION.normal
-  const best = Math.min(floor, ...parses.map((x) => x.cost))
-  return parses.filter((x) => x.cost <= best + spread + EPSILON && x.sound <= sound + EPSILON)
+  const best = Math.min(floor, ...parses.filter((x) => !x.virtual).map((x) => x.cost))
+  return parses.filter((x) => (x.virtual || x.cost <= best + spread + EPSILON) && x.sound <= sound + EPSILON)
 }
 
 /** @typedef {'prefix' | 'suffix' | 'infix'} AffixType */
@@ -270,8 +283,11 @@ export function createPatternMorphology(spec, searchKey, distance, isRoot = () =
     /** 第 r 段當詞根時，其他有字母的段都解析得成那一側的詞綴 @param {number} r */
     const affixesOk = (r) =>
       core.every((t, j) => j === r || !t.host || t.wildcard || resolveAffix(t.host, j < r ? 'prefix' : 'suffix', t.quoted, t, null))
-    // 每一種讀法：詞根在第 r 段（… 或寫出的詞根）
-    const valid = core.flatMap((s, r) => (s.host && shapeOk(r) && affixesOk(r) ? [r] : []))
+    // 每一種讀法：詞根在第 r 段（… 或寫出的詞根）。… 優先當詞根：有 … 當得成詞根的讀法時，不再考慮寫出的詞根
+    // （saa-i-… 是前綴 saa-、i- 加任意詞根，不是詞根 saa 加後綴 -i、外側的 …）；… 當不成詞根時才是外側的 …（kita-en-…）
+    const readings = core.flatMap((s, r) => (s.host && shapeOk(r) && affixesOk(r) ? [r] : []))
+    const wildRoots = readings.filter((r) => core[r].wildcard)
+    const valid = wildRoots.length ? wildRoots : readings
     /** @type {number} */
     let rootAt
     if (valid.length === 1) rootAt = valid[0]

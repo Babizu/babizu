@@ -10,13 +10,27 @@
 
 import { describe, expect, it } from 'vitest'
 import { buildDerivationGraph, buildParseChart, FUZZINESS, SearchEngine } from '../../src/search/index.js'
+import { PARSE_SELECTION, selectParses } from '../../src/pattern/morph.js'
 import { SEARCH_METHODS } from '../../src/search/scoring.js'
-import { buildPatternData, buildPatternEngine, PATTERN_GRAMMAR, rec } from './fixture.js'
+import { buildPatternData, buildPatternEngine, PATTERN_GRAMMAR, rec, RECORDS } from './fixture.js'
 
 const engine = buildPatternEngine()
 const graph = /** @type {NonNullable<typeof engine.derivations>} */ (engine.derivations)
 const chart = /** @type {NonNullable<typeof engine.parses>} */ (engine.parses)
 const FUZZY_LEVELS = /** @type {const} */ (['exact', 'normal', 'loose'])
+
+/**
+ * 一種拆法的詞素寫成構詞樣式：前綴（由外而內）、中綴、詞根、後綴（由內而外）、重疊。沒有任何詞綴時是 null。
+ * @param {import('../../src/pattern/morph.js').MorphReading} reading
+ * @param {string} root `…` 或引號中的詞根
+ */
+function patternOf(reading, root) {
+  if (!reading.left.length && !reading.right.length && !reading.infixes.length && !reading.red) return null
+  const pre = reading.left.map((m) => `${m.form}-`).join('')
+  const inf = reading.infixes.map((m) => `<${m.form}>`).join('')
+  const suf = reading.right.map((m) => `-${m.form}`).join('')
+  return `${reading.red ? '~' : ''}${pre}${inf ? `${inf}-` : ''}${root}${suf}`
+}
 
 /** 句型搜尋，回傳命中的記錄文字 @param {string} q @param {object} [options] */
 const docs = (q, options = {}) => {
@@ -81,7 +95,7 @@ describe('構詞樣式：寫法與解析（docs/pattern-query.md 第 3 節的對
 
   it('比的是詞素：pa-… 也找得到 pinakita（pa ＋ <in>）', () => {
     // barak、bakita 是靠 b→p 音變的 pa-rak、pa-kita（標準容許少量音變）
-    expect(tokens('pa-…')).toEqual(['bakita', 'barak', 'pakan', 'pakanen', 'pakita', 'paputiuk', 'pinakita'])
+    expect(tokens('pa-…')).toEqual(['bakita', 'barak', 'pakakita', 'pakan', 'pakanen', 'pakita', 'paputiuk', 'pinakita'])
   })
 
   it('引號只要那個寫法："mu"-… 不含 mikita、mineken，但含 mokan（BCDP 把 mo 分析成 mu）', () => {
@@ -152,6 +166,80 @@ describe('拆解表：與自動派生圖、一般搜尋的自動拆解是同一�
     expect(words).toBeGreaterThan(20)
   })
 
+  it('精確模式取到的拆法，就是自動派生圖這個詞的邊（詞庫詞根同分全收、虛擬詞根）去掉音變超過上限的那些', () => {
+    /** @type {Map<number, string[]>} */
+    const edges = new Map()
+    for (const [root, list] of graph.children) {
+      for (const c of list) {
+        const a = graph.analyses[c.analysis]
+        const sound = a.cost - a.steps.reduce((sum, s) => sum + s.cost, 0)
+        if (sound > PARSE_SELECTION.exact.sound + 1e-9) continue
+        edges.set(c.word, [...(edges.get(c.word) ?? []), `${graph.nodes[root]}:${round(a.cost)}`])
+      }
+    }
+    engine.searchPattern('_')
+    const pattern = /** @type {any} */ (engine)._pattern
+    let words = 0
+    engine.index.terms.forEach((w, id) => {
+      const exact = pattern._parsesOf(w, 'exact').map((/** @type {any} */ p) => `${p.root}:${round(p.cost)}`)
+      expect(exact.sort(), w).toEqual((edges.get(id) ?? []).sort())
+      if (exact.length) words++
+    })
+    expect(words).toBeGreaterThan(20)
+  })
+
+  it('虛擬詞根不把詞庫詞根的拆法擠掉：每個詞、每種模糊程度，取到的詞庫拆法與沒有虛擬詞根時相同', () => {
+    engine.searchPattern('_')
+    const pattern = /** @type {any} */ (engine)._pattern
+    let checked = 0
+    engine.index.terms.forEach((w, id) => {
+      const all = chart.of(id)
+      if (!all.some((p) => p.virtual)) return
+      checked++
+      for (const f of FUZZY_LEVELS) {
+        const lexical = pattern._parsesOf(w, f).filter((/** @type {any} */ p) => !p.virtual).map((/** @type {any} */ p) => p.root)
+        const alone = selectParses(all.filter((p) => !p.virtual), f, chart.lexicalBestOf(id)).map((p) => p.root)
+        expect(lexical, `${w} ${f}`).toEqual(alone)
+      }
+    })
+    expect(checked).toBeGreaterThan(1)
+  })
+
+  it('每個詞都找得到自己：依模糊程度取到的每一種拆法寫成構詞樣式（詞根寫 … 或引號中的詞根），這個詞在原文中的每一處都比到', () => {
+    engine.searchPattern('_')
+    const pattern = /** @type {any} */ (engine)._pattern
+    const { texts, docsOf } = pattern.corpus
+    /**
+     * 詞在原文中的每一處（記錄、位置）。比位置不比詞形：同一個位置由好幾種讀法比到時只算一次，
+     * 留下的是第一種讀法的詞形（pa(ka)kita 的 pakakita 或 pakita）
+     * @param {string} w
+     */
+    const placesOf = (w) =>
+      new Set(
+        (docsOf.get(w) ?? []).flatMap((/** @type {number} */ k) =>
+          texts[k].segments.flatMap((/** @type {any[][]} */ readings) => readings.flatMap((tokens) => tokens.filter((t) => t.key === w).map((t) => `${k}:${t.start}-${t.end}`))),
+        ),
+      )
+    let checked = 0
+    for (const f of FUZZY_LEVELS) {
+      for (const w of docsOf.keys()) {
+        const places = placesOf(w)
+        for (const parse of pattern._parsesOf(w, f)) {
+          const q = patternOf(parse.reading, '…')
+          if (!q) continue
+          for (const query of [q, patternOf(parse.reading, `"${parse.root}"`)]) {
+            const r = engine.searchPattern(/** @type {string} */ (query), { fuzziness: f, limit: Infinity })
+            expect(r.error, `${w} ${query} ${f}`).toBeNull()
+            const hit = new Set(r.hits.flatMap((h) => h.matches.flatMap((m) => m.cells.map((c) => `${h.doc.index}:${c.start}-${c.end}`))))
+            for (const place of places) expect(hit.has(place), `${w} ${query} ${f} ${place}`).toBe(true)
+            checked++
+          }
+        }
+      }
+    }
+    expect(checked).toBeGreaterThan(100)
+  })
+
   it('拆解表中詞庫詞根的拆法，就是一般搜尋查這個詞時自動拆解列出的那些（詞根比詞短、單一個詞）', () => {
     const ms = /** @type {NonNullable<typeof engine.morphSearch>} */ (engine.morphSearch)
     const level = FUZZINESS.normal
@@ -173,6 +261,30 @@ describe('拆解表：與自動派生圖、一般搜尋的自動拆解是同一�
     const g = /** @type {NonNullable<typeof small.derivations>} */ (small.derivations)
     expect([...g.children].filter(([, list]) => list.some((c) => c.word === id)).map(([root]) => g.nodes[root]).sort()).toEqual(['ka kita', 'kita'])
     expect(/** @type {NonNullable<typeof small.parses>} */ (small.parses).of(id).map((p) => p.root)).toEqual(['kita'])
+  })
+
+  it('詞庫外的詞（例句體例展開的讀法 pakakita）：查詢時用建置時同一個函式現算拆法，與把它加進詞庫建置時相同', () => {
+    engine.searchPattern('_')
+    const pattern = /** @type {any} */ (engine)._pattern
+    const unlisted = [...pattern.corpus.docsOf.keys()].filter((k) => engine.index.dawg.lookup(k) === -1)
+    expect(unlisted).toEqual(expect.arrayContaining(['pakakita', 'masay']))
+    // masay 只有虛擬詞根 asay 的拆法
+    expect(pattern._unlistedParses('masay').all.map((/** @type {any} */ p) => [p.root, p.virtual])).toEqual([['asay', true]])
+    const show = (/** @type {any[]} */ list) => list.map((p) => `${p.root}:${round(p.cost)}:${round(p.sound)}:${p.virtual}:${p.steps.map((s) => s.form).join('+')}`)
+    for (const w of unlisted) {
+      const other = buildPatternEngine(undefined, [...RECORDS, rec(`added-${w}`, 'word', w)])
+      const otherChart = /** @type {NonNullable<typeof other.parses>} */ (other.parses)
+      const id = other.index.dawg.lookup(w)
+      const mine = pattern._unlistedParses(w)
+      expect(show(mine.all), w).toEqual(show(otherChart.of(id)))
+      expect(mine.floor, w).toBe(otherChart.lexicalBestOf(id))
+    }
+    // 找得到：yaku pa(ka)kita isiw 的讀法 yaku pakakita isiw；構詞樣式、不加引號的詞（相同與相近拼寫）、引號都比得到
+    expect(docs('yaku pa-ka-…')).toEqual(['yaku pa(ka)kita isiw'])
+    expect(docs('yaku pakakita')).toEqual(['yaku pa(ka)kita isiw'])
+    expect(docs('yaku bakakita')).toEqual(['yaku pa(ka)kita isiw'])
+    expect(docs('masay ki')).toEqual(['ma(s)ay ki saw'])
+    expect(docs('"masay"')).toEqual(['ma(s)ay ki saw'])
   })
 
   it('sound 是整個詞的音變：成本扣掉各步驟的成本（bakita 的 b→p）', () => {
@@ -199,18 +311,26 @@ describe('構詞樣式：取哪些拆法跟著模糊程度，詞綴從最外層�
     expect(tokens('pa-kan', 'exact')).not.toContain('pakanen')
   })
 
-  it('bakita（只有靠 b→p 音變的 pa-kita）：精確不容許音變，不中；標準中', () => {
-    expect(tokens('pa-…', 'exact')).not.toContain('bakita')
+  it('bakita（只有靠 b→p 音變的 pa-kita，音變 0.1）：最好的拆法，精確、標準都中', () => {
+    expect(tokens('pa-…', 'exact')).toContain('bakita')
     expect(tokens('pa-…', 'normal')).toContain('bakita')
   })
 
   it('pabak（BCDP 最好的命中是 barak：與詞同長，不是拆法）：取拆法從它算起，pa-pa-rak 差 0.2，標準不中、寬鬆中；自動派生圖也不建邊', () => {
     const id = engine.index.dawg.lookup('pabak')
     expect(chart.of(id).map((p) => p.root)).toEqual(['rak'])
-    expect(chart.bestOf(id)).toBeCloseTo(0.2)
+    expect(chart.lexicalBestOf(id)).toBeCloseTo(0.2)
     expect([...graph.children].some(([, list]) => list.some((c) => c.word === id))).toBe(false)
     expect(tokens('pa-…', 'normal')).not.toContain('pabak')
     expect(tokens('pa-…', 'loose')).toContain('pabak')
+  })
+
+  it('mausay（詞庫詞根的拆法 ma-usa-i 0.3、音變 0.1；虛擬詞根 ma-usay 等 0.1）：虛擬詞根不擠掉 usa；兩種都符合時證據用詞庫詞根', () => {
+    // 詞庫拆法本身就是 BCDP 最好的命中（音變 0.1），三種模糊程度都取
+    for (const f of FUZZY_LEVELS) expect(tokens('ma-usa', f), f).toContain('mausay')
+    const cell = engine.searchPattern('ma-…').hits.flatMap((h) => h.matches.flatMap((m) => m.cells)).find((c) => c.key === 'mausay')
+    expect(cell?.evidence).toMatchObject({ term: 'usa', analysis: { stem: 'usa' } })
+    expect(/** @type {any} */ (cell?.evidence).analysis.virtual).toBeUndefined()
   })
 
   it('mupakita（mu-pakita、mu-pa-kita）：pa-… 不中（最外層是 mu-），…-pa-… 中；寫出詞根時也一樣', () => {
@@ -250,13 +370,31 @@ describe('構詞樣式：取哪些拆法跟著模糊程度，詞綴從最外層�
   })
 
   it('詞根是 … 的結果，等於每一個詞根各自寫出來的結果合起來（三種模糊程度；同一個條件，所以一定成立）', () => {
-    const roots = [...new Set(engine.index.terms.flatMap((_, w) => chart.of(w).map((p) => p.root)))]
+    // 語料中每個詞的所有拆法的詞根（含詞庫外的詞現算的，例如 masay 的虛擬詞根 asay）
+    engine.searchPattern('_')
+    const pattern = /** @type {any} */ (engine)._pattern
+    const roots = [
+      ...new Set(
+        [...pattern.corpus.docsOf.keys()].flatMap((w) => {
+          const id = engine.index.dawg.lookup(w)
+          return (id === -1 ? pattern._unlistedParses(w).all : chart.of(id)).map((/** @type {any} */ p) => p.root)
+        }),
+      ),
+    ]
     expect(roots.length).toBeGreaterThan(15)
+    expect(roots).toContain('asay')
     const shapes = [(/** @type {string} */ r) => `pa-${r}`, (r) => `mu-${r}`, (r) => `<in>${r}`, (r) => `${r}-en`, (r) => `ta-${r}-i`, (r) => `…-pa-${r}`]
+    // 比（記錄、區間），不比詞形：同一個區間由好幾種讀法比到時只算一次，留下的詞形是第一種讀法的，會隨查詢不同
+    /** @param {string} q @param {string} f */
+    const spans = (q, f) => {
+      const r = engine.searchPattern(q, { fuzziness: /** @type {any} */ (f), limit: Infinity })
+      expect(r.error, q).toBeNull()
+      return [...new Set(r.hits.flatMap((h) => h.matches.filter((m) => m.cond === 0).map((m) => `${h.doc.id}:${m.start}-${m.end}`)))].sort()
+    }
     for (const f of FUZZY_LEVELS) {
       for (const shape of shapes) {
-        const wild = tokens(shape('…'), f)
-        const union = [...new Set(roots.flatMap((r) => tokens(shape(`"${r}"`), f)))].sort()
+        const wild = spans(shape('…'), f)
+        const union = [...new Set(roots.flatMap((r) => spans(shape(`"${r}"`), f)))].sort()
         expect(union, `${shape('…')} ${f}`).toEqual(wild)
       }
     }
@@ -281,7 +419,13 @@ describe('構詞樣式：取哪些拆法跟著模糊程度，詞綴從最外層�
 })
 
 describe('與一般搜尋一致', () => {
-  const sentences = (/** @type {Array<{doc: {text: string, unit: string}}>} */ hits) => [...new Set(hits.filter((h) => h.doc.unit === 'sentence').map((h) => h.doc.text))].sort()
+  /**
+   * 詞中有括號的記錄（例句體例 pa(ka)kita）不比：一般搜尋在括號處斷開（pa、ka、kita），句型搜尋依體例讀成 pakakita、pakita。
+   * 這個差別本身由下面「詞中的括號」測試固定。
+   */
+  const INNER_PAREN = /\p{L}\(|\)\p{L}/u
+  const sentences = (/** @type {Array<{doc: {text: string, unit: string}}>} */ hits) =>
+    [...new Set(hits.filter((h) => h.doc.unit === 'sentence' && !INNER_PAREN.test(h.doc.text)).map((h) => h.doc.text))].sort()
   /** 一般搜尋只留這些方法時找到的句子 @param {string} q @param {string[]} keep */
   const plainSentences = (q, keep) => {
     const r = engine.search(q, { fields: ['native'], exclude: SEARCH_METHODS.filter((m) => !keep.includes(m)) })
@@ -294,6 +438,15 @@ describe('與一般搜尋一致', () => {
 
   it.each(['kita', 'kan', 'putiuk'])('@%s：等於一般搜尋的完全相符＋相近拼寫＋自動派生＋確定派生', (q) => {
     expect(sentences(engine.searchPattern(`@${q}`).hits)).toEqual(plainSentences(q, ['exact', 'fuzzy', 'derived', 'dictDerived']))
+  })
+
+  it('詞中的括號（刻意的差別）：一般搜尋在括號處斷開，kita 找到 pa(ka)kita；句型搜尋依體例讀成 pakakita、pakita', () => {
+    const text = 'yaku pa(ka)kita isiw'
+    const plain = engine.search('kita', { fields: ['native'], exclude: SEARCH_METHODS.filter((m) => m !== 'exact') })
+    expect([...plain.entries, ...plain.occurrences].map((h) => h.doc.text)).toContain(text)
+    expect(engine.searchPattern('"kita"').hits.map((h) => h.doc.text)).not.toContain(text)
+    expect(engine.searchPattern('"pakakita"').hits.map((h) => h.doc.text)).toEqual([text])
+    expect(engine.searchPattern('"pakita"').hits.map((h) => h.doc.text)).toContain(text)
   })
 })
 
