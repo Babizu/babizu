@@ -267,8 +267,11 @@ export function analyzeWord(w, index, search, withNotes = true, open = null) {
   for (const hit of hits) {
     if (Array.from(hit.term).length >= length) continue
     const root = index.dawg.lookup(hit.term)
-    // 拆解表：每個候選詞根（詞根比詞短、是單一個詞），不存音變說明（需要時現算）
-    if (!hit.term.includes(' ')) parses.push({ root, analysis: { cost: roundCost(hit.distance), steps: hit.steps, notes: [] } })
+    // 拆解表：每個候選詞根（詞根比詞短、是單一個詞），不存音變說明（需要時現算）。
+    // 同一個詞根成本相同的其他讀法也收（hit.ties：元音開頭的詞根上 a- 與 <a>），句型搜尋才比得到每一種
+    if (!hit.term.includes(' ')) {
+      for (const steps of [hit.steps, ...(hit.ties ?? [])]) parses.push({ root, analysis: { cost: roundCost(hit.distance), steps, notes: [] } })
+    }
     // 自動派生圖：BCDP 成本最低的詞庫詞根（同分全收），詞根比詞短
     if (hit.distance > hits[0].distance + EPSILON) continue
     const notes = withNotes ? search.notesOf(/** @type {NonNullable<typeof prepared>} */ (prepared), hit) : []

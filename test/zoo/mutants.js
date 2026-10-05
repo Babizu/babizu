@@ -656,15 +656,15 @@ export const MUTANTS = [
   {
     name: '句型：拆解表收下含空白的詞根',
     file: 'src/search/derivations.js',
-    find: "    if (!hit.term.includes(' ')) parses.push(",
-    replace: '    if (hit.term) parses.push(',
+    find: "    if (!hit.term.includes(' ')) {\n      for (const steps of",
+    replace: "    if (hit.term) {\n      for (const steps of",
     why: 'pakakita 拆成 pa- ＋「ka kita」；search 的單一個詞測試',
   },
   {
     name: '句型：拆解表只收最好的詞根（次佳的拆法不見了）',
     file: 'src/search/derivations.js',
-    find: "    if (!hit.term.includes(' ')) parses.push({ root, analysis: { cost: roundCost(hit.distance), steps: hit.steps, notes: [] } })\n    // 自動派生圖：BCDP 成本最低的詞庫詞根（同分全收），詞根比詞短\n    if (hit.distance > hits[0].distance + EPSILON) continue",
-    replace: "    if (hit.distance > hits[0].distance + EPSILON) continue\n    if (!hit.term.includes(' ')) parses.push({ root, analysis: { cost: roundCost(hit.distance), steps: hit.steps, notes: [] } })",
+    find: "    if (!hit.term.includes(' ')) {\n      for (const steps of",
+    replace: "    if (hit.distance > hits[0].distance + EPSILON) continue\n    if (!hit.term.includes(' ')) {\n      for (const steps of",
     why: 'pakanen 的 pa-kan-en（次佳）不在拆解表；search 的 pakanen 測試、拆解表對一般搜尋的自動拆解測試',
   },
   {
@@ -757,5 +757,26 @@ export const MUTANTS = [
     find: "export const siblingTier = (h) => (h.matchType === 'sibling' || ",
     replace: "export const siblingTier = (h) => (h.matchType === 'sibling' || false && ",
     why: '一個詞自動同根、另一個詞結尾相符的例句佔上限；derivations 的多詞查詢測試',
+  },
+  {
+    name: '空白可以與字母互換（邊界的價錢讓字母消失）',
+    file: 'src/fuzzy/costs.js',
+    find: '    if (this.boundaries.has(a) !== this.boundaries.has(b)) return Infinity',
+    replace: '    if (this.boundaries.has(a) !== this.boundaries.has(b)) return 0.1',
+    why: 'dabran ≈ da ran 只要 0.1（pinahazaban 經 b → 空白找到 daran）；distance 測試',
+  },
+  {
+    name: '拆解表：同分的其他讀法不收',
+    file: 'src/search/derivations.js',
+    find: '      for (const steps of [hit.steps, ...(hit.ties ?? [])]) parses.push',
+    replace: '      for (const steps of [hit.steps]) parses.push',
+    why: '<a>…-en 找不到 aidemen（同分時只留前綴 a- 的讀法）；pattern 測試「表面相同的讀法都收」',
+  },
+  {
+    name: '同分的讀法不要求步驟成本相同',
+    file: 'src/fuzzy/morph-search.js',
+    find: '          if (!seen.has(k) && Math.abs(stepCostOf(s) - stepCost) <= EPSILON) seen.add(k), ties.push(s)',
+    replace: '          if (!seen.has(k)) seen.add(k), ties.push(s)',
+    why: '多一個步驟、少一些音變的讀法鑽過精確模式的音變上限（morohot）；symmetry 的同分讀法測試',
   },
 ]

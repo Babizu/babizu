@@ -75,6 +75,9 @@ import { circumfixStep } from './morphology.js'
  * @property {MorphStepHit[]} steps 由外而內
  * @property {{variant: number, prefixes: AffixEntry[], suffixes: AffixEntry[], circumfix: Circumfix | null}} analysis
  *   用了哪一個通道、哪些前綴與後綴（由外而內，不含環綴的兩側）、哪個環綴，說明（explainHit）用
+ * @property {MorphStepHit[][]} [ties] 同一個詞根、成本相同、步驟成本也相同（所以音變相同）、步驟不同的其他分析
+ *   （表面相同的不同讀法：元音開頭的詞根上前綴 a- 與中綴 <a>，ma- 與 m<a>）。steps 是依同分規則選的那一種（說明、自動派生圖用）；
+ *   拆解表把每一種都收下，句型搜尋的構詞樣式才比得到任何一種讀法（研究紀錄 U.25）。
  */
 
 /**
@@ -878,24 +881,38 @@ export function createMorphSearch({ analyzer, metric, index }) {
     return sorted
       .filter((h) => h.distance <= cutoff)
       .map((h) => {
-        // 成本相同的分析（不同通道）：說明選步驟少的，再依規格中的順序（tieKey）；成本不受影響
+        // 成本相同的分析（不同通道）：說明選步驟少的，再依規格中的順序（tieKey）；成本不受影響。
+        // 其他步驟不同的分析也留著（ties）：表面相同的不同讀法，拆解表要每一種都有
         /** @type {{channel: number, result: SearchResult, a: ReturnType<typeof affixesOf>, key: number[]} | null} */
         let pick = null
+        /** @type {MorphStepHit[][]} */
+        const all = []
         for (const { channel, result } of h.candidates) {
           const a = affixesOf(prepared, channel, result)
+          all.push(stepsOf(a))
           const key = tieKey(a)
           if (!pick || compareKeys(key, pick.key) < 0) pick = { channel, result, a, key }
         }
         const { channel, result, a } = /** @type {NonNullable<typeof pick>} */ (pick)
-        const { prefixes, suffixes, op, circumfix } = a
-        /** @type {MorphStepHit[]} */
-        const steps = [...prefixes.map((x) => affixStep('prefix', x)), ...(op ? [op] : []), ...suffixes.map((x) => affixStep('suffix', x))]
+        const { prefixes, suffixes, circumfix } = a
+        const steps = stepsOf(a)
+        const seen = new Set([stepsKey(steps)])
+        // 只收步驟成本也相同的讀法（音變的分量才相同）：多一個步驟、少一些音變的讀法（morohot 的 m- ＋ o~ ＋ ruhut）
+        // 總成本相同，卻能鑽過精確模式「音變不超過 0.2」的上限，它不是同一種讀法的另一種寫法（研究紀錄 U.25）
+        const stepCost = stepCostOf(steps)
+        /** @type {MorphStepHit[][]} */
+        const ties = []
+        for (const s of all) {
+          const k = stepsKey(s)
+          if (!seen.has(k) && Math.abs(stepCostOf(s) - stepCost) <= EPSILON) seen.add(k), ties.push(s)
+        }
         return {
           term: result.term,
           payloads: result.payloads,
           distance: roundCost(h.distance),
           steps,
           analysis: { variant: channel, prefixes, suffixes, circumfix },
+          ...(ties.length ? { ties } : {}),
         }
       })
   }
@@ -1088,6 +1105,25 @@ function clip(level, bound) {
   cut(level.row)
   for (const p of level.pending) cut(p.row)
   level.pending = level.pending.filter((p) => p.row.some((v) => v < Infinity))
+}
+
+/**
+ * 一種分析的步驟：前綴（由外而內）、包覆單位、後綴（由外而內）
+ * @param {{prefixes: AffixEntry[], suffixes: AffixEntry[], op: MorphStepHit | null}} a
+ * @returns {MorphStepHit[]}
+ */
+function stepsOf(a) {
+  return [...a.prefixes.map((x) => affixStep('prefix', x)), ...(a.op ? [a.op] : []), ...a.suffixes.map((x) => affixStep('suffix', x))]
+}
+
+/** 步驟成本的和 @param {MorphStepHit[]} steps */
+function stepCostOf(steps) {
+  return steps.reduce((x, s) => x + s.cost, 0)
+}
+
+/** 步驟的比較鍵（種類與寫法，由外而內） @param {MorphStepHit[]} steps */
+function stepsKey(steps) {
+  return steps.map((s) => `${s.type}:${s.form}`).join('\u0000')
 }
 
 /**

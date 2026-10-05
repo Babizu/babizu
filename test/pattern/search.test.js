@@ -156,9 +156,12 @@ describe('拆解表：與自動派生圖、一般搜尋的自動拆解是同一�
       const parses = chart.of(w)
       const lexical = parses.filter((p) => !p.virtual)
       const best = chart.lexicalBestOf(w)
+      // 同一個詞根成本相同的幾種讀法（ties）在拆解表中各一筆，邊只有一條：比（詞根、成本）的集合
       const fromChart = [
-        ...lexical.filter((p) => p.cost <= best + 1e-9).map((p) => `${p.root}:${round(p.cost)}`),
-        ...parses.filter((p) => p.virtual).map((p) => `${p.root}:${round(p.cost)}*`),
+        ...new Set([
+          ...lexical.filter((p) => p.cost <= best + 1e-9).map((p) => `${p.root}:${round(p.cost)}`),
+          ...parses.filter((p) => p.virtual).map((p) => `${p.root}:${round(p.cost)}*`),
+        ]),
       ]
       expect(fromChart.sort(), engine.index.terms[w]).toEqual((edges.get(w) ?? []).sort())
       if (parses.length) words++
@@ -181,7 +184,7 @@ describe('拆解表：與自動派生圖、一般搜尋的自動拆解是同一�
     const pattern = /** @type {any} */ (engine)._pattern
     let words = 0
     engine.index.terms.forEach((w, id) => {
-      const exact = pattern._parsesOf(w, 'exact').map((/** @type {any} */ p) => `${p.root}:${round(p.cost)}`)
+      const exact = [...new Set(pattern._parsesOf(w, 'exact').map((/** @type {any} */ p) => `${p.root}:${round(p.cost)}`))]
       expect(exact.sort(), w).toEqual((edges.get(id) ?? []).sort())
       if (exact.length) words++
     })
@@ -248,11 +251,34 @@ describe('拆解表：與自動派生圖、一般搜尋的自動拆解是同一�
       const prepared = ms.seed(ms.prepare(w, engine._lemmaMax(w, level)), engine.index)
       const lemma = prepared ? engine._lemmaTerms(w, level, prepared, engine.index.searchChannels(prepared.channels)) : []
       const plain = lemma.filter((t) => Array.from(t.term).length < Array.from(w).length && !t.term.includes(' ')).map((t) => `${t.term}:${round(t.distance)}`)
-      const fromChart = chart.of(id).filter((p) => !p.virtual).map((p) => `${p.root}:${round(p.cost)}`)
+      const fromChart = [...new Set(chart.of(id).filter((p) => !p.virtual).map((p) => `${p.root}:${round(p.cost)}`))]
       expect(fromChart.sort(), w).toEqual(plain.sort())
+      // 一般搜尋的分析（依同分規則選的那一種）是拆解表中這個詞根的讀法之一
+      for (const t of lemma.filter((x) => Array.from(x.term).length < Array.from(w).length && !x.term.includes(' '))) {
+        const readings = chart.of(id).filter((p) => !p.virtual && p.root === t.term).map((p) => p.steps.map((s) => `${s.type}:${s.form}`).join('+'))
+        expect(readings, `${w} → ${t.term}`).toContain(/** @type {any} */ (t).analysis.steps.map((/** @type {any} */ s) => `${s.type}:${s.form}`).join('+'))
+      }
       checked += plain.length
     })
     expect(checked).toBeGreaterThan(30)
+  })
+
+  it('表面相同的讀法都收：元音開頭的詞根上前綴 a- 與中綴 <a> 同分，<a>…-en 與 a-…-en 都找得到 aidemen', () => {
+    // 研究紀錄 U.25：同分時原本只留一種讀法（規格中較前的前綴 a-），<a>…-an 找不到 aitukuan
+    const grammar = { ...PATTERN_GRAMMAR, morphemes: [...PATTERN_GRAMMAR.morphemes, { id: 'pre.a', type: 'prefix', form: 'a' }] }
+    const small = buildPatternEngine(grammar, [rec('a', 'word', 'idem'), rec('b', 'word', 'aidemen')])
+    const id = small.index.dawg.lookup('aidemen')
+    const readings = /** @type {NonNullable<typeof small.parses>} */ (small.parses)
+      .of(id)
+      .filter((p) => p.root === 'idem')
+      .map((p) => `${p.steps.map((s) => `${s.type}:${s.form}`).join('+')}@${p.cost}`)
+    expect(readings.sort()).toEqual(['infix:a+suffix:en@0.2', 'prefix:a+suffix:en@0.2'])
+    /** @param {string} q */
+    const words = (q) => small.searchPattern(q).hits.flatMap((h) => h.matches.flatMap((m) => m.cells.map((c) => c.key)))
+    expect(words('<a>…-en')).toContain('aidemen')
+    expect(words('a-…-en')).toContain('aidemen')
+    // 一般搜尋與自動派生圖照舊只有一種（同分規則：規格中較前的）
+    expect(small.search('aidemen').entries.find((h) => h.term === 'idem')?.analysis?.steps.map((s) => s.form)).toEqual(['a', 'en'])
   })
 
   it('詞根是單一個詞：BCDP 可以把片語「ka kita」當成 pakakita 的詞根（與 kita 同分），拆解表不收；自動派生圖照舊', () => {

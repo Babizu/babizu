@@ -48,7 +48,6 @@
     "insert": 0.8,
     "overrides": {
       " ": {
-        "substitute": 0.1,
         "delete": 0.1,
         "insert": 0.1
       }

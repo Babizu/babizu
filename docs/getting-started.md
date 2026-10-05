@@ -22,7 +22,7 @@ npm install github:Babizu/babizu#v0.5.0
   "format": "babizu-language-profile",
   "version": 1,
   "normalizer": { "lowercase": true, "stripDiacritics": true },
-  "costs": { "substitute": 1.5, "delete": 1, "insert": 0.8, "overrides": { " ": { "substitute": 0.1, "delete": 0.1, "insert": 0.1 } } },
+  "costs": { "substitute": 1.5, "delete": 1, "insert": 0.8, "overrides": { " ": { "delete": 0.1, "insert": 0.1 } } },
   "rules": [{ "category": "流音", "label": { "en": "Liquids" }, "rules": [["r", "l", 0.1]] }]
 }
 ```

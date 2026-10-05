@@ -21,10 +21,15 @@ describe('基本成本（無規則）', () => {
     expect(cheapIndel.distance('a', 'b')).toBe(2)
   })
 
-  it('空白的插入、刪除、替換都是 0.1', () => {
+  it('空白的插入、刪除是 0.1；空白不能與字母互換（字母不能以邊界的價錢消失）', () => {
     expect(metric.distance('baruzakbinayu', 'baruzak binayu')).toBe(0.1)
     expect(metric.distance('baruzak binayu', 'baruzakbinayu')).toBe(0.1)
-    expect(metric.distance('ab cd', 'abxcd')).toBe(0.1)
+    // 空白 → x：刪掉空白（0.1）再插入 x（0.8），不是替換
+    expect(metric.distance('ab cd', 'abxcd')).toBeCloseTo(0.9, 9)
+    // 研究紀錄 U.25：b 換成空白原本只算 0.1，等於 0.1 就刪掉一個子音；現在是刪除 b ＋ 插入空白
+    expect(metric.distance('dabran', 'da ran')).toBeCloseTo(1.1, 9)
+    expect(metric.costs.sub('b', ' ')).toBe(Infinity)
+    expect(metric.costs.sub(' ', 'b')).toBe(Infinity)
   })
 
   it('空字串邊界', () => {

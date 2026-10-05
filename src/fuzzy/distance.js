@@ -71,8 +71,9 @@ export class WeightedEditDistance {
    * @param {CostModel | import('./costs.js').CostOptions} [costs]
    */
   setCosts(costs) {
+    // 詞邊界由距離函式決定：邊界與字母之間不能替換（costs.js）
     /** @type {CostModel} */
-    this.costs = costs instanceof CostModel ? costs : new CostModel(costs)
+    this.costs = (costs instanceof CostModel ? costs : new CostModel(costs)).withBoundaries(this.boundaries)
     return this
   }
 

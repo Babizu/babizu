@@ -111,6 +111,22 @@ for (const seed of SEEDS) {
       expect(bad).toEqual([])
     })
 
+    it('同分的讀法：同一個詞、同一個詞根、同樣成本的幾種讀法，步驟成本都相同（音變的分量相同）', () => {
+      // 研究紀錄 U.25：多一個步驟、少一些音變的讀法總成本相同，卻能鑽過精確模式的音變上限（morohot 的 m- ＋ o~ ＋ ruhut）
+      const bad = []
+      for (const w of words) {
+        /** @type {Map<string, number>} */
+        const stepCost = new Map()
+        for (const p of chart.of(index.dawg.lookup(w))) {
+          const k = `${p.root}\u0000${p.cost}\u0000${p.virtual}`
+          const s = Math.round(p.steps.reduce((/** @type {number} */ x, /** @type {any} */ st) => x + st.cost, 0) * 1e6) / 1e6
+          if (stepCost.has(k) && stepCost.get(k) !== s) bad.push(`${w} → ${p.root}@${p.cost}：步驟成本 ${stepCost.get(k)} 與 ${s}`)
+          stepCost.set(k, s)
+        }
+      }
+      expect(bad).toEqual([])
+    })
+
     it('一致：拆解表與一般搜尋的自動拆解相同（詞根比詞短、單一個詞）', () => {
       const ms = e.morphSearch
       const level = e._level('normal')
@@ -122,11 +138,8 @@ for (const seed of SEEDS) {
           .filter((/** @type {any} */ m) => m.term.length < w.length && !m.term.includes(' '))
           .map((/** @type {any} */ m) => `${m.term}:${m.distance}`)
           .sort()
-        const fromChart = chart
-          .of(index.dawg.lookup(w))
-          .filter((/** @type {any} */ p) => !p.virtual)
-          .map((/** @type {any} */ p) => `${p.root}:${p.cost}`)
-          .sort()
+        // 同一個詞根成本相同的幾種讀法（ties）各一筆：比（詞根、成本）的集合
+        const fromChart = [...new Set(chart.of(index.dawg.lookup(w)).filter((/** @type {any} */ p) => !p.virtual).map((/** @type {any} */ p) => `${p.root}:${p.cost}`))].sort()
         if (fromSearch.join() !== fromChart.join()) bad.push(`${w}：搜尋 ${fromSearch.join(' ')}；拆解表 ${fromChart.join(' ')}`)
       }
       expect(bad).toEqual([])

@@ -24,7 +24,7 @@
     "substitute": 1.5,
     "delete": 1,
     "insert": 0.8,
-    "overrides": { " ": { "substitute": 0.1, "delete": 0.1, "insert": 0.1 } }
+    "overrides": { " ": { "delete": 0.1, "insert": 0.1 } }
   },
   "rules": [
     { "category": "流音", "label": { "en": "Liquids" }, "rules": [["r", "l", 0.1]] },
@@ -79,7 +79,7 @@
 | `substitute` | 1.5  | 替換一個字元（相同字元為 0）                                                       |
 | `delete`     | 1.0  | 刪除查詢的字元（查詢多打了）                                                       |
 | `insert`     | 0.8  | 補上候選的字元（查詢少打了）                                                       |
-| `overrides`  | —    | 針對單一字元覆寫，例如讓空白的三種操作都只算 0.1，`baruzakbinayu ≈ baruzak binayu` |
+| `overrides`  | —    | 針對單一字元覆寫，例如讓空白的插入、刪除都只算 0.1，`baruzakbinayu ≈ baruzak binayu`。詞邊界（`boundaries`）不能與字母互換：只能插入、刪除，不受 `substitute` 影響（否則任何字母都能以邊界的價錢消失） |
 
 插入比刪除便宜，是因為使用者常只記得詞的一部分。所以距離不對稱：`distance(a, b)` 與 `distance(b, a)` 可能不同。
 
