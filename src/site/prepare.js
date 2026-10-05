@@ -12,6 +12,7 @@
  * data/search/language.json        建索引時用的語言設定檔（查詢端必須用同一份）
  * data/search/derivations.json     自動派生圖（查詞根找到加綴變化；見 src/search/derivations.js）
  * data/search/parses.json          拆解表（每個詞的所有拆法，句型搜尋的構詞樣式用；見 src/search/parses.js）
+ * data/search/segmentations.json   有人工拆解的記錄（檢查清單的人工拆解對照用；見 src/search/segmentation.js）
  * data/media/…、data/scans/…        從資料集複製（增量；已不存在的會刪除）
  * <站台 public/ 的檔案>             站徽等
  * ```
@@ -88,6 +89,7 @@ export async function prepareSiteData(site, { log = console.log } = {}) {
   await writeJson('search/docs.json', index.docs)
   await writeJson('search/lexicon.json', index.lexicon)
   await writeJson('search/language.json', index.profile)
+  await writeJson('search/segmentations.json', index.segmentations)
   log(
     `✓ 搜尋索引：${index.docs.count} 筆記錄、${index.stats.terms} 個詞、詞圖 ${index.stats.nodes} 節點／${index.stats.edges} 邊（${Date.now() - t1} ms）`,
   )

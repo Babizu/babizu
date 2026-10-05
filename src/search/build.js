@@ -15,6 +15,7 @@ import {
 } from './format.js'
 import { computeParents } from './family.js'
 import { createTextTools } from './text.js'
+import { collectSegmentations } from './segmentation.js'
 
 /**
  * @typedef {import('../schema/types.js').CorpusRecord} CorpusRecord
@@ -34,8 +35,10 @@ import { createTextTools } from './text.js'
  *   docs: import('./format.js').SearchDocs,
  *   lexicon: import('../fuzzy/fuzzy-index.js').SerializedIndex,
  *   profile: import('../fuzzy/profile.js').LanguageProfile,
+ *   segmentations: import('./segmentation.js').SegmentationData,
  *   stats: {terms: number, postings: number, nodes: number, edges: number},
  * }}
+ *   segmentations 是有人工拆解的記錄（檢查清單的人工拆解對照用，網站另存成 search/segmentations.json）
  */
 export function buildSearchIndex({ items, groups, sourceIds, profile, varieties = [] }) {
   assertProfile(profile)
@@ -131,6 +134,7 @@ export function buildSearchIndex({ items, groups, sourceIds, profile, varieties 
     lexicon: index.serialize(),
     // 查詢端要用同一份設定檔，搜尋鍵與距離才會和建索引時一致
     profile,
+    segmentations: collectSegmentations(items),
     stats: { terms: index.size, postings: postingCount, nodes: index.dawg.nodeCount, edges: index.dawg.edgeCount },
   }
 }

@@ -11,9 +11,14 @@
  *    標出同一個來源內重複、跨來源，以及同一個來源內釋義也相同（最可能是重複登錄）。
  * 3. **重複的例句**：所有來源（含語料）中句子完全相同的記錄（連續的空白視為一個），標記方式同上：
  *    同一個來源內翻譯也相同的最可能是重複收錄。
+ * 4. **人工拆解對照**：有人工拆解（`morphology.segmentation`）的記錄，與句型搜尋的構詞樣式不一致的
+ *    （拆解有、搜尋比不到的詞綴，與搜尋比到、拆解沒有的詞綴；segmentation.js）。這就是句型搜尋的準確與召回
+ *    以人工拆解為標準時，被扣分的那些詞。需要拆解表與人工拆解（search/segmentations.json），由使用端接上
+ *    （attachSegmentations；網站第一次需要時才載入）。
  */
 
 import { decodePosting, docAt } from './format.js'
+import { compareSegmentations, SEGMENTATIONS_FORMAT_VERSION } from './segmentation.js'
 
 /** @typedef {import('./engine.js').SearchEngine} SearchEngine */
 /** @typedef {import('./format.js').DocSummary} DocSummary */
@@ -53,6 +58,14 @@ const WORDLIKE = /[\p{L}\p{N}]/u
  */
 
 /**
+ * @typedef {'all' | 'miss' | 'extra' | 'unknown' | 'rootMissing'} SegmentationFilter
+ *   人工拆解對照的篩選：all 有任何不一致的；miss 有漏（拆解有、搜尋比不到）；extra 有誤配（搜尋比到、拆解沒有）；
+ *   unknown 拆解中有規格沒有的詞綴；rootMissing 有不一致、而且拆解中的詞根不在詞庫中（補上條目常常就拆得到）
+ */
+/** @type {SegmentationFilter[]} */
+export const SEGMENTATION_FILTERS = ['all', 'miss', 'extra', 'unknown', 'rootMissing']
+
+/**
  * 一個搜尋引擎、一組辭典來源的檢查清單（計算結果快取在物件上）。
  */
 export class Checklist {
@@ -75,6 +88,83 @@ export class Checklist {
     this._sentences = null
     /** @type {Map<string, {kind: TokenKind, hits: EntryHit[]}>} */
     this._candidates = new Map()
+    /** @type {Array<[number, string]> | null} 人工拆解（attachSegmentations） */
+    this._segmentations = null
+    /** @type {Map<string, import('./segmentation.js').SegmentationComparison | null>} 模糊程度 → 對照 */
+    this._comparisons = new Map()
+  }
+
+  /**
+   * 接上人工拆解（search/segmentations.json；沒有這個檔案的舊建置傳 null）。
+   * @param {import('./segmentation.js').SegmentationData | null} data
+   */
+  attachSegmentations(data) {
+    this._segmentations = data && data.version === SEGMENTATIONS_FORMAT_VERSION ? data.entries : []
+    this._comparisons = new Map()
+  }
+
+  /** 有人工拆解的記錄數（還沒接上時為 null） */
+  segmentationCount() {
+    return this._segmentations?.length ?? null
+  }
+
+  /**
+   * 人工拆解與句型搜尋的構詞樣式的對照（依模糊程度快取）。沒有人工拆解、構詞規格或拆解表時為 null。
+   * @param {import('./engine.js').Fuzziness} fuzziness
+   */
+  segmentationComparison(fuzziness) {
+    if (!this._segmentations?.length) return null
+    if (!this._comparisons.has(fuzziness)) this._comparisons.set(fuzziness, compareSegmentations(this.engine, this._segmentations, fuzziness))
+    return /** @type {import('./segmentation.js').SegmentationComparison | null} */ (this._comparisons.get(fuzziness))
+  }
+
+  /**
+   * 一頁「人工拆解對照」：只列有不一致的記錄（依詞排序），附上準確與召回。
+   * @param {{fuzziness?: import('./engine.js').Fuzziness, filter?: SegmentationFilter, offset?: number, limit?: number}} [options]
+   */
+  segmentationPage({ fuzziness = 'normal', filter = 'all', offset = 0, limit = 20 } = {}) {
+    const comparison = this.segmentationComparison(fuzziness)
+    if (!comparison) return null
+    const docs = this.engine.docs
+    const conditions = new Map(comparison.conditions.map((c) => [c.id, c]))
+    /** @param {import('./segmentation.js').SegmentationRow} r */
+    const flags = (r) => {
+      const miss = r.affixes.some((a) => a.status === 'miss')
+      const extra = r.extras.length > 0
+      const unknown = r.affixes.some((a) => a.status === 'unknown')
+      const any = miss || extra || unknown
+      return { all: any, miss, extra, unknown, rootMissing: any && !r.rootInLexicon }
+    }
+    const flagged = comparison.rows.map((r) => ({ r, f: flags(r) })).filter((x) => x.f.all)
+    flagged.sort((a, b) => (a.r.word < b.r.word ? -1 : a.r.word > b.r.word ? 1 : a.r.doc - b.r.doc))
+    /** @type {Record<SegmentationFilter, number>} */
+    const counts = { all: 0, miss: 0, extra: 0, unknown: 0, rootMissing: 0 }
+    for (const { f } of flagged) for (const k of SEGMENTATION_FILTERS) if (f[k]) counts[k]++
+    const list = flagged.filter((x) => x.f[filter])
+    const { tp, fp, fn } = comparison.totals
+    return {
+      fuzziness,
+      total: list.length,
+      counts,
+      records: comparison.rows.length,
+      totals: { tp, fp, fn, precision: tp + fp ? tp / (tp + fp) : null, recall: tp + fn ? tp / (tp + fn) : null },
+      items: list.slice(offset, offset + limit).map(({ r }) => ({
+        doc: docAt(docs, r.doc),
+        word: r.word,
+        segmentation: r.segmentation,
+        root: r.root,
+        rootInLexicon: r.rootInLexicon,
+        affixes: r.affixes.map((a) => {
+          const c = a.condition ? conditions.get(a.condition) : null
+          return { type: a.type, form: a.form, status: a.status, label: c?.label ?? null, query: c?.query ?? null }
+        }),
+        extras: r.extras.map((id) => {
+          const c = /** @type {import('./segmentation.js').SegmentationCondition} */ (conditions.get(id))
+          return { label: c.label, query: c.query }
+        }),
+        parses: r.parses,
+      })),
+    }
   }
 
   /** 例句、片語中出現、但沒有辭典條目的詞，依出現次數（多的在前）、再依詞排序 */

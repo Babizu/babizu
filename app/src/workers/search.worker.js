@@ -9,6 +9,8 @@
  * 語言設定檔（search/language.json）和索引一起載入：它就是建索引時用的那一份，
  * 查詢端用它產生搜尋鍵與距離函式，結果才會和建置端一致。
  * 拆解表（search/parses.json，句型搜尋的構詞樣式用）比較大，第一次遇到需要它的句型查詢時才載入。
+ * 人工拆解（search/segmentations.json，檢查清單的人工拆解對照用）在第一次用到對照時才載入；
+ * 有人工拆解、而且有構詞規格時，也一併載入拆解表（對照要用）。檢查清單的其他部分不等它們。
  * 錯誤訊息是給開發者看的技術細節，介面會另外加上翻譯過的說明。
  */
 
@@ -57,6 +59,8 @@ async function init({ dataBase, version }) {
 
 /** @type {Checklist | null} 檢查清單（依辭典來源建立，計算結果留著給下一頁用） */
 let checklist = null
+/** @type {Promise<any> | null} 人工拆解（沒有這個檔案的舊建置是 null） */
+let segmentationsLoading = null
 /** @param {{lexicalSources: string[]}} p */
 function checklistFor({ lexicalSources }) {
   const engine = requireEngine()
@@ -64,6 +68,22 @@ function checklistFor({ lexicalSources }) {
     checklist = new Checklist(engine, lexicalSources)
   }
   return checklist
+}
+
+/**
+ * 接上人工拆解的檢查清單（人工拆解對照用）：第一次用到時載入人工拆解，有的話再載入拆解表。
+ * 拆解表載入失敗時拋出錯誤（下次再試）；沒有人工拆解的舊建置照常回傳，對照是 null。
+ * @param {{lexicalSources: string[]}} p
+ */
+async function segmentationChecklist(p) {
+  const list = checklistFor(p)
+  if (list.segmentationCount() === null) {
+    segmentationsLoading ??= fetchJson(/** @type {NonNullable<typeof source>} */ (source), 'search/segmentations.json').catch(() => null)
+    const data = await segmentationsLoading
+    if (data?.entries?.length && list.engine.morphSearch) await loadParses(list.engine)
+    list.attachSegmentations(data)
+  }
+  return list
 }
 
 /** 需要索引就緒的方法 */
@@ -94,6 +114,8 @@ const methods = {
   checklistDuplicates: (p) => checklistFor(p).duplicatePage(p),
   /** @param {{lexicalSources: string[], filter?: any, offset?: number, limit?: number}} p */
   checklistSentences: (p) => checklistFor(p).sentencePage(p),
+  /** @param {{lexicalSources: string[], fuzziness?: any, filter?: any, offset?: number, limit?: number}} p 人工拆解對照（沒有時是 null） */
+  checklistSegmentations: async (p) => (await segmentationChecklist(p)).segmentationPage(p),
 }
 
 /**

@@ -6,16 +6,20 @@
  *   並列辭典中最接近的詞條，方便判斷它是方言變體、沒被列出的加綴派生，還是真的缺條目。
  * - 完全相同的詞條：辭典來源中詞形完全相同的記錄，放在一起比對。
  * - 重複的例句：所有來源中句子完全相同的記錄，放在一起比對。
+ * - 人工拆解對照：有人工拆解的記錄中，與句型搜尋的構詞樣式不一致的（拆解有、搜尋比不到的詞綴，
+ *   與搜尋比到、拆解沒有的詞綴）。這就是以人工拆解為標準量準確與召回時被扣分的詞，附上可能的原因
+ *   （詞根不在詞庫、規格沒有的詞綴）與搜尋取到的拆法。只有資料中有人工拆解、而且有構詞規格時才出現。
  *
- * 兩份清單都由搜尋 Worker 以已載入的索引算出（babizu/search 的 Checklist），捲動時一頁一頁載入。
+ * 清單都由搜尋 Worker 以已載入的索引算出（babizu/search 的 Checklist），捲動時一頁一頁載入。
  * 分頁、篩選、排序都記在網址上，可以直接分享或重新整理。
  */
 import { ArrowLeftIcon } from '@lucide/vue'
 import { computed, shallowRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import DuplicateGroup from '@/components/checklist/DuplicateGroup.vue'
+import SegmentationRow from '@/components/checklist/SegmentationRow.vue'
 import TokenRow from '@/components/checklist/TokenRow.vue'
-import { DUPLICATE_FILTERS, TOKEN_KINDS } from '@/components/checklist/kinds.js'
+import { DUPLICATE_FILTERS, SEGMENTATION_FILTERS, TOKEN_KINDS } from '@/components/checklist/kinds.js'
 import StateMessage from '@/components/common/StateMessage.vue'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -23,7 +27,7 @@ import { useInfiniteList } from '@/composables/useInfiniteList.js'
 import { useSearchIndex } from '@/composables/useSearchIndex.js'
 import { useSources } from '@/composables/useSources.js'
 import { t } from '@/i18n.js'
-import { formatCount } from '@/lib/labels.js'
+import { FUZZINESS_LABELS, formatCount } from '@/lib/labels.js'
 import { cn } from '@/lib/utils'
 
 const PAGE_SIZE = 20
@@ -38,15 +42,20 @@ const lexicalSources = computed(() => sources.value.filter((s) => s.type !== 'co
 
 // ── 網址上的狀態 ──
 const query = (/** @type {string} */ key) => (typeof route.query[key] === 'string' ? /** @type {string} */ (route.query[key]) : '')
-const tab = computed(() => (['duplicates', 'sentences'].includes(query('tab')) ? query('tab') : 'tokens'))
+const tab = computed(() => (['duplicates', 'sentences', 'segmentations'].includes(query('tab')) ? query('tab') : 'tokens'))
 const kind = computed(() => (TOKEN_KINDS.some((k) => k.value === query('kind')) ? query('kind') : 'all'))
 const sort = computed(() => (query('sort') === 'text' ? 'text' : 'count'))
 const filter = computed(() => (DUPLICATE_FILTERS.some((f) => f.value === query('filter')) ? query('filter') : 'all'))
+/** 人工拆解對照：比對用的模糊程度（與搜尋相同的 fz）與篩選 */
+const fuzziness = computed(() => (['exact', 'loose'].includes(query('fz')) ? query('fz') : 'normal'))
+const issue = computed(() => (SEGMENTATION_FILTERS.some((f) => f.value === query('issue')) ? query('issue') : 'all'))
 
 /** 改網址上的狀態（預設值不寫進網址） @param {Record<string, string>} patch */
 function setQuery(patch) {
   const next = { ...route.query, ...patch }
-  for (const [key, value] of Object.entries(patch)) if (!value || value === 'all' || (key === 'tab' && value === 'tokens') || (key === 'sort' && value === 'count')) delete next[key]
+  for (const [key, value] of Object.entries(patch)) {
+    if (!value || value === 'all' || (key === 'tab' && value === 'tokens') || (key === 'sort' && value === 'count') || (key === 'fz' && value === 'normal')) delete next[key]
+  }
   router.replace({ query: next })
 }
 
@@ -65,6 +74,18 @@ const duplicates = useInfiniteList(async (offset) => {
   return { items: page.items, hasMore: offset + page.items.length < page.total, meta: page }
 })
 
+const segmentations = useInfiniteList(async (offset) => {
+  const page = await client.checklist('checklistSegmentations', {
+    lexicalSources: lexicalSources.value,
+    fuzziness: fuzziness.value,
+    filter: issue.value,
+    offset,
+    limit: PAGE_SIZE,
+  })
+  if (!page) return { items: [], hasMore: false, meta: null }
+  return { items: page.items, hasMore: offset + page.items.length < page.total, meta: page }
+})
+
 watch(
   sourcesLoaded,
   async (ready) => {
@@ -80,11 +101,39 @@ watch(
 )
 watch([sourcesLoaded, tab, kind, sort], ([ready]) => ready && tab.value === 'tokens' && tokens.reset(), { immediate: true })
 // 完全相同的詞條與重複的例句共用同一份清單狀態（一次只顯示一個）
-watch([sourcesLoaded, tab, filter], ([ready]) => ready && tab.value !== 'tokens' && duplicates.reset(), { immediate: true })
+watch([sourcesLoaded, tab, filter], ([ready]) => ready && (tab.value === 'duplicates' || tab.value === 'sentences') && duplicates.reset(), { immediate: true })
+watch([sourcesLoaded, tab, fuzziness, issue], ([ready]) => ready && tab.value === 'segmentations' && segmentations.reset(), { immediate: true })
+
+/**
+ * 人工拆解對照中有不一致的記錄數（目前的模糊程度）：undefined 是還不知道，null 是沒有這份清單（資料中沒有人工拆解、
+ * 沒有構詞規格，或拆解表載入失敗）。要先載入拆解表，所以不放在統計中，另外在背景算，不擋統計。
+ * @type {import('vue').ShallowRef<number | null | undefined>}
+ */
+const segmentationIssues = shallowRef(undefined)
+let segmentationRequest = 0
+watch(
+  [sourcesLoaded, fuzziness],
+  async ([ready]) => {
+    if (!ready) return
+    const request = ++segmentationRequest
+    let count = null
+    try {
+      const page = await client.checklist('checklistSegmentations', { lexicalSources: lexicalSources.value, fuzziness: fuzziness.value, limit: 0 })
+      count = page ? page.counts.all : null
+    } catch {
+      // 拆解表載入失敗：不顯示分頁；正在看這一頁時，清單本身會顯示錯誤與重試
+    }
+    if (request === segmentationRequest) segmentationIssues.value = count
+  },
+  { immediate: true },
+)
 
 // ── 顯示 ──
 const tokenMeta = computed(() => /** @type {any} */ (tokens.meta.value))
 const duplicateMeta = computed(() => /** @type {any} */ (duplicates.meta.value))
+const segmentationMeta = computed(() => /** @type {any} */ (segmentations.meta.value))
+/** 百分比（沒有分母時是 —） @param {number | null | undefined} x */
+const percent = (x) => (x === null || x === undefined ? '—' : `${(x * 100).toFixed(1)}%`)
 const untreatedShare = computed(() => (summary.value?.tokens ? Math.round((summary.value.untreated / summary.value.tokens) * 100) : 0))
 /** 類別的數量只算已經比對過的詞：還沒比對完時數字會繼續長 */
 const analyzedAll = computed(() => tokenMeta.value && tokenMeta.value.analyzed >= tokenMeta.value.total)
@@ -93,6 +142,10 @@ const TABS = computed(() => [
   { value: 'tokens', label: t('例句中沒有詞條的詞'), count: summary.value?.untreated },
   { value: 'duplicates', label: t('完全相同的詞條'), count: summary.value?.duplicates },
   { value: 'sentences', label: t('重複的例句'), count: summary.value?.duplicateSentences },
+  // 人工拆解對照：資料中有人工拆解、而且比得了（有構詞規格）時才有；網址直接指到這一頁時先列出來
+  ...(typeof segmentationIssues.value === 'number' || tab.value === 'segmentations'
+    ? [{ value: 'segmentations', label: t('人工拆解對照'), count: segmentationIssues.value ?? undefined }]
+    : []),
 ])
 /** 目前這份組清單（詞條或例句）的說明 */
 const groupNote = computed(() =>
@@ -117,14 +170,14 @@ const sortChip = (active) => cn(CHIP, active ? 'bg-accent text-accent-foreground
     <header class="mb-6 max-w-3xl">
       <h1 class="font-serif text-3xl font-bold tracking-tight">{{ t('檢查清單') }}</h1>
       <p class="text-muted-foreground mt-2 leading-relaxed">
-        {{ t('給校對者的資料檢查：例句中出現、卻還沒有任何辭典條目的詞，詞形完全相同的詞條，以及重複的例句。清單直接由搜尋索引算出，資料更新後重新整理就是最新的。') }}
+        {{ t('給校對者的資料檢查：例句中出現、卻還沒有任何辭典條目的詞，詞形完全相同的詞條，重複的例句，以及人工拆解與句型搜尋不一致的詞。清單直接由搜尋索引算出，資料更新後重新整理就是最新的。') }}
       </p>
     </header>
 
     <StateMessage v-if="sourcesError" tone="error" :title="t('無法載入來源資訊')" :description="sourcesError" />
 
     <template v-else>
-      <!-- 統計：先給整體規模；後兩項就是底下兩份清單 -->
+      <!-- 統計：先給整體規模；後三項就是底下前三份清單 -->
       <section class="border-border mb-8 border-y py-4" aria-labelledby="h-checklist-stats">
         <h2 id="h-checklist-stats" class="sr-only">{{ t('統計') }}</h2>
         <StateMessage v-if="summaryError" tone="error" :title="t('統計載入失敗')" :description="summaryError" />
@@ -177,7 +230,7 @@ const sortChip = (active) => cn(CHIP, active ? 'bg-accent text-accent-foreground
         </dl>
       </section>
 
-      <!-- 兩份清單：分頁用底線標出目前的一份，與頁首選單同一種語彙 -->
+      <!-- 各份清單：分頁用底線標出目前的一份，與頁首選單同一種語彙 -->
       <div class="scrollbar-thin -mx-4 mb-4 flex gap-6 overflow-x-auto border-b px-4 sm:mx-0 sm:px-0" role="tablist" :aria-label="t('檢查清單')">
         <button
           v-for="item in TABS"
@@ -274,7 +327,7 @@ const sortChip = (active) => cn(CHIP, active ? 'bg-accent text-accent-foreground
       </section>
 
       <!-- ── 完全相同的詞條／重複的例句（同一種版面） ── -->
-      <section v-else :id="`panel-${tab}`" role="tabpanel" :aria-labelledby="`tab-${tab}`">
+      <section v-else-if="tab !== 'segmentations'" :id="`panel-${tab}`" role="tabpanel" :aria-labelledby="`tab-${tab}`">
         <div class="scrollbar-thin -mx-4 flex gap-2 overflow-x-auto px-4 sm:mx-0 sm:flex-wrap sm:px-0" role="group" :aria-label="t('篩選')">
           <button
             v-for="f in DUPLICATE_FILTERS"
@@ -317,6 +370,89 @@ const sortChip = (active) => cn(CHIP, active ? 'bg-accent text-accent-foreground
           </Button>
           <p v-else-if="!duplicates.hasMore.value && duplicates.items.value.length" class="text-muted-foreground text-xs">
             {{ t('全部 {count} 組都列出了', { count: formatCount(duplicates.items.value.length) }) }}
+          </p>
+        </div>
+      </section>
+
+      <!-- ── 人工拆解對照 ── -->
+      <section v-else id="panel-segmentations" role="tabpanel" aria-labelledby="tab-segmentations">
+        <div class="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
+          <div class="scrollbar-thin -mx-4 flex gap-2 overflow-x-auto px-4 sm:mx-0 sm:flex-wrap sm:px-0" role="group" :aria-label="t('篩選')">
+            <button
+              v-for="f in SEGMENTATION_FILTERS"
+              :key="f.value"
+              type="button"
+              :class="chip(issue === f.value)"
+              :aria-pressed="issue === f.value"
+              :title="t(f.hint)"
+              @click="setQuery({ issue: f.value })"
+            >
+              <span v-if="f.glyph" aria-hidden="true" class="font-mono opacity-70">{{ f.glyph }}</span>{{ t(f.label) }}
+              <span v-if="segmentationMeta" class="text-xs tabular-nums opacity-70">{{ formatCount(segmentationMeta.counts[f.value]) }}</span>
+            </button>
+          </div>
+          <div class="flex gap-2" role="group" :aria-label="t('模糊程度')">
+            <button
+              v-for="level in ['exact', 'normal', 'loose']"
+              :key="level"
+              type="button"
+              :class="sortChip(fuzziness === level)"
+              :aria-pressed="fuzziness === level"
+              @click="setQuery({ fz: level })"
+            >
+              {{ t(FUZZINESS_LABELS[/** @type {'exact' | 'normal' | 'loose'} */ (level)]) }}
+            </button>
+          </div>
+        </div>
+        <p class="text-muted-foreground mt-3 max-w-3xl text-xs leading-relaxed" aria-live="polite">
+          <template v-if="segmentationMeta">
+            {{
+              t('以人工拆解為標準（{records} 筆有拆解的記錄），句型搜尋的構詞樣式以詞綴計：準確 {precision}（對 {tp}、誤配 {fp}）、召回 {recall}（漏 {fn}）。底下是被扣分的記錄，詞綴可以點，直接以那個構詞樣式搜尋。', {
+                records: formatCount(segmentationMeta.records),
+                precision: percent(segmentationMeta.totals.precision),
+                recall: percent(segmentationMeta.totals.recall),
+                tp: formatCount(segmentationMeta.totals.tp),
+                fp: formatCount(segmentationMeta.totals.fp),
+                fn: formatCount(segmentationMeta.totals.fn),
+              })
+            }}
+          </template>
+          <template v-else-if="segmentations.loading.value">{{ t('正在比對人工拆解…') }}</template>
+        </p>
+
+        <ol class="divide-y" :aria-busy="segmentations.loading.value">
+          <SegmentationRow v-for="item in segmentations.items.value" :key="item.doc.id" :item="item" :fuzziness="fuzziness" />
+        </ol>
+        <div v-if="segmentations.loading.value" class="divide-y" aria-hidden="true">
+          <div v-for="k in segmentations.items.value.length ? 2 : 5" :key="k" class="grid gap-x-8 gap-y-3 py-5 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
+            <div class="space-y-2"><Skeleton class="h-6 w-32" /><Skeleton class="h-4 w-2/3" /></div>
+            <div class="space-y-2 lg:border-l lg:pl-8"><Skeleton class="h-5 w-40" /><Skeleton class="h-5 w-3/4" /></div>
+          </div>
+        </div>
+
+        <StateMessage v-if="segmentations.error.value" tone="error" class="mt-4" :title="t('載入失敗')" :description="segmentations.error.value">
+          <Button variant="outline" @click="segmentations.retry()">{{ t('重試') }}</Button>
+        </StateMessage>
+        <StateMessage
+          v-else-if="!segmentations.loading.value && !segmentationMeta"
+          class="mt-4"
+          :title="t('沒有可以比對的人工拆解')"
+          :description="t('資料中沒有人工拆解（morphology.segmentation），或語言設定檔沒有構詞規格。')"
+        />
+        <StateMessage
+          v-else-if="!segmentations.loading.value && !segmentations.hasMore.value && !segmentations.items.value.length"
+          class="mt-4"
+          :title="t('沒有符合的記錄')"
+          :description="t('換一個篩選或模糊程度看看。')"
+        />
+
+        <div :ref="(el) => (segmentations.sentinel.value = /** @type {HTMLElement | null} */ (el))" class="h-px" aria-hidden="true" />
+        <div class="mt-6 flex justify-center">
+          <Button v-if="segmentations.hasMore.value && !segmentations.loading.value && !segmentations.error.value" variant="outline" @click="segmentations.loadMore()">
+            {{ t('載入更多') }}
+          </Button>
+          <p v-else-if="!segmentations.hasMore.value && segmentations.items.value.length" class="text-muted-foreground text-xs">
+            {{ t('全部 {count} 筆都列出了', { count: formatCount(segmentations.items.value.length) }) }}
           </p>
         </div>
       </section>

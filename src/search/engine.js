@@ -267,8 +267,15 @@ export class SearchEngine {
    * @returns {import('../pattern/search.js').PatternResponse}
    */
   searchPattern(query, options = {}) {
-    if (!this._pattern) this._pattern = new PatternSearch(this)
-    return this._pattern.search(query, options)
+    return this.pattern.search(query, options)
+  }
+
+  /**
+   * 句型搜尋本身（第一次用到時建立）。檢查清單的人工拆解對照也用它：構詞樣式的解析與比對與搜尋相同。
+   * @returns {PatternSearch}
+   */
+  get pattern() {
+    return (this._pattern ??= new PatternSearch(this))
   }
 
   /**

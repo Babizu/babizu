@@ -64,6 +64,7 @@ flowchart LR
 | `search/language.json` | 同上 | 語言設定檔（Worker 用它處理查詢） |
 | `search/derivations.json` | 同上 | 自動派生圖：每個詞由 BCDP 求得的最好詞根，查詞根時往下找自動派生形（[bcdp.md](bcdp.md) 第 10 節；沒有構詞規格時是空的） |
 | `search/parses.json` | 第一次用到句型搜尋的構詞樣式時（Web Worker） | 拆解表：每個詞的所有 BCDP 拆法，即自動拆解列出的那一串（[pattern-query.md](pattern-query.md) 3.5；沒有構詞規格時是空的） |
+| `search/segmentations.json` | 第一次用到檢查清單的人工拆解對照時（Web Worker，連同拆解表） | 有人工拆解（`morphology.segmentation`，含詞素界）的記錄編號與拆解（`src/search/segmentation.js`） |
 | `records/<來源>/<分片>.json` | 開啟詞條頁、瀏覽頁時 | 完整記錄與群組 |
 | `media/…`、`scans/…` | 播放、查看掃描頁時 | 音檔、原書掃描圖 |
 

@@ -64,7 +64,7 @@ data/
 | `senses[]` | `{zh, en, nan, note?}`；`nan` 是臺語 |
 | `pos` | 來源上的詞性標記，照抄 |
 | `domain` | 語意分類 `{code, label}` |
-| `morphology` | `{formType, segmentation, gloss, grammaticalNote?, derivedFrom[]}`；`derivedFrom` 是 `{relation: < > +, text, via, attribution}` |
+| `morphology` | `{formType, segmentation, gloss, grammaticalNote?, derivedFrom[]}`；`derivedFrom` 是 `{relation: < > +, text, via, attribution}`。`segmentation` 依萊比錫標註規則（`-` 詞素界、`=` 附著詞界、`~` 重疊、`<x>` 中綴、`( )` 可省略的字母），檢查清單的人工拆解對照拿它與句型搜尋的構詞樣式比 |
 | `interlinear[]` | 逐詞對譯 `{form, gloss}` |
 | `variants[]` | 變體 `{relation: = ~, text, attribution, dialects, dialectRaw}` |
 | `related[]` | 指向其他記錄 `{type, target: 記錄 id}` |

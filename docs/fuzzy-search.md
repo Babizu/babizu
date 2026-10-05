@@ -479,7 +479,7 @@ const data = index.serialize() // FuzzyIndex.deserialize(data, metric)
 | `expandGrammar(spec, normalize)`、`validateGrammar`、`isGrammarSpec` | 構詞文法（[morph-grammar.md](morph-grammar.md)）：展開成平面清單（每項帶 `parts`、`rank`）、驗證、判斷寫法 |
 | `createMorphSearch({ analyzer, metric, index })` | 構詞搜尋 BCDP（[bcdp.md](bcdp.md)）：`search`、`prepare`／`seed`／`finish`（搭配多通道走訪）、`openStems`（字面的開放詞幹，詞根不在詞庫中時；bcdp.md 10.5）、`explain`（演算法實驗室）、`notesOf` |
 | `FuzzyIndex.searchChannels(channels)` | 多通道走訪；每個通道可帶交界狀態 `from`（起點）、`to`（詞尾耦合）、`onJunction`（回報詞尾的交界狀態）、`lockBoundary`、`cutoff`（共用的相對上限）、`initialFrom`（以某些字元開頭的詞改由另一個交界狀態出發）；`start`／`end` 是沒有跨界表的簡寫 |
-| `Checklist`（`babizu/search`） | 檢查清單：`untreatedTokens`／`tokenPage`（例句中沒有辭典條目的詞，並列最接近的詞條與猜的類別）、`duplicateGroups`／`duplicatePage`（詞形完全相同的詞條）、`duplicateSentences`／`sentencePage`（所有來源中句子完全相同的例句，連續空白視為一個）、`summary` |
+| `Checklist`（`babizu/search`） | 檢查清單：`untreatedTokens`／`tokenPage`（例句中沒有辭典條目的詞，並列最接近的詞條與猜的類別）、`duplicateGroups`／`duplicatePage`（詞形完全相同的詞條）、`duplicateSentences`／`sentencePage`（所有來源中句子完全相同的例句，連續空白視為一個）、`attachSegmentations`／`segmentationPage`（人工拆解與句型搜尋的構詞樣式不一致的記錄，附準確與召回；`compareSegmentations` 在 `src/search/segmentation.js`）、`summary` |
 | `mergeSpellings(groups)`、`spellingOf(text)`（`babizu/search`） | 同形詞組：寫法完全相同的單獨結果合成一項（見上「同形詞組」） |
 | `buildDerivationGraph({lexicon, profile})`、`DerivationGraph`（`babizu/search`） | 自動派生圖：建置（單執行緒；網站建置用平行版本）與查詢端的走訪（`descendants`）；`SearchEngine` 的 `derivations` 選項 |
 | `babizu/fst`（實驗性） | 通用 WFST：`compose`、`shortestDistance`、`editTransducer`、`surfaceLexicon`、`fstLemmaSearch` |

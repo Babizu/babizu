@@ -194,6 +194,49 @@ export class PatternSearch {
   }
 
   /**
+   * 一個構詞樣式（`pa-…`、`…-an`、`<in>…`）解析成詞素條件，與搜尋時的解析相同。
+   * 檢查清單的人工拆解對照用（babizu/search 的 segmentation.js）。寫法不是單一個構詞樣式、
+   * 詞綴不在構詞規格中、或沒有構詞規格時回傳 null（不丟出錯誤）。
+   * @param {string} query
+   * @returns {import('./morph.js').MorphRequirement | null}
+   */
+  morphRequirement(query) {
+    const morphology = this.morphology
+    if (!morphology) return null
+    try {
+      const parsed = parsePattern(query)
+      const body = parsed.conditions.length === 1 ? parsed.conditions[0].body : null
+      if (body?.type !== 'atom' || body.atom.kind !== 'morph') return null
+      return morphology.resolve(body.atom.segments, [])
+    } catch (err) {
+      if (err instanceof PatternError) return null
+      throw err
+    }
+  }
+
+  /**
+   * 一個詞（搜尋鍵）在這個模糊程度符不符合詞素條件：取到的拆法中第一個符合的，沒有就是 null。
+   * 與搜尋比對構詞樣式是同一個判斷（_evaluate），所以檢查清單的對照與搜尋結果一致。需要拆解表。
+   * @param {string} key
+   * @param {import('./morph.js').MorphRequirement} req
+   * @param {import('../search/engine.js').Fuzziness} fuzziness
+   * @returns {SelectedParse | null}
+   */
+  matchMorph(key, req, fuzziness) {
+    return this._matchParse(key, req, this._rootsOf(req, fuzziness), fuzziness)
+  }
+
+  /**
+   * 詞依模糊程度取到的拆法（構詞樣式比對的就是這些；詞庫詞根的在前）。需要拆解表。
+   * @param {string} key
+   * @param {import('../search/engine.js').Fuzziness} fuzziness
+   * @returns {SelectedParse[]}
+   */
+  parsesOf(key, fuzziness) {
+    return this._parsesOf(key, fuzziness)
+  }
+
+  /**
    * @param {string} query
    * @param {PatternSearchOptions} [options]
    * @returns {PatternResponse}

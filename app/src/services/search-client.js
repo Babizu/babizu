@@ -129,8 +129,8 @@ export class SearchClient {
   }
 
   /**
-   * 檢查清單（/checklist）：頁首統計、例句中沒有詞條的詞、完全相同的詞條、重複的例句。
-   * @param {'checklistSummary' | 'checklistTokens' | 'checklistDuplicates' | 'checklistSentences'} method
+   * 檢查清單（/checklist）：頁首統計、例句中沒有詞條的詞、完全相同的詞條、重複的例句、人工拆解對照。
+   * @param {'checklistSummary' | 'checklistTokens' | 'checklistDuplicates' | 'checklistSentences' | 'checklistSegmentations'} method
    * @param {{lexicalSources: string[]} & Record<string, unknown>} params 見 babizu/search 的 Checklist
    * @returns {Promise<any>}
    */

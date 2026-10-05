@@ -40,3 +40,22 @@ export const DUPLICATE_FILTERS = [
   { value: 'sameSource', label: msg('同一來源內') },
   { value: 'crossSource', label: msg('跨來源') },
 ]
+
+/** 人工拆解對照：篩選（babizu/search 的 SegmentationFilter）；每一列至少有一種不一致 */
+export const SEGMENTATION_FILTERS = [
+  { value: 'all', glyph: '', label: msg('全部'), hint: msg('有任何不一致的記錄') },
+  { value: 'miss', glyph: '✗', label: msg('漏（召回）'), hint: msg('人工拆解有這個詞綴，句型搜尋比不到：拉低召回') },
+  { value: 'extra', glyph: '+', label: msg('誤配（準確）'), hint: msg('句型搜尋比到這個詞綴，人工拆解沒有：拉低準確') },
+  {
+    value: 'unknown',
+    glyph: '?',
+    label: msg('規格沒有的詞綴'),
+    hint: msg('人工拆解中的詞綴不在構詞規格中，不比：可能要補進規格，或是拆解與規格的寫法不同'),
+  },
+  {
+    value: 'rootMissing',
+    glyph: '∅',
+    label: msg('詞根不在詞庫'),
+    hint: msg('人工拆解中的詞根不是詞庫中的詞：補上這個詞根的條目，搜尋常常就拆得到'),
+  },
+]
