@@ -26,7 +26,7 @@
  * - **w 本身不是別的詞的詞根**：自動派生圖中有詞以 w 為最好的詞根，或辭典標明某詞 < w 時，w 就是根，
  *   不再往上拆（samian 是 masamian、musamian 的詞根，不拆成 sa- ＋ mian）。所以要知道所有詞庫詞根的邊：
  *   候選與詞庫詞根的邊在第 1 階段一起（平行）算，第 2 階段只用這個條件過濾。
- * 查詢時以**同一個函式、同樣的條件**拆查詢本身（`virtualRoots`，詞庫中最好的詞根取自動拆解的結果）：
+ * 查詢時以**同一個函式、同樣的條件**拆查詢本身（`virtualRoots`，詞庫中最好的詞根用同一個定義 `lexicalEdgeCost`）：
  * masamian 的自動拆解是 ma- ＋ samian，詞庫已經解釋得了，不再拆成 masa- ＋ mian。拆出的虛擬詞根往下走，
  * 找到的是與查詢推定同一個詞根的詞（命中方式 sibling，介面標「自動同根」）。虛擬詞根本身不是結果。
  *
@@ -274,8 +274,28 @@ export function analyzeWord(w, index, search, withNotes = true, open = null) {
     const notes = withNotes ? search.notesOf(/** @type {NonNullable<typeof prepared>} */ (prepared), hit) : []
     edges.push({ root, analysis: { cost: roundCost(hit.distance), steps: hit.steps, notes } })
   }
-  const virtual = open ? virtualRoots(w, open, index, edges.length ? edges[0].analysis.cost : Infinity) : []
+  const virtual = open ? virtualRoots(w, open, index, lexicalEdgeCost(w, hits)) : []
   return { edges, parses, best, virtual }
+}
+
+/**
+ * 詞 w 在詞庫中最好的詞根的成本，也就是自動派生圖上 w 的詞庫詞根邊的成本：BCDP 最好的命中（含詞根不比詞短的）
+ * 若有詞根比詞短的與它同分，就是那個成本；否則 w 沒有詞庫詞根的邊，是 Infinity（例如最好的命中是同樣長的 'a'ata，
+ * 而不是 ma'ata 的詞根）。虛擬詞根要比它便宜才成立（virtualRoots 的 lexiconBest）。
+ * 建置（analyzeWord）與查詢（engine 的自動同根）共用這個定義，詞庫中的詞在兩端拆出的虛擬詞根才會相同
+ * （研究紀錄 U.24：查詢端原本取所有命中的最低成本，同樣長的相近詞把虛擬詞根擋掉）。
+ * @param {string} w
+ * @param {Array<{term: string, distance: number}>} hits BCDP 的全部命中（finish 的結果）
+ */
+export function lexicalEdgeCost(w, hits) {
+  const length = Array.from(w).length
+  let best = Infinity
+  let edge = Infinity
+  for (const h of hits) {
+    best = Math.min(best, h.distance)
+    if (Array.from(h.term).length < length) edge = Math.min(edge, h.distance)
+  }
+  return edge <= best + EPSILON ? roundCost(edge) : Infinity
 }
 
 /**

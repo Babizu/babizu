@@ -20,7 +20,7 @@ import { atomsOf } from '../pattern/ast.js'
 import { PatternError } from '../pattern/errors.js'
 import { parsePattern } from '../pattern/parser.js'
 import { PatternSearch } from '../pattern/search.js'
-import { createVirtualRootSearch, DerivationGraph, isLexicalRoot, SIBLING_MAX_SOUND, soundOf, virtualRootCost, virtualRoots } from './derivations.js'
+import { createVirtualRootSearch, DerivationGraph, isLexicalRoot, lexicalEdgeCost, SIBLING_MAX_SOUND, soundOf, virtualRootCost, virtualRoots } from './derivations.js'
 import { buildEntryGroups, collectHits, mergeSpellings } from './family.js'
 import { ParseChart } from './parses.js'
 import { decodePosting, docAt, INDEX_FORMAT_VERSION } from './format.js'
@@ -1086,6 +1086,18 @@ export class SearchEngine {
   }
 
   /**
+   * 查詢的虛擬詞根：與建置時同一個函式（virtualRoots）、同一個「詞庫中最好的詞根」的定義（lexicalEdgeCost：
+   * BCDP 最好的命中有詞根比查詢短的才算，否則是 Infinity），所以詞庫中的詞拆出的就是建置時它的虛擬詞根邊。
+   * @param {string} key
+   * @param {TermMatch[]} lemma 自動拆解的命中（BCDP 的全部命中）
+   * @private
+   */
+  _queryVirtualRoots(key, lemma) {
+    const open = this.virtualRootSearch
+    return open ? virtualRoots(key, open, this.index, lexicalEdgeCost(key, lemma)) : []
+  }
+
+  /**
    * 自動派生（查詞根、找衍生詞）：由查詢與它的相近寫法沿自動派生圖往下走（derivations.js）。
    *
    * 圖的每一條邊是建置時 BCDP 對那個詞求得的最好詞根，所以「查 r 看到 w」等於「查 w 時自動拆解最好的詞根是 r」，
@@ -1096,14 +1108,16 @@ export class SearchEngine {
    * - 詞庫中的詞根：自動拆解最好的詞庫詞根（同分全收，比查詢短、單一個詞；與自動派生圖的邊同一個定義）。
    *   只取它的直接子詞（同一個詞根，不含孫輩），兩條邊的音變都不超過 SIBLING_MAX_SOUND：
    *   詞庫的詞根常有幾十個派生詞，兩條巧合的邊接起來尤其不可靠；
-   * - 虛擬詞根：以建置時同一個函式、同樣的條件拆查詢本身（virtualRoots；詞庫中最好的詞根取自動拆解的結果），
-   *   起點的距離另加詞庫外詞根的代價 virtualRootCost。
-   * 查詢本身是別的詞的詞根時不往上（與虛擬詞根的條件相同：samian 不拆成 sa- ＋ mian）。
+   *   查詢本身也是別的詞的詞根時照樣往上：自動派生圖上它也有詞庫詞根的邊（派生詞的派生詞），
+   *   同一個詞根的其他子詞查它時找得到它，查它時也要找得到它們（研究紀錄 U.24：原本連這裡也不往上，
+   *   真實資料上三分之一的同根對只有一個方向找得到）；
+   * - 虛擬詞根：以建置時同一個函式、同樣的條件拆查詢本身（_queryVirtualRoots），起點的距離另加詞庫外詞根的代價
+   *   virtualRootCost。查詢本身是別的詞的詞根時不拆（與建置時的條件相同：samian 不拆成 sa- ＋ 虛擬詞根 mian）。
    *
    * @param {string} key
    * @param {TermMatch[]} variants 查詢的相近寫法（模糊命中的詞）
    * @param {number} maxPath 路徑成本的上限
-   * @param {TermMatch[]} [lemma] 自動拆解的命中（詞庫中的詞根；虛擬詞根的條件也取它最好的成本，與建置時相同）
+   * @param {TermMatch[]} [lemma] 自動拆解的命中（BCDP 的全部命中，含詞根不比查詢短的）
    * @returns {TermMatch[]}
    * @private
    */
@@ -1123,16 +1137,18 @@ export class SearchEngine {
     const lexicalSeeds = []
     /** @type {Seed[]} */
     const virtualSeeds = []
+    // 詞庫中的詞根：與自動派生圖的邊同一個定義（BCDP 最好的命中中，詞根比查詢短、單一個詞的）
+    const length = Array.from(key).length
+    for (const m of lemma) {
+      if (m.distance > lemmaBest + EPSILON || m.term.includes(' ') || Array.from(m.term).length >= length || !m.analysis) continue
+      if (soundOf({ cost: m.distance, steps: m.analysis.steps }) > SIBLING_MAX_SOUND + EPSILON) continue
+      const id = this.index.dawg.lookup(m.term)
+      if (id !== -1) lexicalSeeds.push({ id, distance: m.distance, term: m.term, split: { cost: m.distance, steps: m.analysis.steps, penalty: 0, lexical: true } })
+    }
+    // 虛擬詞根：查詢本身是別的詞的詞根時不拆（與建置時相同）
     if (!isLexicalRoot(this.index, self, (id) => graph.hasChildren(id))) {
-      const length = Array.from(key).length
-      for (const m of lemma) {
-        if (m.distance > lemmaBest + EPSILON || m.term.includes(' ') || Array.from(m.term).length >= length || !m.analysis) continue
-        if (soundOf({ cost: m.distance, steps: m.analysis.steps }) > SIBLING_MAX_SOUND + EPSILON) continue
-        const id = this.index.dawg.lookup(m.term)
-        if (id !== -1) lexicalSeeds.push({ id, distance: m.distance, term: m.term, split: { cost: m.distance, steps: m.analysis.steps, penalty: 0, lexical: true } })
-      }
       const open = /** @type {NonNullable<SearchEngine['virtualRootSearch']>} */ (this.virtualRootSearch)
-      for (const v of virtualRoots(key, open, this.index, lemmaBest)) {
+      for (const v of this._queryVirtualRoots(key, lemma)) {
         const id = graph.virtualIds.get(v.stem)
         const penalty = virtualRootCost(v.stem, open.spec)
         if (id !== undefined) virtualSeeds.push({ id, distance: roundCost(v.cost + penalty), term: v.stem, split: { cost: v.cost, steps: v.steps, penalty, lexical: false } })

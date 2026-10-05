@@ -354,10 +354,10 @@ export const MUTANTS = [
     why: 'ma-（m<a> 在元音開頭的詞幹上）也接在輔音開頭的詞幹前；bcdp-reference「字面的開放詞幹」',
   },
   {
-    name: '自動同根：查詢本身是別的詞的詞根時也往上',
+    name: '自動同根：查詢本身是別的詞的詞根時也拆虛擬詞根',
     file: 'src/search/engine.js',
-    find: '    if (!isLexicalRoot(this.index, self, (id) => graph.hasChildren(id))) {\n      const length = Array.from(key).length',
-    replace: '    if (true) {\n      const length = Array.from(key).length',
+    find: '    if (!isLexicalRoot(this.index, self, (id) => graph.hasChildren(id))) {\n      const open',
+    replace: '    if (true) {\n      const open',
     why: '查 samian 找到 mumian（samian 拆成 sa- ＋ 虛擬詞根 mian）；derivations 測試「虛擬詞根的對稱」',
   },
   {
@@ -377,7 +377,7 @@ export const MUTANTS = [
   {
     name: '自動同根：查詢拆到詞庫詞根的音變不設上限',
     file: 'src/search/engine.js',
-    find: '        if (soundOf({ cost: m.distance, steps: m.analysis.steps }) > SIBLING_MAX_SOUND + EPSILON) continue',
+    find: '      if (soundOf({ cost: m.distance, steps: m.analysis.steps }) > SIBLING_MAX_SOUND + EPSILON) continue',
     replace: '',
     why: '查 makétéko（三個方言音變才拆到 kitiku）也往上找到 mukitiku；derivations 測試「兩條邊都要是可靠的拆法」',
   },
@@ -391,7 +391,7 @@ export const MUTANTS = [
   {
     name: '自動同根不排在原本的命中之後',
     file: 'src/search/scoring.js',
-    find: 'export const siblingTier = (h) => (h.matchType === \'sibling\' ? 1 : 0)',
+    find: "export const siblingTier = (h) => (h.matchType === 'sibling' || /** @type {{matches?: Array<{matchType: MatchType}>}} */ (h).matches?.some((m) => m.matchType === 'sibling') ? 1 : 0)",
     replace: 'export const siblingTier = (h) => 0',
     why: '分數較好的同根詞排到原本的命中前面、擠掉它們；derivations 測試「排序」「不佔上限」',
   },
@@ -412,7 +412,7 @@ export const MUTANTS = [
   {
     name: '自動同根：只走虛擬詞根（沒有詞庫中的詞根）',
     file: 'src/search/engine.js',
-    find: '        if (id !== -1) lexicalSeeds.push({ id, distance: m.distance, term: m.term, split: { cost: m.distance, steps: m.analysis.steps, penalty: 0, lexical: true } })',
+    find: '      if (id !== -1) lexicalSeeds.push({ id, distance: m.distance, term: m.term, split: { cost: m.distance, steps: m.analysis.steps, penalty: 0, lexical: true } })',
     replace: '',
     why: '查 masamian 找不到 musamian（共同的詞根 samian 在詞庫中）；derivations 測試「自動同根：詞根在詞庫中」',
   },
@@ -736,5 +736,26 @@ export const MUTANTS = [
     find: '      totals: { tp, fp, fn, precision: tp + fp ? tp / (tp + fp) : null, recall: tp + fn ? tp / (tp + fn) : null },',
     replace: '      totals: { tp, fp, fn, precision: tp + fn ? tp / (tp + fn) : null, recall: tp + fp ? tp / (tp + fp) : null },',
     why: '檢查清單顯示的準確與召回對調；segmentation 的檢查清單數量測試',
+  },
+  {
+    name: '自動同根：查詢本身是別的詞的詞根時連詞庫詞根的同根也不找',
+    file: 'src/search/engine.js',
+    find: '    for (const m of lemma) {',
+    replace: '    for (const m of isLexicalRoot(this.index, self, (id) => graph.hasChildren(id)) ? [] : lemma) {',
+    why: 'musamian（musamianan 的詞根）找不到 masamian，反方向找得到；derivations 的對稱測試與 symmetry 的同根對稱',
+  },
+  {
+    name: '虛擬詞根：查詢端的詞庫最好成本取所有命中的最低（含詞根不比查詢短的）',
+    file: 'src/search/engine.js',
+    find: '    return open ? virtualRoots(key, open, this.index, lexicalEdgeCost(key, lemma)) : []',
+    replace: '    return open ? virtualRoots(key, open, this.index, Math.min(Infinity, ...lemma.map((m) => m.distance))) : []',
+    why: '同樣長的相近詞把虛擬詞根擋掉，查詢與建置不一致；symmetry 的一致性測試',
+  },
+  {
+    name: '自動同根的排序只看例句最弱的命中方式',
+    file: 'src/search/scoring.js',
+    find: "export const siblingTier = (h) => (h.matchType === 'sibling' || ",
+    replace: "export const siblingTier = (h) => (h.matchType === 'sibling' || false && ",
+    why: '一個詞自動同根、另一個詞結尾相符的例句佔上限；derivations 的多詞查詢測試',
   },
 ]

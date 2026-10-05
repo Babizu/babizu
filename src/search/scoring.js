@@ -195,9 +195,12 @@ export function replacesRecordHit(hit, prev, compare) {
 /**
  * 自動同根（matchType sibling）排在其他命中之後：同根詞的詞條與例句都列，但不擠掉原本的命中
  * （詞庫中常用詞根的同根詞可以出現在幾百句例句中；研究紀錄 U.21）。分數只在同一層之內比較。
- * @param {{matchType: MatchType}} h
+ * 例句（多詞查詢）只要有一個查詢詞是自動同根就在這一層：這句是靠自動同根才成立的。不能只看句子的 matchType
+ * （最弱的命中方式）：結尾相符、包含比自動同根弱，否則「一個詞自動同根、另一個詞結尾相符」的句子會佔上限、
+ * 擠掉原本的命中（研究紀錄 U.24）。
+ * @param {{matchType: MatchType, matches?: Array<{matchType: MatchType}>}} h
  */
-export const siblingTier = (h) => (h.matchType === 'sibling' ? 1 : 0)
+export const siblingTier = (h) => (h.matchType === 'sibling' || /** @type {{matches?: Array<{matchType: MatchType}>}} */ (h).matches?.some((m) => m.matchType === 'sibling') ? 1 : 0)
 
 /**
  * 詞條命中的排序：自動同根在後（siblingTier），再依分數、命中方式、詞長、命中身分、角色、長度。

@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest'
 import { createCitation, createGroup, createRecord, createSense } from '../../src/schema/index.js'
 import { buildDerivationGraph, buildSearchIndex, createDerivationAnalyzer, DerivationGraph, isVirtualRootShape, SearchEngine, virtualRootCost } from '../../src/search/index.js'
 import { mergeEdges } from '../../src/search/derivations.js'
-import { compareHits, compareOccurrences, mergeMorphMatch, replacesRecordHit } from '../../src/search/scoring.js'
+import { compareHits, compareOccurrences, mergeMorphMatch, replacesRecordHit, siblingTier } from '../../src/search/scoring.js'
 import { PAZEH_PROFILE } from '../fixtures/pazeh.js'
 
 const MORPHOLOGY = {
@@ -336,6 +336,10 @@ describe('自動同根：詞根在詞庫中（查詢自動拆解出的詞根往�
     rec('masamian', 'word', 'masamian'),
     rec('musamian', 'word', 'musamian'),
     rec('s1', 'sentence', 'musamian lia'),
+    // 多詞查詢 masamian lia：s2 是原本的命中（masamian 完全相符、lia 是 kilia 的結尾），
+    // s3 的 musamian 只是自動同根（另一個詞也是結尾相符）
+    rec('s2', 'sentence', 'masamian kilia'),
+    rec('s3', 'sentence', 'musamian kilia'),
     // musamian ＋ -an：samian 的孫輩，不是同根（同根只取詞根的直接子詞）
     rec('musamianan', 'word', 'musamianan'),
     // kitiku 的子詞；查詢 makétéko 要三個方言音變（0.3）才拆到 kitiku，不往上找同根
@@ -388,6 +392,20 @@ describe('自動同根：詞根在詞庫中（查詢自動拆解出的詞根往�
     expect(res.entryGroups.at(-1)?.best.matchType).toBe('sibling')
   })
 
+  it('多詞查詢：句中任何一個詞只是自動同根，這句就排在原本的命中之後、不佔上限（即使另一個詞是更弱的結尾相符）', () => {
+    // 研究紀錄 U.24：原本以句中「最弱的命中方式」判斷，結尾相符、包含比自動同根弱，s3 不算自動同根，會佔上限
+    const res = s.search('masamian lia', { fields: ['native'], limit: 1 })
+    const ids = res.occurrences.map((o) => o.doc.id)
+    expect(ids).toContain('dict:s2')
+    expect(ids).toContain('dict:s3')
+    expect(ids.indexOf('dict:s2')).toBeLessThan(ids.indexOf('dict:s3'))
+    const s3 = /** @type {any} */ (res.occurrences.find((o) => o.doc.id === 'dict:s3'))
+    expect(s3.matches.map((/** @type {any} */ m) => m.matchType)).toContain('sibling')
+    expect(siblingTier(s3)).toBe(1)
+    // 上限只算原本的命中
+    expect(res.occurrences.filter((o) => siblingTier(o) === 0).length).toBe(1)
+  })
+
   it('同根只取詞根的直接子詞，兩條邊的音變都不超過 SIBLING_MAX_SOUND', () => {
     // 合成的圖：r（詞 0）→ a（0.1）、b（0.3，其中音變 0.25）、a → c（孫輩）
     const g = new DerivationGraph(
@@ -413,7 +431,18 @@ describe('自動同根：詞根在詞庫中（查詢自動拆解出的詞根往�
     expect(g.descendants(seeds, 1).map((x) => x.word)).toContain(3)
   })
 
-  it('查詢本身是別的詞的詞根時不往上（samian 是 masamian、musamian 的詞根）；詞庫外的查詢也找得到', () => {
+  it('查詢本身也是別的詞的詞根時，詞庫詞根的同根照樣找：musamian 是 musamianan 的詞根，查它也找到 masamian（與反方向對稱）', () => {
+    // 研究紀錄 U.24：原本查詢是別的詞的詞根時連詞庫詞根的同根也不找，查 masamian 找得到 musamian、反過來卻找不到
+    const there = s.search('masamian', { fields: ['native'] }).entries.find((h) => h.doc.id === 'dict:musamian')
+    const back = s.search('musamian', { fields: ['native'] }).entries.find((h) => h.doc.id === 'dict:masamian')
+    expect(there?.matchType).toBe('sibling')
+    expect(back?.matchType).toBe('sibling')
+    expect(back?.score).toBeCloseTo(/** @type {number} */ (there?.score), 9)
+    // 孫輩 musamianan 不是 masamian 的同根
+    expect(s.search('masamian', { fields: ['native'] }).entries.some((h) => h.doc.id === 'dict:musamianan')).toBe(false)
+  })
+
+  it('samian 本身是根（沒有詞庫詞根）：沒有同根；詞庫外的查詢也找得到', () => {
     expect(s.search('samian', { fields: ['native'] }).entries.some((h) => h.matchType === 'sibling')).toBe(false)
     // sasamian 不在詞庫中：自動拆解得到 samian（sa-），再往下找到兩個同根詞
     const res = s.search('sasamian', { fields: ['native'] })
