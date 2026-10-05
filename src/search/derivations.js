@@ -17,7 +17,8 @@
  * - **字面**：詞根是詞中原樣的一段（morph-search.js 的 openStems，成本直接由交界列讀出），分析中的詞綴也必須原樣出現，
  *   只容許構詞音變（只有構詞音變的距離函式，text.js 的 createAlternationMetric）。不在詞庫裡的部分不能再加模糊，
  *   否則會發明詞根（abuk → a- ＋ rabuk）與同根；
- * - **最小描述長度**：詞庫中的詞根只要指出是哪一個，詞庫外的要逐字寫出來，所以分析的分數是
+ * - **長度懲罰**（借用最小描述長度的直覺，但每個詞各自計算、拼寫成本不分攤，不是標準的 MDL；docs/bcdp.md 10.5）：
+ *   詞庫中的詞根只要指出是哪一個，詞庫外的要逐字寫出來，所以分析的分數是
  *   成本 ＋ `virtualRootLengthCost` × 詞根長度（`virtualRootCost`）。分數比 BCDP 在詞庫中最好的詞根的成本低才成立
  *   （原本的邊一條都不動，只在詞庫解釋不了的地方補上），取分數最低的（同分的都取）。長的詞庫外詞根常常是沒有認出的組合
  *   （pinahazab ＝ pina- ＋ hazap），自然輸給詞庫的分析；分數相同的拆法取剝得最乾淨的（maa- ＋ exet~ ＋ exet，不是 exetexet）；
@@ -67,7 +68,8 @@ export const SIBLING_MAX_SOUND = 0.2
 export const soundOf = (a) => Math.max(0, roundCost(a.cost - a.steps.reduce((x, s) => x + s.cost, 0)))
 
 /**
- * 經過虛擬詞根的代價（最小描述長度）：詞庫中沒有這個詞根，要逐字寫出來，每個字元 `virtualRootLengthCost`。
+ * 經過虛擬詞根的代價（長度懲罰）：詞庫中沒有這個詞根，要逐字寫出來，每個字元 `virtualRootLengthCost`。
+ * 每個用到它的詞各付一次（不在共用的詞之間分攤）。
  * 建置時虛擬詞根的分析加上它仍比詞庫中最好的詞根便宜才成立；查詢時經過虛擬詞根的命中加上一次
  * （查詢 → 虛擬詞根 → 詞，只算一次）。
  * @param {string} stem

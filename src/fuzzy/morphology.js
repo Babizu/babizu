@@ -107,7 +107,8 @@ export const GLIDE_PATTERNS = Object.freeze(['CGV', 'CVG'])
  * @property {number} [maxSteps=3] 前綴、後綴各自最多幾個（另加至多一個包覆單位：中綴、重疊或環綴；見 docs/bcdp.md 1.6）
  * @property {number} [lemmaSpread=0.6] 構詞命中只保留成本在「最佳 ＋ lemmaSpread」之內的詞，控制候選數
  * @property {number} [virtualRootLengthCost=0.03] 詞庫外的詞根（虛擬詞根）每個字元的成本：詞庫中的詞根只要指出是哪一個，
- *   詞庫外的要逐字寫出來，所以越長越貴（最小描述長度，docs/bcdp.md 10.5）。預設值以巴宰–噶哈巫語的資料校準
+ *   詞庫外的要逐字寫出來，所以越長越貴（借用最小描述長度的直覺的長度懲罰，每個詞各自計算；docs/bcdp.md 10.5）。
+ *   預設值以巴宰–噶哈巫語的資料校準
  * @property {string} [vowels='aeiouéə'] 元音字母（決定「首輔音」「首元音」與中綴位置）
  * @property {string} [glides=''] 可以當滑音的元音（`vowels` 的子集；巴宰語是 `iu`）。重疊型式 CGV、CVG 要用到，
  *   框架不預設：哪些元音會念成滑音是語言的知識

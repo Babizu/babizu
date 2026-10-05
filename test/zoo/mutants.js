@@ -305,7 +305,7 @@ export const MUTANTS = [
     why: 'dakudan 另建虛擬詞根 dakud（詞庫已有 dakut，只差構詞音變）；derivations 測試「只在詞庫解釋不了時建立」',
   },
   {
-    name: '虛擬詞根的代價是固定的 0.1（MDL 少了長度項，舊版的條件 1）',
+    name: '虛擬詞根的代價是固定的 0.1（少了長度懲罰，舊版的條件 1）',
     file: 'src/search/derivations.js',
     find: '  for (const list of results) for (const r of list) score.set(r.term, Math.min(score.get(r.term) ?? Infinity, r.distance + virtualRootCost(r.term, spec)))',
     replace: '  for (const list of results) for (const r of list) score.set(r.term, Math.min(score.get(r.term) ?? Infinity, r.distance + 0.1))',
