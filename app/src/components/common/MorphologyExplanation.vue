@@ -45,7 +45,9 @@ const props = defineProps({
 /** 句型搜尋：比到的是次佳的拆法（這個詞最好的拆法成本較低） */
 const alternative = computed(() => props.analysis.bestCost !== undefined && props.analysis.cost > props.analysis.bestCost + 1e-9)
 /** 自動同根：查詢拆出的虛擬詞根與拆法（見 babizu/search 的 LemmaAnalysis.sibling） */
-const sibling = computed(() => /** @type {{root: string, steps: any[], cost: number, penalty: number, lexical?: boolean} | null} */ (props.analysis.sibling ?? null))
+const sibling = computed(() => /** @type {{root: string, steps: any[], cost: number, penalty: number, lexical?: boolean, rootCost?: number} | null} */ (props.analysis.sibling ?? null))
+/** 自動同根的詞根依音節數的成本：詞庫中的詞根含在拆解（cost）裡，虛擬詞根含在詞庫外的代價（penalty）裡，分開列出 */
+const siblingRootCost = computed(() => sibling.value?.rootCost ?? 0)
 const summary = computed(() => (sibling.value ? sibling.value.root : morphSummary(props.analysis)))
 const intro = computed(() =>
   props.matchType === 'lemma'
@@ -149,11 +151,15 @@ const partLabel = (part, k) => (part.type === 'prefix' ? `${part.form}-` : part.
         <ul class="border-border mt-1.5 ml-1 space-y-0.5 border-l pl-2">
           <li class="flex items-baseline justify-between gap-3">
             <span class="native-text min-w-0">{{ query }} ＝ {{ morphSummary({ stem: sibling.root, steps: sibling.steps }) }}</span>
-            <span class="text-muted-foreground font-mono tabular-nums">+{{ formatDistance(sibling.cost) }}</span>
+            <span class="text-muted-foreground font-mono tabular-nums">+{{ formatDistance(sibling.lexical ? sibling.cost - siblingRootCost : sibling.cost) }}</span>
           </li>
           <li v-if="!sibling.lexical" class="flex items-baseline justify-between gap-3">
             <span class="text-muted-foreground min-w-0">{{ t('詞庫外的詞根') }}</span>
-            <span class="text-muted-foreground font-mono tabular-nums">+{{ formatDistance(sibling.penalty) }}</span>
+            <span class="text-muted-foreground font-mono tabular-nums">+{{ formatDistance(sibling.penalty - siblingRootCost) }}</span>
+          </li>
+          <li v-if="siblingRootCost > 0" class="flex items-baseline justify-between gap-3">
+            <span class="text-muted-foreground min-w-0">{{ t('詞根「{root}」的音節數', { root: sibling.root }) }}</span>
+            <span class="text-muted-foreground font-mono tabular-nums">+{{ formatDistance(siblingRootCost) }}</span>
           </li>
         </ul>
         <p class="text-muted-foreground mt-2">{{ t('「{term}」由「{root}」衍生：', { term, root: sibling.root }) }}</p>

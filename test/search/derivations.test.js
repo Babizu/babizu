@@ -293,7 +293,8 @@ describe('虛擬詞根與自動同根：共同的詞根不在詞庫中（查 bin
     expect(analyses.map((a) => a[0])).toEqual([0.2])
     const hit = e.search('binubuer', { fields: ['native'] }).entries.find((h) => h.doc.id === 'dict:mabubuer')
     // 拆解 <in> 0.2（不含音節成本）、詞庫外的詞根 0.03 × 6 ＋ 三音節 0.1
-    expect(hit?.analysis).toMatchObject({ stem: 'bubuer', sibling: { root: 'bubuer', cost: 0.2, penalty: 0.28, lexical: false } })
+    // 說明分開列出詞根的音節成本（rootCost，含在 penalty 裡）
+    expect(hit?.analysis).toMatchObject({ stem: 'bubuer', sibling: { root: 'bubuer', cost: 0.2, penalty: 0.28, lexical: false, rootCost: 0.1 } })
     expect(hit?.score).toBeCloseTo(0.98 + 0.1, 9)
   })
 

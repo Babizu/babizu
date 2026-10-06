@@ -126,11 +126,12 @@ export const FUZZINESS = Object.freeze({
  *   自動派生經過其他詞時，由起點往下的每一層（不含最後一層，那一層就是 stem、steps）：
  *   查 sungut 找到 pausunguday，chain 是 [pusungut ＝ pu- ＋ sungut]，stem 是 pusungut
  * @property {MorphNote[] | null} [notes] 整個詞的音變說明（自動拆解只為前幾筆結果計算）
- * @property {{root: string, steps: Array<import('../fuzzy/morph-search.js').MorphStepHit>, cost: number, penalty: number, lexical: boolean}} [sibling]
+ * @property {{root: string, steps: Array<import('../fuzzy/morph-search.js').MorphStepHit>, cost: number, penalty: number, lexical: boolean, rootCost?: number}} [sibling]
  *   自動同根（matchType 'sibling'）：查詢拆出的詞根 root 與拆法；stem、steps、chain 是這個詞往上到 root 的路。
  *   lexical：root 是詞庫中的詞（查 kali'angidan：root 是 angit，這個詞 'inangidan ＝ ‹in› ＋ 'angit ＋ -an，penalty 是 0）；
  *   否則是虛擬詞根（查 binubuer：root 是 bubuer（b<in>ubuer），這個詞 mabubuer ＝ ma- ＋ bubuer；
- *   penalty 是詞庫外詞根的代價 virtualRootCost）
+ *   penalty 是詞庫外詞根的代價 virtualRootCost）。rootCost 是 root 依音節數的成本（rootSyllableCost；0 時省略）：
+ *   詞庫中的詞根含在 cost 裡，虛擬詞根含在 penalty 裡
  * @property {number} [bestCost] 句型搜尋的構詞樣式：這個詞最好的拆法的成本；比 cost 小時，這一種是次佳的拆法
  * @property {boolean} [virtual] 句型搜尋的構詞樣式：詞根（stem）是虛擬詞根，不在詞庫中
  */
@@ -1054,7 +1055,7 @@ export class SearchEngine {
    * 一般搜尋的自動派生與句型搜尋共用，兩邊的說明一致。
    * @param {string} key 查詢（或句型中寫出的詞根）
    * @param {import('./derivations.js').DerivedReach} r 路徑
-   * @param {{term: string, distance: number, split?: {cost: number, steps: any[], penalty: number, lexical: boolean}}} seed 起點
+   * @param {{term: string, distance: number, split?: {cost: number, steps: any[], penalty: number, lexical: boolean, rootCost?: number}}} seed 起點
    * @param {number} cost 總分（起點距離＋路徑成本，經過虛擬詞根時另加代價）
    * @param {Map<string, AlignmentNote[]>} [variantNotes] 查詢 → 起點的對齊說明（同一次搜尋共用）
    * @returns {LemmaAnalysis}
@@ -1082,7 +1083,8 @@ export class SearchEngine {
     }
     if (seed.split) {
       // 自動同根：查詢拆出的詞根就是這個詞往上的詞根（詞庫中的詞，或詞庫中沒有的虛擬詞根）
-      analysis.sibling = { root: seed.term, steps: seed.split.steps, cost: seed.split.cost, penalty: seed.split.penalty, lexical: seed.split.lexical }
+      const { steps, cost, penalty, lexical, rootCost } = seed.split
+      analysis.sibling = { root: seed.term, steps, cost, penalty, lexical, ...(rootCost ? { rootCost } : {}) }
     } else if (seed.distance > 0) {
       analysis.variantOf = key
       analysis.variantDistance = seed.distance
@@ -1131,7 +1133,7 @@ export class SearchEngine {
   _derivedTerms(key, variants, maxPath, lemma = []) {
     const graph = this.derivations
     if (!graph) return []
-    /** @typedef {{id: number, distance: number, term: string, rootCost?: number, split?: {cost: number, steps: any[], penalty: number, lexical: boolean}}} Seed */
+    /** @typedef {{id: number, distance: number, term: string, rootCost?: number, split?: {cost: number, steps: any[], penalty: number, lexical: boolean, rootCost?: number}}} Seed */
     /** @type {Seed[]} */
     const seeds = []
     for (const s of [{ term: key, distance: 0 }, ...variants]) {
@@ -1150,7 +1152,8 @@ export class SearchEngine {
       if (m.distance > lemmaBest + EPSILON || m.term.includes(' ') || Array.from(m.term).length >= length || !m.analysis) continue
       if (soundOf({ cost: m.distance, steps: m.analysis.steps }, m.analysis.rootCost ?? 0) > SIBLING_MAX_SOUND + EPSILON) continue
       const id = this.index.dawg.lookup(m.term)
-      if (id !== -1) lexicalSeeds.push({ id, distance: m.distance, rootCost: m.analysis.rootCost ?? 0, term: m.term, split: { cost: m.distance, steps: m.analysis.steps, penalty: 0, lexical: true } })
+      const rootCost = m.analysis.rootCost ?? 0
+      if (id !== -1) lexicalSeeds.push({ id, distance: m.distance, rootCost, term: m.term, split: { cost: m.distance, steps: m.analysis.steps, penalty: 0, lexical: true, rootCost } })
     }
     // 虛擬詞根：查詢本身是別的詞的詞根時不拆（與建置時相同）
     if (!isLexicalRoot(this.index, self, (id) => graph.hasChildren(id))) {
@@ -1158,7 +1161,10 @@ export class SearchEngine {
       for (const v of this._queryVirtualRoots(key, lemma)) {
         const id = graph.virtualIds.get(v.stem)
         const penalty = virtualRootCost(v.stem, open.spec)
-        if (id !== undefined) virtualSeeds.push({ id, distance: roundCost(v.cost + penalty), term: v.stem, split: { cost: v.cost, steps: v.steps, penalty, lexical: false } })
+        if (id !== undefined) {
+          const rootCost = open.syllableCost(v.stem, false)
+          virtualSeeds.push({ id, distance: roundCost(v.cost + penalty), term: v.stem, split: { cost: v.cost, steps: v.steps, penalty, lexical: false, rootCost } })
+        }
       }
     }
     // 分三次走，後面的只補上前面沒走到的詞：先由查詢與它的相近寫法（與沒有自動同根時完全相同），
