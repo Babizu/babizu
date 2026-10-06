@@ -103,17 +103,28 @@ export function randomMorphSetup(random, { rootCost = false } = {}) {
     // 主要的亂數序列很少抽到這兩個模板，另外偶爾加一個
     if (extra() < 0.5) spec.reduplication.push({ pattern: pick(extra, ['CGV', 'CVG']) })
   }
-  /** @type {Record<string, number> | undefined} */
+  /** @type {Record<string, number | {entry: number, other: number}> | undefined} */
   let rootSyllableCost
+  /** @type {(term: string) => boolean} */
+  let isEntry = () => true
   if (rootCost) {
     const r = createRandom(h ^ 0x9e3779b9)
-    // 雙音節有時也加：隨機的詞根多半是雙音節，不加的話很少有命中被加上詞根成本
-    rootSyllableCost = { 1: pick(r, [0, 0.1, 0.3]), 2: pick(r, [0, 0.1, 0.2]), 3: pick(r, [0.1, 0.2]), ...(r() < 0.5 ? { 4: pick(r, [0.2, 0.4]) } : {}) }
+    // 雙音節有時也加：隨機的詞根多半是雙音節，不加的話很少有命中被加上詞根成本；
+    // 有時依詞根是不是辭典的詞條分兩種（entry、other），隨機一半的詞根是詞條
+    const split = () => ({ entry: pick(r, [0, 0.1]), other: pick(r, [0.2, 0.3]) })
+    rootSyllableCost = {
+      1: pick(r, [0, 0.1, 0.3, 0.5]),
+      2: r() < 0.5 ? split() : pick(r, [0, 0.1, 0.2]),
+      3: r() < 0.3 ? split() : pick(r, [0.1, 0.2]),
+      ...(r() < 0.5 ? { 4: pick(r, [0.2, 0.4]) } : {}),
+    }
+    const entries = new Set(roots.filter(() => r() < 0.5))
+    isEntry = (term) => entries.has(term)
     Object.assign(spec, { rootSyllableCost, lemmaSpread: pick(r, [0.2, 0.4, 100]) })
   }
   const metric = metricFor(cleaned, spec)
   const analyzer = createAnalyzer(spec)
-  return { metric, spec: analyzer.spec, analyzer, roots, alphabet, glottal, merge, rootSyllableCost }
+  return { metric, spec: analyzer.spec, analyzer, roots, alphabet, glottal, merge, rootSyllableCost, isEntry }
 }
 
 /**

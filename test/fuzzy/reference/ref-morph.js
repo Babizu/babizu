@@ -29,10 +29,12 @@ const EPS = 1e-9
  * @param {any} input.spec createAnalyzer(...).spec（已正規化、已補預設值）
  * @param {number} input.maxDistance 總成本上限
  * @param {Map<string, string>} [input.why] 除錯用：記下每個詞根的最佳分析
- * @param {Record<string, number>} [input.rootSyllableCost] 設定檔原本的寫法（音節數 → 成本；最大的鍵也套用到更多音節）
+ * @param {Record<string, number | {entry: number, other: number}>} [input.rootSyllableCost] 設定檔原本的寫法
+ *   （音節數 → 成本，或依詞根是不是辭典的詞條分兩種；最大的鍵也套用到更多音節）
+ * @param {(term: string) => boolean} [input.isEntry] 詞根是不是辭典的詞條（省略時一律是）
  * @returns {Map<string, number>} 詞根 → 最小成本（lemmaSpread 截斷後）
  */
-export function refMorph(ctx, { query, lexicon, spec, maxDistance, why, rootSyllableCost }) {
+export function refMorph(ctx, { query, lexicon, spec, maxDistance, why, rootSyllableCost, isEntry = () => true }) {
   const q = Array.from(query)
   const n = q.length
   /** @type {Map<string, number>} */
@@ -80,7 +82,8 @@ export function refMorph(ctx, { query, lexicon, spec, maxDistance, why, rootSyll
     const syllables = Array.from(t).filter((ch) => vowels.has(ch)).length
     const keys = Object.keys(rootSyllableCost).map(Number)
     const key = Math.min(syllables, Math.max(...keys))
-    return rootSyllableCost[String(key)] ?? 0
+    const v = rootSyllableCost[String(key)] ?? 0
+    return typeof v === 'number' ? v : v[isEntry(t) ? 'entry' : 'other']
   }
 
   const terms = lexicon.filter((t) => t !== query && Array.from(t).length >= spec.minStem)

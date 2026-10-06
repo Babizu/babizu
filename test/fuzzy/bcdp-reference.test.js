@@ -117,9 +117,9 @@ describe('參考實作：BCDP 模型', () => {
       let charged = 0
       for (let round = 0; round < 8; round++) {
         const setup = randomMorphSetup(random, { rootCost: true })
-        const { metric, spec, analyzer, roots, rootSyllableCost } = setup
+        const { metric, spec, analyzer, roots, rootSyllableCost, isEntry } = setup
         const index = new FuzzyIndex(metric).addAll(roots.map((w) => [w, w]))
-        const search = createMorphSearch({ analyzer, metric, index })
+        const search = createMorphSearch({ analyzer, metric, index, isEntry })
         const ctx = refJointContext(metric)
         for (let k = 0; k < 8; k++) {
           const query = randomDerived(random, setup)
@@ -136,7 +136,7 @@ describe('參考實作：BCDP 模型', () => {
           const got = new Map(hits.map((h) => [h.term, h.distance]))
           /** @type {Map<string, string>} */
           const why = new Map()
-          const want = refMorph(ctx, { query, lexicon: roots, spec, maxDistance, why, rootSyllableCost })
+          const want = refMorph(ctx, { query, lexicon: roots, spec, maxDistance, why, rootSyllableCost, isEntry })
           for (const t of new Set([...got.keys(), ...want.keys()])) {
             const detail = `seed=${seed} round=${round} query=${query} term=${t}；參考：${why.get(t) ?? '—'}；詞根成本 ${JSON.stringify(rootSyllableCost)}、lemmaSpread ${spec.lemmaSpread}`
             expect(got.get(t) ?? Infinity, detail).toBeCloseTo(want.get(t) ?? Infinity, 7)
@@ -163,6 +163,20 @@ describe('參考實作：BCDP 模型', () => {
     ])
     const search = createMorphSearch({ analyzer: createAnalyzer(spec), metric, index })
     expect(search.search('mabak', { maxDistance: 1 }).map((h) => [h.term, h.distance, h.rootCost ?? 0])).toEqual([['boku', 0.3, 0]])
+  })
+
+  it('詞根音節數的成本分詞條與其他（entry、other）：同樣的拆法，不是辭典詞條的雙音節詞根比較貴（固定案例）', () => {
+    // makita、makiti：ma- ＋ kita、ma- ＋ kiti 都是 0.1；kita 是詞條（0）、kiti 不是（0.2）
+    const spec = { cost: 0.1, minStem: 3, maxSteps: 1, lemmaSpread: 1, vowels: 'aeiou', prefixes: [{ form: 'ma' }], rootSyllableCost: { 1: 0.5, 2: { entry: 0, other: 0.2 }, 3: 0.1 } }
+    const metric = metricFor(new RuleSet(), spec)
+    const index = new FuzzyIndex(metric).addAll([
+      ['kita', 'kita'],
+      ['kiti', 'kiti'],
+    ])
+    const search = createMorphSearch({ analyzer: createAnalyzer(spec), metric, index, isEntry: (t) => t === 'kita' })
+    expect(search.search('makita', { maxDistance: 1 }).find((h) => h.term === 'kita')).toMatchObject({ distance: 0.1 })
+    expect(search.search('makiti', { maxDistance: 1 }).find((h) => h.term === 'kiti')).toMatchObject({ distance: 0.3, rootCost: 0.2 })
+    expect([search.rootCost('kita'), search.rootCost('kiti'), search.syllableCost('kita', false), search.syllableCost('ban')]).toEqual([0, 0.2, 0.2, 0.5])
   })
 
   it('reaching check：上面的隨機測試涵蓋每種重疊型式、中綴、構詞音變、跨界規則與交界上的增生', () => {

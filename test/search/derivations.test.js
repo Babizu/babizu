@@ -6,6 +6,8 @@
 import { describe, expect, it } from 'vitest'
 import { createCitation, createGroup, createRecord, createSense } from '../../src/schema/index.js'
 import { buildDerivationGraph, buildSearchIndex, createDerivationAnalyzer, DerivationGraph, isVirtualRootShape, SearchEngine, virtualRootCost } from '../../src/search/index.js'
+import { createAnalyzer } from '../../src/fuzzy/index.js'
+import { entryTest } from '../../src/search/derivations.js'
 import { mergeEdges } from '../../src/search/derivations.js'
 import { compareHits, compareOccurrences, mergeMorphMatch, replacesRecordHit, siblingTier } from '../../src/search/scoring.js'
 import { PAZEH_PROFILE } from '../fixtures/pazeh.js'
@@ -573,5 +575,25 @@ describe('辭典的構詞關係：詞綴的條目不算同根；家族的排序�
     const root = res.entries.find((h) => h.doc.id === 'dict:kawas')
     expect(root).toMatchObject({ kind: 'parent', direct: true })
     expect(res.entryGroups[0].root.doc.id).toBe('dict:kawas')
+  })
+})
+
+describe('詞根音節數的成本（rootSyllableCost）與詞條', () => {
+  it('虛擬詞根在長度成本之外另加 other 的音節成本（虛擬詞根不是辭典的詞條）', () => {
+    const spec = createAnalyzer({ vowels: 'aeiu', virtualRootLengthCost: 0.03, rootSyllableCost: { 2: { entry: 0, other: 0.2 }, 3: 0.1 } }).spec
+    expect(virtualRootCost('kita', spec)).toBeCloseTo(0.12 + 0.2, 9)
+    expect(virtualRootCost('bubuer', spec)).toBeCloseTo(0.18 + 0.1, 9)
+    expect(virtualRootCost('kita', createAnalyzer({ vowels: 'aeiu', virtualRootLengthCost: 0.03 }).spec)).toBeCloseTo(0.12, 9)
+  })
+
+  it('詞條：記錄的詞形、異寫、變體或衍生詞標註的詞根才算；只出現在句子中的詞不算', () => {
+    const records = [
+      createRecord({ id: 'w1', source: 'dict', unit: 'word', text: 'kita', senses: [createSense({ zh: '看' })], citation: createCitation({ label: 'x' }) }),
+      createRecord({ id: 's1', source: 'dict', unit: 'sentence', text: 'yaku mikita isiw', senses: [createSense({ zh: '我看你' })], citation: createCitation({ label: 'x' }) }),
+    ]
+    const built = buildSearchIndex({ items: records.map((record) => ({ record, shard: 'all' })), groups: [], sourceIds: ['dict'], profile: PAZEH_PROFILE })
+    const engine = new SearchEngine(JSON.parse(JSON.stringify(built)))
+    const isEntry = entryTest(engine.index)
+    expect([isEntry('kita'), isEntry('mikita'), isEntry('yaku'), isEntry('nope')]).toEqual([true, false, false, false])
   })
 })

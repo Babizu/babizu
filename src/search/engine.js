@@ -20,7 +20,7 @@ import { atomsOf } from '../pattern/ast.js'
 import { PatternError } from '../pattern/errors.js'
 import { parsePattern } from '../pattern/parser.js'
 import { PatternSearch } from '../pattern/search.js'
-import { createVirtualRootSearch, DerivationGraph, isLexicalRoot, lexicalEdgeCost, SIBLING_MAX_SOUND, soundOf, virtualRootCost, virtualRoots } from './derivations.js'
+import { createVirtualRootSearch, DerivationGraph, entryTest, isLexicalRoot, lexicalEdgeCost, SIBLING_MAX_SOUND, soundOf, virtualRootCost, virtualRoots } from './derivations.js'
 import { buildEntryGroups, collectHits, mergeSpellings } from './family.js'
 import { ParseChart } from './parses.js'
 import { decodePosting, docAt, INDEX_FORMAT_VERSION } from './format.js'
@@ -231,7 +231,7 @@ export class SearchEngine {
     this.index = FuzzyIndex.deserialize(lexicon, this.metric)
     /** 構詞搜尋 BCDP（語言設定檔有 morphology 時才有），見 babizu/fuzzy 的 morph-search.js 與 docs/bcdp.md */
     this.morphSearch = this.text.morphology
-      ? createMorphSearch({ analyzer: this.text.morphology, metric: this.metric, index: this.index })
+      ? createMorphSearch({ analyzer: this.text.morphology, metric: this.metric, index: this.index, isEntry: entryTest(this.index) })
       : null
     /** @type {ReturnType<typeof createMorphSearch> | null} 虛擬詞根用的構詞搜尋（第一次用到時建立，virtualRootSearch） */
     this._virtualRootSearch = null

@@ -135,8 +135,10 @@ const CACHE_LIMIT = 500
  * @param {import('./morphology.js').Analyzer} deps.analyzer 構詞規格（已正規化）
  * @param {import('./distance.js').WeightedEditDistance} deps.metric 與詞庫相同的距離函式（含構詞音變）
  * @param {FuzzyIndex} deps.index 詞庫
+ * @param {(term: string) => boolean} [deps.isEntry] 詞庫中的詞是不是辭典的詞條或標為詞根（rootSyllableCost 的 entry；
+ *   搜尋層由 posting 的種類判斷）。省略時一律當作詞條
  */
-export function createMorphSearch({ analyzer, metric, index }) {
+export function createMorphSearch({ analyzer, metric, index, isEntry = () => true }) {
   const spec = analyzer.spec
   const mirror = metric.mirror()
   const reverse = (/** @type {string} */ s) => Array.from(s).reverse().join('')
@@ -199,8 +201,10 @@ export function createMorphSearch({ analyzer, metric, index }) {
   /** 元音（要求詞幹元音開頭的環綴：通道只走元音開頭的詞） */
   const vowelSet = new Set(Array.from(spec.vowels))
   /** 詞根依音節數的成本（rootSyllableCost）：只依詞根本身，在詞尾加上，所以不改變同一個詞根選哪一種讀法 */
-  const rootCost = rootCostOf(spec)
-  const hasRootCost = spec.rootSyllableCost.length > 0
+  const syllableCost = rootCostOf(spec)
+  /** 詞庫詞根的成本：依音節數與是不是辭典的詞條 @param {string} term */
+  const rootCost = (term) => syllableCost(term, isEntry(term))
+  const hasRootCost = spec.rootSyllableCost.entry.length > 0
   /** 外側的前綴（'' ＝ 沒有，由自由的前綴鏈出發）→ 用到它的中綴、重疊 */
   const outers = [...new Set(['', ...infixUses.map((u) => u.outer), ...redupUses.map((u) => u.outer)])]
 
@@ -1109,7 +1113,7 @@ export function createMorphSearch({ analyzer, metric, index }) {
     }
   }
 
-  return { search, prepare, seed, openStems, finish, explain, explainHit, notesOf, spec, rootCost, clearCache: () => cache.clear() }
+  return { search, prepare, seed, openStems, finish, explain, explainHit, notesOf, spec, rootCost, syllableCost, clearCache: () => cache.clear() }
 }
 
 /**

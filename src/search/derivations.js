@@ -47,6 +47,7 @@
  * - `edges`：三個一組，詞 w（與上一條邊的差；邊依 w 排序）、詞根 r、分析編號 a
  */
 
+import { rootCostOf } from '../fuzzy/morphology.js'
 import { createMorphSearch, EPSILON, FuzzyIndex, roundCost } from '../fuzzy/index.js'
 import { decodePosting } from './format.js'
 import { createTextTools } from './text.js'
@@ -72,15 +73,34 @@ export const SIBLING_MAX_SOUND = 0.2
 export const soundOf = (a, rootCost = 0) => Math.max(0, roundCost(a.cost - a.steps.reduce((x, s) => x + s.cost, 0) - rootCost))
 
 /**
- * 經過虛擬詞根的代價（長度懲罰）：詞庫中沒有這個詞根，要逐字寫出來，每個字元 `virtualRootLengthCost`。
+ * 詞庫中的詞是不是辭典的詞條或標為詞根（rootSyllableCost 的 entry）：有任何一種不是例句中的詞（token）的 posting——
+ * 記錄的詞形、異寫、變體，或衍生詞標註的詞根。只出現在例句、片語中的詞不算。
+ * @param {FuzzyIndex} index
+ * @returns {(term: string) => boolean}
+ */
+export function entryTest(index) {
+  /** @type {Map<number, boolean>} */
+  const memo = new Map()
+  return (term) => {
+    const id = index.dawg.lookup(term)
+    if (id === -1) return false
+    let v = memo.get(id)
+    if (v === undefined) memo.set(id, (v = /** @type {number[]} */ (index.payloads[id] ?? []).some((code) => decodePosting(code).kind !== 'token')))
+    return v
+  }
+}
+
+/**
+ * 經過虛擬詞根的代價（長度懲罰）：詞庫中沒有這個詞根，要逐字寫出來，每個字元 `virtualRootLengthCost`；
+ * 語言設定檔有 rootSyllableCost 時另加音節數的成本（虛擬詞根不是辭典的詞條，用 other）。
  * 每個用到它的詞各付一次（不在共用的詞之間分攤）。
  * 建置時虛擬詞根的分析加上它仍比詞庫中最好的詞根便宜才成立；查詢時經過虛擬詞根的命中加上一次
  * （查詢 → 虛擬詞根 → 詞，只算一次）。
  * @param {string} stem
- * @param {{virtualRootLengthCost: number}} spec 構詞規格（分析器的 spec）
+ * @param {{virtualRootLengthCost: number, rootSyllableCost: {entry: readonly number[], other: readonly number[]}, vowels: string}} spec 構詞規格（分析器的 spec）
  */
 export function virtualRootCost(stem, spec) {
-  return roundCost(spec.virtualRootLengthCost * Array.from(stem).length)
+  return roundCost(spec.virtualRootLengthCost * Array.from(stem).length + rootCostOf(spec)(stem, false))
 }
 
 /**
@@ -89,7 +109,7 @@ export function virtualRootCost(stem, spec) {
  * @param {FuzzyIndex} index 詞庫（虛擬詞根不能是詞庫中的詞）
  */
 export function createVirtualRootSearch(text, index) {
-  return createMorphSearch({ analyzer: /** @type {import('../fuzzy/morphology.js').Analyzer} */ (text.morphology), metric: text.createAlternationMetric(), index })
+  return createMorphSearch({ analyzer: /** @type {import('../fuzzy/morphology.js').Analyzer} */ (text.morphology), metric: text.createAlternationMetric(), index, isEntry: entryTest(index) })
 }
 
 /**
@@ -138,7 +158,7 @@ export function createDerivationAnalyzer({ lexicon, profile }) {
   const metric = text.createSearchMetric()
   const index = FuzzyIndex.deserialize(lexicon, metric)
   const analyzer = text.morphology
-  const search = analyzer ? createMorphSearch({ analyzer, metric, index }) : null
+  const search = analyzer ? createMorphSearch({ analyzer, metric, index, isEntry: entryTest(index) }) : null
   const open = analyzer ? createVirtualRootSearch(text, index) : null
   return {
     /** 詞圖的詞數 */

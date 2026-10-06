@@ -281,6 +281,16 @@ describe('規格檢查', () => {
     expect(rootCostOf(createAnalyzer({}).spec)('ban')).toBe(0)
   })
 
+  it('rootSyllableCost 的值可以分兩種詞根：entry（辭典的詞條或標為詞根）與 other（其他、虛擬詞根）', () => {
+    const table = { 1: 0.5, 2: { entry: 0, other: 0.2 }, 3: 0.1, 4: 0.2 }
+    expect(validateMorphology({ rootSyllableCost: table })).toEqual([])
+    expect(validateMorphology({ rootSyllableCost: { 2: { entry: 0 } } })).toHaveLength(1)
+    expect(validateMorphology({ rootSyllableCost: { 2: { entry: 0, other: 0.2, x: 1 } } })).toHaveLength(1)
+    const cost = rootCostOf(createAnalyzer({ vowels: 'aiu', rootSyllableCost: table }).spec)
+    expect(['ban', 'kita', 'ituku', 'aitukuan'].map((r) => cost(r, true))).toEqual([0.5, 0, 0.1, 0.2])
+    expect(['ban', 'kita', 'ituku', 'aitukuan'].map((r) => cost(r, false))).toEqual([0.5, 0.2, 0.1, 0.2])
+  })
+
   it('格式錯誤會列出', () => {
     expect(validateMorphology({ prefixes: [{ form: '' }], reduplication: [{ pattern: 'XX' }] })).toHaveLength(2)
     expect(validateMorphology({ alternations: [{ underlying: 't' }] })).toHaveLength(1)

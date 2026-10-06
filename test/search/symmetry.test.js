@@ -21,7 +21,7 @@ const SEEDS = [11, 12, 13]
 /** 另外以有詞根音節數成本（rootSyllableCost）的規格跑一次：音變的上限要扣掉詞根成本，建置與查詢兩端一致才對稱 */
 const VARIANTS = [
   { name: '', morphology: {} },
-  { name: '・詞根音節數的成本', morphology: { rootSyllableCost: { 1: 0.1, 3: 0.1, 4: 0.2 } } },
+  { name: '・詞根音節數的成本', morphology: { rootSyllableCost: { 1: 0.5, 2: { entry: 0, other: 0.2 }, 3: 0.1, 4: 0.2 } } },
 ]
 
 for (const [seed, variant] of SEEDS.flatMap((s) => VARIANTS.map((v) => /** @type {const} */ ([s, v])))) {
