@@ -871,6 +871,13 @@ export const MUTANTS = [
     why: '虛擬詞根比詞庫中的非詞條詞根便宜；derivations.test 的虛擬詞根成本測試',
   },
   {
+    name: '虛擬詞根的分析成本含音節成本',
+    file: 'src/search/derivations.js',
+    find: 'cost: roundCost(h.distance - (h.rootCost ?? 0)), steps: h.steps',
+    replace: 'cost: h.distance, steps: h.steps',
+    why: '音節成本在邊上又在代價裡，算兩次，也被當成音變；derivations.test 的虛擬詞根音節成本測試',
+  },
+  {
     name: '例句中的詞也算詞條',
     file: 'src/search/derivations.js',
     find: '.some((code) => decodePosting(code).kind !== \'token\')))',

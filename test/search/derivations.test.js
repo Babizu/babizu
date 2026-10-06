@@ -282,6 +282,21 @@ describe('虛擬詞根與自動同根：共同的詞根不在詞庫中（查 bin
     expect(res.occurrences.find((o) => o.doc.id === 'dict:s1')?.matches[0]).toMatchObject({ matchType: 'sibling', token: 'mabubuer' })
   })
 
+  it('有詞根音節數的成本時：虛擬詞根的音節成本只算在詞庫外詞根的代價裡一次，邊的分析成本只有步驟與音變（不被當成音變）', () => {
+    const morph = { ...MORPH, rootSyllableCost: { 2: { entry: 0, other: 0.2 }, 3: 0.1 } }
+    const d = JSON.parse(JSON.stringify(buildSearchIndex({ items: list.map((record) => ({ record, shard: 'all' })), groups: [], sourceIds: ['dict'], profile: { ...PAZEH_PROFILE, morphology: morph } })))
+    const g = buildDerivationGraph(d)
+    const e = new SearchEngine({ ...d, derivations: g })
+    expect(g.virtual).toEqual(['bubuer'])
+    // mabubuer → bubuer：ma- 0.2，沒有音變；詞根 bubuer 的三音節成本 0.1 不在邊上
+    const analyses = g.analyses.filter((_, k) => g.edges.some((x, j) => j % 3 === 2 && x === k && g.edges[j - 1] >= e.index.terms.length))
+    expect(analyses.map((a) => a[0])).toEqual([0.2])
+    const hit = e.search('binubuer', { fields: ['native'] }).entries.find((h) => h.doc.id === 'dict:mabubuer')
+    // 拆解 <in> 0.2（不含音節成本）、詞庫外的詞根 0.03 × 6 ＋ 三音節 0.1
+    expect(hit?.analysis).toMatchObject({ stem: 'bubuer', sibling: { root: 'bubuer', cost: 0.2, penalty: 0.28, lexical: false } })
+    expect(hit?.score).toBeCloseTo(0.98 + 0.1, 9)
+  })
+
   it('查詢本身就是那個詞時不算自己；沒有虛擬詞根的圖（舊版）沒有自動同根', () => {
     expect(v.search('mabubuer', { fields: ['native'] }).entries.some((h) => h.matchType === 'sibling')).toBe(false)
     const plain = new SearchEngine({ ...data, derivations: { ...graph, virtual: [], edges: graph.edges.filter((_, k) => k % 3 !== 1 || graph.edges[k] < data.lexicon.count) } })

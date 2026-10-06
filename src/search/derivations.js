@@ -362,7 +362,9 @@ export function virtualRoots(w, open, index, lexiconBest) {
       DERIVATION_MAX_COST,
     )
     .filter((h) => chosen.has(h.term))
-    .map((h) => ({ stem: h.term, cost: h.distance, steps: h.steps, notes: open.notesOf(prepared, h) }))
+    // finish 的成本含詞根音節數的成本（虛擬詞根用 other）；它算在 virtualRootCost 裡，分析的成本只有步驟與音變
+    // （自動派生圖、拆解表的 rootCostOf 對虛擬詞根是 0，音變＝成本 − 步驟）
+    .map((h) => ({ stem: h.term, cost: roundCost(h.distance - (h.rootCost ?? 0)), steps: h.steps, notes: open.notesOf(prepared, h) }))
 }
 
 /**
