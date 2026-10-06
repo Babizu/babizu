@@ -6,6 +6,7 @@
 
 import { describe, expect, it } from 'vitest'
 import { createAnalyzer, REDUPLICATION_PATTERNS, validateMorphology, validateProfile } from '../../src/fuzzy/index.js'
+import { rootCostOf } from '../../src/fuzzy/morphology.js'
 import { openAnalyzer } from './open-stems.js'
 
 const SPEC = {
@@ -268,6 +269,16 @@ describe('generate：還原詞綴', () => {
 describe('規格檢查', () => {
   it('沒有 morphology 的設定檔照常通過', () => {
     expect(validateMorphology(undefined)).toEqual([])
+  })
+
+  it('rootSyllableCost：鍵是音節數、值是非負的成本；rootCostOf 依元音字母數，沒列的是 0，最大的鍵也套用到更多音節', () => {
+    expect(validateMorphology({ rootSyllableCost: { 1: 0.1, 3: 0.1, 4: 0.2 } })).toEqual([])
+    expect(validateMorphology({ rootSyllableCost: { 0: 0.1, x: 0.1, 2: -1 } })).toHaveLength(3)
+    expect(validateMorphology({ rootSyllableCost: [0.1] })).toHaveLength(1)
+    const cost = rootCostOf(createAnalyzer({ vowels: 'aiu', rootSyllableCost: { 1: 0.1, 3: 0.2, 4: 0.3 } }).spec)
+    // ban 1、kita 2、ituku 3、aitukuan 5（4 以上）、ng 0 個音節
+    expect(['ban', 'kita', 'ituku', 'aitukuan', 'ng'].map(cost)).toEqual([0.1, 0, 0.2, 0.3, 0])
+    expect(rootCostOf(createAnalyzer({}).spec)('ban')).toBe(0)
   })
 
   it('格式錯誤會列出', () => {

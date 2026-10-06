@@ -1131,7 +1131,7 @@ export class SearchEngine {
   _derivedTerms(key, variants, maxPath, lemma = []) {
     const graph = this.derivations
     if (!graph) return []
-    /** @typedef {{id: number, distance: number, term: string, split?: {cost: number, steps: any[], penalty: number, lexical: boolean}}} Seed */
+    /** @typedef {{id: number, distance: number, term: string, rootCost?: number, split?: {cost: number, steps: any[], penalty: number, lexical: boolean}}} Seed */
     /** @type {Seed[]} */
     const seeds = []
     for (const s of [{ term: key, distance: 0 }, ...variants]) {
@@ -1150,7 +1150,7 @@ export class SearchEngine {
       if (m.distance > lemmaBest + EPSILON || m.term.includes(' ') || Array.from(m.term).length >= length || !m.analysis) continue
       if (soundOf({ cost: m.distance, steps: m.analysis.steps }, m.analysis.rootCost ?? 0) > SIBLING_MAX_SOUND + EPSILON) continue
       const id = this.index.dawg.lookup(m.term)
-      if (id !== -1) lexicalSeeds.push({ id, distance: m.distance, term: m.term, split: { cost: m.distance, steps: m.analysis.steps, penalty: 0, lexical: true } })
+      if (id !== -1) lexicalSeeds.push({ id, distance: m.distance, rootCost: m.analysis.rootCost ?? 0, term: m.term, split: { cost: m.distance, steps: m.analysis.steps, penalty: 0, lexical: true } })
     }
     // 虛擬詞根：查詢本身是別的詞的詞根時不拆（與建置時相同）
     if (!isLexicalRoot(this.index, self, (id) => graph.hasChildren(id))) {
@@ -1175,7 +1175,7 @@ export class SearchEngine {
           .descendants(virtualSeeds, maxPath)
           .map((r) => ({ ...r, from: virtualSeeds[r.seed] }))
           // 查詢本身也在詞庫中時不算自己；整條（拆解 ＋ 往下）也不超過同一個上限（詞庫外詞根的代價不算在內）
-          .filter((r) => !reached.has(r.word) && r.word !== self && r.cost - (r.from.split?.penalty ?? 0) <= maxPath + EPSILON)
+          .filter((r) => !reached.has(r.word) && r.word !== self && r.cost - (r.from.split?.penalty ?? 0) - r.path.reduce((x, e) => x + graph.rootCostOf(e.root), 0) <= maxPath + EPSILON)
       : []
     /** @type {Map<string, AlignmentNote[]>} 查詢 → 起點的對齊說明（每個起點算一次） */
     const variantNotes = new Map()

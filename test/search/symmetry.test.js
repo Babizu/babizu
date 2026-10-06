@@ -18,11 +18,16 @@ import { buildMorphEngine, morphCorpus } from './morph-corpus.js'
 
 const EPS = 1e-9
 const SEEDS = [11, 12, 13]
+/** 另外以有詞根音節數成本（rootSyllableCost）的規格跑一次：音變的上限要扣掉詞根成本，建置與查詢兩端一致才對稱 */
+const VARIANTS = [
+  { name: '', morphology: {} },
+  { name: '・詞根音節數的成本', morphology: { rootSyllableCost: { 1: 0.1, 3: 0.1, 4: 0.2 } } },
+]
 
-for (const seed of SEEDS) {
-  describe(`種子 ${seed}`, () => {
+for (const [seed, variant] of SEEDS.flatMap((s) => VARIANTS.map((v) => /** @type {const} */ ([s, v])))) {
+  describe(`種子 ${seed}${variant.name}`, () => {
     const { lexical, derivations, records } = morphCorpus(seed, 50)
-    const { engine } = buildMorphEngine(records)
+    const { engine } = buildMorphEngine(records, variant.morphology)
     const e = /** @type {any} */ (engine)
     const index = e.index
     const graph = e.derivations
@@ -45,7 +50,7 @@ for (const seed of SEEDS) {
       const id = index.dawg.lookup(w)
       const best = chart.lexicalBestOf(id)
       for (const p of chart.of(id)) {
-        if (!p.virtual && (p.cost > best + EPS || soundOf(p) > SIBLING_MAX_SOUND + EPS)) continue
+        if (!p.virtual && (p.cost > best + EPS || soundOf(p, p.rootCost ?? 0) > SIBLING_MAX_SOUND + EPS)) continue
         const k = `${p.virtual ? 'v' : 'l'}:${p.root}`
         kids.set(k, [...new Set([...(kids.get(k) ?? []), id])])
       }
@@ -58,10 +63,39 @@ for (const seed of SEEDS) {
         const id = index.dawg.lookup(d.word)
         const ps = id === -1 ? [] : chart.of(id)
         const best = id === -1 ? Infinity : chart.lexicalBestOf(id)
+        // 詞根音節數的成本（rootSyllableCost）只依詞根：真正的推導也要加上它才能比
+        const rc = e.morphSearch.rootCost(d.root)
         // 真正的推導比最好的分析貴太多時（超出 lemmaSpread），本來就不列
-        if (d.cost > best + 0.6 + EPS) continue
+        if (d.cost + rc > best + 0.6 + EPS) continue
         const hit = ps.find((/** @type {any} */ p) => !p.virtual && p.root === d.root)
-        if (!hit || hit.cost > d.cost + EPS) bad.push(`${d.word}（${d.root}，${d.cost}）：${hit ? hit.cost : '找不到'}`)
+        if (!hit || hit.cost > d.cost + rc + EPS) bad.push(`${d.word}（${d.root}，${d.cost}）：${hit ? hit.cost : '找不到'}`)
+      }
+      expect(bad).toEqual([])
+    })
+
+    it.runIf(Boolean(variant.morphology.rootSyllableCost))('查詢端的自動同根：查詢拆到詞根的音變上限扣掉詞根成本', () => {
+      // 一個有子詞（音變在上限內）、詞根成本 > 0 的詞庫詞根
+      const root = [...graph.children.keys()].find(
+        (id) =>
+          id < terms.length &&
+          !terms[id].includes(' ') &&
+          graph.rootCostOf(id) > 0 &&
+          graph.children.get(id).some((/** @type {any} */ c) => soundOf(graph.analyses[c.analysis], graph.rootCostOf(id)) <= SIBLING_MAX_SOUND),
+      )
+      expect(root).toBeDefined()
+      const rc = graph.rootCostOf(root)
+      // 假想的查詢拆到這個詞根：步驟 0.1、音變 0.15（上限 0.2 之內），成本含詞根成本；不扣詞根成本時音變超過上限
+      const step = { type: 'prefix', form: 'x', cost: 0.1, gloss: null }
+      const m = { term: terms[root], payloads: [], distance: 0.25 + rc, matchType: 'lemma', analysis: { stem: terms[root], steps: [step], cost: 0.25 + rc, rootCost: rc } }
+      const got = e._derivedTerms('z'.repeat(terms[root].length + 3), [], 2, [m])
+      expect(got.some((/** @type {any} */ t) => t.matchType === 'sibling')).toBe(true)
+    })
+
+    it('查詞根找得到它的衍生詞：自動派生圖上 w 以詞庫詞根 r 為詞根時，查 r 找得到 w（詞根成本不讓路徑超過上限）', () => {
+      const bad = []
+      for (const [root, list] of graph.children) {
+        if (root >= terms.length || terms[root].includes(' ')) continue
+        for (const c of list) if (!hits(terms[root]).has(terms[c.word])) bad.push(`${terms[root]} ↛ ${terms[c.word]}（邊 ${graph.analyses[c.analysis].cost}）`)
       }
       expect(bad).toEqual([])
     })

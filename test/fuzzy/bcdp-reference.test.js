@@ -150,6 +150,21 @@ describe('參考實作：BCDP 模型', () => {
     },
   )
 
+  it('詞根音節數的成本也算進相對上限的最佳：走訪成本最低的是單音節詞根時，雙音節的詞根不能被剪掉（固定案例）', () => {
+    // mabak：ma- ＋ bak 走訪成本 0.1，但 bak 單音節另加 0.5 ＝ 0.6（寫明 2: 0，否則最大的鍵也套用到雙音節）；
+    // ma- ＋ boku（a ↔ o 0.15、k ↔ ku 0.05）＝ 0.3，雙音節不加。正確的最佳是 0.3，lemmaSpread 0.1 之內只有 boku。
+    // 最佳若只用走訪成本（0.1；起點 seed 與走訪的詞尾都要算），上限 0.2 會在 bo 剪掉 boku（bak 在字典序中先走到；
+    // 同一條路徑上更長的詞不會被剪：剪枝用的上限在詞尾更新之前就算好了，所以另一個詞要在另一條分支上、而且早早就有成本）
+    const spec = { cost: 0.1, minStem: 3, maxSteps: 1, lemmaSpread: 0.1, vowels: 'aeiou', prefixes: [{ form: 'ma' }], rootSyllableCost: { 1: 0.5, 2: 0 } }
+    const metric = metricFor(new RuleSet().add('a', 'o', 0.15).add('k', 'ku', 0.05), spec)
+    const index = new FuzzyIndex(metric).addAll([
+      ['bak', 'bak'],
+      ['boku', 'boku'],
+    ])
+    const search = createMorphSearch({ analyzer: createAnalyzer(spec), metric, index })
+    expect(search.search('mabak', { maxDistance: 1 }).map((h) => [h.term, h.distance, h.rootCost ?? 0])).toEqual([['boku', 0.3, 0]])
+  })
+
   it('reaching check：上面的隨機測試涵蓋每種重疊型式、中綴、構詞音變、跨界規則與交界上的增生', () => {
     for (const kind of [...REDUPLICATION_PATTERNS, 'infix', 'alternation', 'crossing', 'glottal', 'circumfix:prefix', 'circumfix:infix', 'circumfix:reduplication', 'wrap:outer', 'wrap:no-suffix', 'wrap:vowel-stem']) {
       expect(reached.get(kind) ?? 0, `${kind}：${JSON.stringify([...reached])}`).toBeGreaterThanOrEqual(3)

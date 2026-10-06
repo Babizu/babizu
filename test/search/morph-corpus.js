@@ -195,9 +195,12 @@ export function morphCorpus(seed, nRoots) {
   return { lexical, derivations, records }
 }
 
-/** @param {any[]} records */
-export function buildMorphEngine(records) {
-  const profile = { ...PAZEH_PROFILE, morphology: PAZEH_LIKE_GRAMMAR }
+/**
+ * @param {any[]} records
+ * @param {Record<string, any>} [morphology] 合併進構詞規格的欄位（例如 rootSyllableCost）
+ */
+export function buildMorphEngine(records, morphology = {}) {
+  const profile = { ...PAZEH_PROFILE, morphology: { ...PAZEH_LIKE_GRAMMAR, ...morphology } }
   const built = JSON.parse(JSON.stringify(buildSearchIndex({ items: records.map((record) => ({ record, shard: 'all' })), groups: [], sourceIds: ['dict', 'corpus'], profile })))
   const derivations = buildDerivationGraph(built)
   const parses = buildParseChart(built)

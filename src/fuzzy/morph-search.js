@@ -608,6 +608,8 @@ export function createMorphSearch({ analyzer, metric, index }) {
   /**
    * 走訪之前先給相對上限一個起點：詞幹與查詢的一段完全相同、兩側直接接上已算好的詞綴各層，
    * 這是一個真的分析，所以它的成本不小於最後的最佳（上限只會更緊、結果不變）。
+   * 成本要與 finish 的相同：含詞根音節數的成本（rootSyllableCost）。少算的話起點比真正的最佳低，
+   * 走訪會剪掉「最佳 ＋ lemmaSpread」之內的詞根（單音節的詞根最便宜、雙音節的稍貴時）。
    * 只查 idx 裡的詞：走訪的是哪個詞庫，就只能用哪個詞庫的詞當起點。
    * @template {Prepared | null} T
    * @param {T} prepared（null 原樣傳回，方便接在 prepare 之後）
@@ -627,7 +629,9 @@ export function createMorphSearch({ analyzer, metric, index }) {
       for (let y = x + spec.minStem; y <= n; y++) {
         term += chars[y - 1]
         const cost = Math.min(bare + S.row[y], prefixed + (y === n ? 0 : S.row[y]))
-        if (cost < cutoff.best && term !== prepared.query && idx.dawg.lookup(term) !== -1) cutoff.best = cost
+        if (cost >= cutoff.best || term === prepared.query || idx.dawg.lookup(term) === -1) continue
+        const total = hasRootCost ? roundCost(cost + rootCost(term)) : cost
+        if (total < cutoff.best) cutoff.best = total
       }
     }
     return prepared

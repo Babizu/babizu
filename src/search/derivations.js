@@ -478,7 +478,7 @@ export class DerivationGraph {
   /**
    * 起點的直接子詞（以起點為最好詞根的詞），只取音變不超過 maxSound 的邊；起點距離加上邊的成本不超過 maxPath。
    * 同一個詞由幾個起點走到時取總分最小的。詞庫詞根的自動同根用：同根就是同一個詞根的直接子詞，不含孫輩。
-   * @param {Array<{id: number, distance: number}>} seeds
+   * @param {Array<{id: number, distance: number, rootCost?: number}>} seeds distance 含查詢拆到這個詞根的詞根成本時，rootCost 記下它（上限不算）
    * @param {{maxPath: number, maxSound: number}} options
    * @returns {DerivedReach[]} 依總分排序（同分依詞編號），不含起點本身
    */
@@ -490,7 +490,9 @@ export class DerivationGraph {
       for (const c of this.children.get(s.id) ?? []) {
         const analysis = this.analyses[c.analysis]
         const cost = roundCost(s.distance + analysis.cost)
-        if (seedIds.has(c.word) || soundOf(analysis, this.rootCostOf(s.id)) > maxSound + EPSILON || cost > maxPath + EPSILON) continue
+        // 上限比不含詞根成本的成本：這條邊的與起點（查詢拆到這個詞根）的詞根成本都扣掉
+        const capped = cost - this.rootCostOf(s.id) - (s.rootCost ?? 0)
+        if (seedIds.has(c.word) || soundOf(analysis, this.rootCostOf(s.id)) > maxSound + EPSILON || capped > maxPath + EPSILON) continue
         const prev = best.get(c.word)
         if (!prev || cost < prev.cost - EPSILON) best.set(c.word, { word: c.word, cost, seed: k, path: [{ word: c.word, root: s.id, analysis }] })
       }
@@ -515,7 +517,8 @@ export class DerivationGraph {
     while (stack.length) {
       const x = /** @type {number} */ (stack.pop())
       for (const c of this.children.get(x) ?? []) {
-        if (this.analyses[c.analysis].cost > maxPath + EPSILON || reach.has(c.word)) continue
+        // 上限比不含詞根成本的成本（詞根成本只改名次，docs/bcdp.md 1.6 第 9 項）
+        if (this.analyses[c.analysis].cost - this.rootCostOf(x) > maxPath + EPSILON || reach.has(c.word)) continue
         reach.add(c.word)
         stack.push(c.word)
       }
@@ -533,7 +536,8 @@ export class DerivationGraph {
       if (!at) continue
       for (const c of this.children.get(x) ?? []) {
         const edge = this.analyses[c.analysis].cost
-        const path = at.path + edge
+        // path 是比上限用的路徑成本：不含詞根成本；cost 是排名用的，含它
+        const path = at.path + edge - this.rootCostOf(x)
         if (path > maxPath + EPSILON) continue
         const cost = roundCost(at.cost + edge)
         const prev = best.get(c.word)

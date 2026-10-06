@@ -5,7 +5,8 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { encodeParses, ParseChart, PARSES_FORMAT_VERSION } from '../../src/search/parses.js'
+import { DerivationGraph, encodeDerivations, soundOf } from '../../src/search/derivations.js'
+import { encodeParses, ParseChart, PARSES_FORMAT_VERSION, parsedAnalysis } from '../../src/search/parses.js'
 
 const TERMS = ['abak', 'barak', 'rak', 'mausay', 'usa']
 /** @param {number} cost @param {Array<{type: string, form: string, cost: number}>} steps */
@@ -44,6 +45,47 @@ describe('拆解表', () => {
     expect(rak).toMatchObject({ root: 'rak', virtual: false, cost: 0.55 })
     expect(rak.sound).toBeCloseTo(0.35)
     expect(chart.of(1)).toEqual([])
+  })
+
+  it('自動派生圖：子詞的音變上限與路徑上限都扣掉詞根成本（childrenOf、descendants）', () => {
+    // bakan → bak：步驟 0.1、音變 0.15、詞根成本 0.1，邊的成本 0.35
+    const terms = ['bakan', 'bak']
+    const data = encodeDerivations([{ word: 0, root: 1, analysis: { cost: 0.35, steps: /** @type {any[]} */ ([{ type: 'suffix', form: 'an', cost: 0.1 }]), notes: [] } }], terms.length)
+    const graph = new DerivationGraph(data, terms, (root) => (root === 'bak' ? 0.1 : 0))
+    const seed = [{ id: 1, distance: 0 }]
+    // 音變 0.15 在上限 0.2 之內（不扣詞根成本時是 0.25，會被擋掉）
+    expect(graph.childrenOf(seed, { maxPath: 1, maxSound: 0.2 }).map((r) => r.word)).toEqual([0])
+    // 路徑上限 0.3：不含詞根成本的 0.25 在上限內（含它的 0.35 不在）；排名用的成本仍含它
+    expect(graph.childrenOf(seed, { maxPath: 0.3, maxSound: 0.2 }).map((r) => [r.word, r.cost])).toEqual([[0, 0.35]])
+    expect(graph.descendants(seed, 0.3).map((r) => [r.word, r.cost])).toEqual([[0, 0.35]])
+    // 起點本身含詞根成本時（查詢拆到 bak，0.2 ＋ 0.1）也扣掉
+    expect(graph.childrenOf([{ id: 1, distance: 0.3, rootCost: 0.1 }], { maxPath: 0.5, maxSound: 0.2 }).map((r) => r.word)).toEqual([0])
+    // 兩層（bak → bakan → bakanan）：第一條邊不含詞根成本的 0.25 在上限內，走得到 bakan，才能再往下（0.25 ＋ 0.04）
+    const deep = encodeDerivations(
+      [
+        { word: 0, root: 1, analysis: { cost: 0.04, steps: /** @type {any[]} */ ([{ type: 'suffix', form: 'an', cost: 0.04 }]), notes: [] } },
+        { word: 1, root: 2, analysis: { cost: 0.35, steps: /** @type {any[]} */ ([{ type: 'suffix', form: 'an', cost: 0.1 }]), notes: [] } },
+      ],
+      3,
+    )
+    const deepGraph = new DerivationGraph(deep, ['bakanan', 'bakan', 'bak'], (root) => (root === 'bak' ? 0.1 : 0))
+    expect(deepGraph.descendants([{ id: 2, distance: 0 }], 0.3).map((r) => r.word).sort()).toEqual([0, 1])
+    // 沒有詞根成本的圖：音變 0.25 超過上限
+    expect(new DerivationGraph(data, terms).childrenOf(seed, { maxPath: 1, maxSound: 0.2 })).toEqual([])
+  })
+
+  it('詞根音節數的成本（rootSyllableCost）不是音變：拆法與自動派生圖的音變都扣掉它', () => {
+    const p = parsedAnalysis('kita', false, 0.4, /** @type {any} */ ([{ cost: 0.1 }]), 0.1)
+    expect(p.sound).toBeCloseTo(0.2)
+    expect(p.rootCost).toBe(0.1)
+    expect(parsedAnalysis('kita', false, 0.4, /** @type {any} */ ([{ cost: 0.1 }])).sound).toBeCloseTo(0.3)
+    expect(soundOf({ cost: 0.4, steps: [{ cost: 0.1 }] }, 0.1)).toBeCloseTo(0.2)
+    // 拆解表依詞根算詞根成本（虛擬詞根是 0）
+    const withCost = new ParseChart(data, TERMS, (root) => (root === 'usa' ? 0.1 : 0))
+    expect(withCost.of(3).map((x) => [x.root, x.sound, x.rootCost ?? 0])).toEqual([
+      ['ausay', 0, 0],
+      ['usa', 0.1, 0.1],
+    ])
   })
 
   it('BCDP 在詞庫中最好的命中：不是拆法時是那個命中（abak 0.25）；不含虛擬詞根（mausay 是 usa 0.3，不是虛擬詞根的 0.1）', () => {
