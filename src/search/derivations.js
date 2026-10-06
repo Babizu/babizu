@@ -64,8 +64,12 @@ export const DERIVATION_MAX_COST = 1
  */
 export const SIBLING_MAX_SOUND = 0.2
 
-/** 一個分析的音變（成本扣掉步驟成本） @param {{cost: number, steps: Array<{cost: number}>}} a */
-export const soundOf = (a) => Math.max(0, roundCost(a.cost - a.steps.reduce((x, s) => x + s.cost, 0)))
+/**
+ * 一個分析的音變（成本扣掉步驟成本與詞根音節數的成本）
+ * @param {{cost: number, steps: Array<{cost: number}>}} a
+ * @param {number} [rootCost] 詞根依音節數的成本（rootSyllableCost；不是音變）
+ */
+export const soundOf = (a, rootCost = 0) => Math.max(0, roundCost(a.cost - a.steps.reduce((x, s) => x + s.cost, 0) - rootCost))
 
 /**
  * 經過虛擬詞根的代價（長度懲罰）：詞庫中沒有這個詞根，要逐字寫出來，每個字元 `virtualRootLengthCost`。
@@ -421,8 +425,9 @@ export class DerivationGraph {
   /**
    * @param {DerivationData} data
    * @param {string[]} terms 詞圖的所有詞（詞編號＝索引）
+   * @param {(root: string) => number} [rootCost] 詞庫詞根依音節數的成本（構詞搜尋的 rootCost）：邊的成本含它，算音變時扣掉
    */
-  constructor(data, terms) {
+  constructor(data, terms, rootCost = () => 0) {
     if (data.version !== DERIVATIONS_FORMAT_VERSION) {
       throw new Error(`自動派生圖格式版本 ${data.version} 與框架（${DERIVATIONS_FORMAT_VERSION}）不符，請重新建置網站`)
     }
@@ -434,6 +439,8 @@ export class DerivationGraph {
       notes: notes.map(([op, source, target, c, category, where]) => ({ op, source, target, cost: c, category, where })),
     }))
     this.terms = terms
+    /** 節點（詞根）依音節數的成本：詞庫中的詞才有，虛擬詞根是 0 @param {number} id */
+    this.rootCostOf = (id) => (id < terms.length ? rootCost(terms[id]) : 0)
     /** 所有節點的寫法：詞庫中的詞，接著是虛擬詞根 */
     this.nodes = [...terms, ...(data.virtual ?? [])]
     /** @type {Map<string, number>} 虛擬詞根 → 節點編號 */
@@ -483,7 +490,7 @@ export class DerivationGraph {
       for (const c of this.children.get(s.id) ?? []) {
         const analysis = this.analyses[c.analysis]
         const cost = roundCost(s.distance + analysis.cost)
-        if (seedIds.has(c.word) || soundOf(analysis) > maxSound + EPSILON || cost > maxPath + EPSILON) continue
+        if (seedIds.has(c.word) || soundOf(analysis, this.rootCostOf(s.id)) > maxSound + EPSILON || cost > maxPath + EPSILON) continue
         const prev = best.get(c.word)
         if (!prev || cost < prev.cost - EPSILON) best.set(c.word, { word: c.word, cost, seed: k, path: [{ word: c.word, root: s.id, analysis }] })
       }

@@ -109,6 +109,10 @@ export const GLIDE_PATTERNS = Object.freeze(['CGV', 'CVG'])
  * @property {number} [virtualRootLengthCost=0.03] 詞庫外的詞根（虛擬詞根）每個字元的成本：詞庫中的詞根只要指出是哪一個，
  *   詞庫外的要逐字寫出來，所以越長越貴（借用最小描述長度的直覺的長度懲罰，每個詞各自計算；docs/bcdp.md 10.5）。
  *   預設值以巴宰–噶哈巫語的資料校準
+ * @property {Record<string, number>} [rootSyllableCost] 詞庫詞根依音節數另加的成本（詞根形狀的先驗）：鍵是音節數，
+ *   值是成本；沒列的音節數是 0，最大的鍵也套用到更多音節（{"1": 0.1, "3": 0.1, "4": 0.2}：單音節 0.1、雙音節 0、三音節 0.1、
+ *   四音節以上 0.2）。音節數是詞根中 `vowels` 的字母數。南島語的詞根多半是兩個音節，而 BCDP 傾向把詞拆到最短的詞根
+ *   或停在較長的中間詞幹（研究紀錄 U.27；docs/bcdp.md 1.6 第 9 項）。只加在詞庫中的詞根上（虛擬詞根另有 virtualRootLengthCost）
  * @property {string} [vowels='aeiouéə'] 元音字母（決定「首輔音」「首元音」與中綴位置）
  * @property {string} [glides=''] 可以當滑音的元音（`vowels` 的子集；巴宰語是 `iu`）。重疊型式 CGV、CVG 要用到，
  *   框架不預設：哪些元音會念成滑音是語言的知識
@@ -160,6 +164,7 @@ const SPEC_KEYS = new Set([
   'maxSteps',
   'lemmaSpread',
   'virtualRootLengthCost',
+  'rootSyllableCost',
   'vowels',
   'glides',
   'prefixes',
@@ -209,6 +214,16 @@ export function validateMorphology(spec) {
     if (s[key] !== undefined && !isCost(s[key])) errors.push(`morphology.${key} 必須是非負的有限數`)
   }
   if (s.minStem !== undefined && !(Number.isInteger(s.minStem) && s.minStem >= 1)) errors.push('morphology.minStem 必須是 ≥ 1 的整數')
+  if (s.rootSyllableCost !== undefined) {
+    const t = s.rootSyllableCost
+    if (!t || typeof t !== 'object' || Array.isArray(t)) errors.push('morphology.rootSyllableCost 必須是物件（音節數 → 成本）')
+    else {
+      for (const [k, v] of Object.entries(t)) {
+        if (!/^[1-9]\d?$/u.test(k)) errors.push(`morphology.rootSyllableCost 的鍵「${k}」必須是 1–99 的音節數`)
+        if (!isCost(v)) errors.push(`morphology.rootSyllableCost.${k} 必須是非負的有限數`)
+      }
+    }
+  }
   if (s.maxSteps !== undefined && !(Number.isInteger(s.maxSteps) && s.maxSteps >= 0 && s.maxSteps <= MAX_STEPS_LIMIT)) {
     errors.push(`morphology.maxSteps 必須是 0–${MAX_STEPS_LIMIT} 的整數`)
   }
@@ -340,6 +355,8 @@ export function createAnalyzer(spec, normalize = (s) => s) {
   const lemmaSpread = spec.lemmaSpread ?? DEFAULTS.lemmaSpread
   const virtualRootLengthCost = spec.virtualRootLengthCost ?? DEFAULTS.virtualRootLengthCost
   const vowels = new Set(Array.from(normalize(spec.vowels ?? DEFAULTS.vowels)))
+  // 音節數 → 成本的表：第 k 格是 k 個音節的成本，最後一格也套用到更多音節；沒有設定時是空表
+  const rootSyllableCost = syllableCostTable(spec.rootSyllableCost)
   const glides = new Set(Array.from(normalize(spec.glides ?? '')))
 
   /** 說明複製一份再凍結：分析結果（有備忘）會引用它，但不能凍結呼叫端自己的物件 @param {Gloss | undefined} g */
@@ -543,6 +560,7 @@ export function createAnalyzer(spec, normalize = (s) => s) {
       maxSteps,
       lemmaSpread,
       virtualRootLengthCost,
+      rootSyllableCost: Object.freeze(rootSyllableCost),
       vowels: [...vowels].join(''),
       glides: [...glides].join(''),
       prefixes: Object.freeze(prefixes),
@@ -552,6 +570,37 @@ export function createAnalyzer(spec, normalize = (s) => s) {
       circumfixes: Object.freeze(circumfixes),
       alternations: Object.freeze(alternations.map((a) => Object.freeze({ ...a }))),
     }),
+  }
+}
+
+/**
+ * 詞根音節數的成本表（rootSyllableCost 的正規化）：第 k 格是 k 個音節的成本，沒列的音節數是 0，
+ * 最後一格也套用到更多音節。沒有設定時是空表。
+ * @param {Record<string, number> | undefined} table
+ * @returns {number[]}
+ */
+function syllableCostTable(table) {
+  if (!table) return []
+  const keys = Object.keys(table).map(Number)
+  if (!keys.length) return []
+  const max = Math.max(...keys)
+  return Array.from({ length: max + 1 }, (_, k) => table[String(k)] ?? 0)
+}
+
+/**
+ * 詞根依音節數的成本（詞根形狀的先驗，rootSyllableCost）：音節數是詞根中元音字母的數目，
+ * 超過表的長度時用最後一格。沒有設定時永遠是 0。
+ * @param {{rootSyllableCost: readonly number[], vowels: string}} spec 正規化後的規格（Analyzer.spec）
+ * @returns {(root: string) => number}
+ */
+export function rootCostOf(spec) {
+  const table = spec.rootSyllableCost
+  if (!table.length) return () => 0
+  const vowels = new Set(Array.from(spec.vowels))
+  return (root) => {
+    let n = 0
+    for (const c of root) if (vowels.has(c)) n++
+    return table[Math.min(n, table.length - 1)]
   }
 }
 

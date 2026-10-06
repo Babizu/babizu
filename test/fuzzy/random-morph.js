@@ -25,7 +25,11 @@ export function metricFor(rules, spec, normalize = (s) => s) {
  * 規格有構詞音變 t → d（詞素末）。
  * @param {() => number} random
  */
-export function randomMorphSetup(random) {
+/**
+ * @param {() => number} random
+ * @param {{rootCost?: boolean}} [options] rootCost：另加隨機的 rootSyllableCost 與較窄的 lemmaSpread（截斷要算進詞根成本）
+ */
+export function randomMorphSetup(random, { rootCost = false } = {}) {
   const vowels = ['a', 'i', 'u']
   const consonants = ['b', 'd', 'k', 'n', 't']
   const alphabet = [...vowels, ...consonants]
@@ -99,9 +103,17 @@ export function randomMorphSetup(random) {
     // 主要的亂數序列很少抽到這兩個模板，另外偶爾加一個
     if (extra() < 0.5) spec.reduplication.push({ pattern: pick(extra, ['CGV', 'CVG']) })
   }
+  /** @type {Record<string, number> | undefined} */
+  let rootSyllableCost
+  if (rootCost) {
+    const r = createRandom(h ^ 0x9e3779b9)
+    // 雙音節有時也加：隨機的詞根多半是雙音節，不加的話很少有命中被加上詞根成本
+    rootSyllableCost = { 1: pick(r, [0, 0.1, 0.3]), 2: pick(r, [0, 0.1, 0.2]), 3: pick(r, [0.1, 0.2]), ...(r() < 0.5 ? { 4: pick(r, [0.2, 0.4]) } : {}) }
+    Object.assign(spec, { rootSyllableCost, lemmaSpread: pick(r, [0.2, 0.4, 100]) })
+  }
   const metric = metricFor(cleaned, spec)
   const analyzer = createAnalyzer(spec)
-  return { metric, spec: analyzer.spec, analyzer, roots, alphabet, glottal, merge }
+  return { metric, spec: analyzer.spec, analyzer, roots, alphabet, glottal, merge, rootSyllableCost }
 }
 
 /**

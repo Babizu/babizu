@@ -32,7 +32,7 @@
 import { EDGE_JUNCTION, EDGE_WORD, EPSILON, roundCost } from './dp.js'
 import { FuzzyIndex } from './fuzzy-index.js'
 import { copyTagged, emptyEnd, emptyJunction, isReachable, mergeEndInto, mergeInto, mergeTagged, minOf, toForwardEnd } from './junction.js'
-import { circumfixStep } from './morphology.js'
+import { circumfixStep, rootCostOf } from './morphology.js'
 
 /** @typedef {import('./fuzzy-index.js').JunctionState} JunctionState */
 /** @typedef {import('./fuzzy-index.js').JunctionEnd} JunctionEnd */
@@ -71,7 +71,8 @@ import { circumfixStep } from './morphology.js'
  * @typedef {object} MorphHit
  * @property {string} term 命中的詞庫詞（詞幹）
  * @property {unknown[]} payloads
- * @property {number} distance 分析的成本：步驟成本＋整個詞的音變
+ * @property {number} distance 分析的成本：步驟成本＋整個詞的音變＋詞根音節數的成本（rootCost）
+ * @property {number} [rootCost] 詞根依音節數的成本（語言設定檔 rootSyllableCost；0 時省略）
  * @property {MorphStepHit[]} steps 由外而內
  * @property {{variant: number, prefixes: AffixEntry[], suffixes: AffixEntry[], circumfix: Circumfix | null}} analysis
  *   用了哪一個通道、哪些前綴與後綴（由外而內，不含環綴的兩側）、哪個環綴，說明（explainHit）用
@@ -197,6 +198,9 @@ export function createMorphSearch({ analyzer, metric, index }) {
   for (const c of circumfixes) if (c.kind === 'reduplication') redupUses.push({ pattern: c.left, op: (red) => /** @type {MorphStepHit} */ (circumfixStep(c, red)), circumfix: c, outer: c.outer, rank: c.rank })
   /** 元音（要求詞幹元音開頭的環綴：通道只走元音開頭的詞） */
   const vowelSet = new Set(Array.from(spec.vowels))
+  /** 詞根依音節數的成本（rootSyllableCost）：只依詞根本身，在詞尾加上，所以不改變同一個詞根選哪一種讀法 */
+  const rootCost = rootCostOf(spec)
+  const hasRootCost = spec.rootSyllableCost.length > 0
   /** 外側的前綴（'' ＝ 沒有，由自由的前綴鏈出發）→ 用到它的中綴、重疊 */
   const outers = [...new Set(['', ...infixUses.map((u) => u.outer), ...redupUses.map((u) => u.outer)])]
 
@@ -473,7 +477,13 @@ export function createMorphSearch({ analyzer, metric, index }) {
     // 只保留「最佳 ＋ lemmaSpread」之內的詞根（finish），所以各通道共用一個相對上限，隨途中的最佳收緊。
     // 算進最佳的詞與 finish 相同（不是查詢本身、夠長），結果與不收緊時完全相同
     /** @type {import('./fuzzy-index.js').SpreadCutoff} */
-    const cutoff = { best: Infinity, spread: spec.lemmaSpread, eligible: (term) => term !== query && Array.from(term).length >= spec.minStem }
+    // 詞根成本（rootSyllableCost）也算進最佳：finish 比的是加上它的總成本。中途的剪枝比的是不含它的成本（下界），仍然精確
+    const cutoff = {
+      best: Infinity,
+      spread: spec.lemmaSpread,
+      eligible: (/** @type {string} */ term) => term !== query && Array.from(term).length >= spec.minStem,
+      ...(hasRootCost ? { termCost: rootCost } : {}),
+    }
 
     /** @type {Variant[]} */
     const variants = []
@@ -870,9 +880,12 @@ export function createMorphSearch({ analyzer, metric, index }) {
     prepared.channels.forEach((_, c) => {
       for (const r of resultsPerChannel[c] ?? []) {
         if (r.term === query || Array.from(r.term).length < spec.minStem || r.distance > maxDistance + EPSILON) continue
+        // 成本＝走訪的成本（步驟＋音變）＋詞根成本。上限比的是走訪的成本：詞根成本只改名次與候選範圍（最佳 ＋ lemmaSpread），
+        // 不讓本來在上限內的分析因為它消失（研究紀錄 U.27：罕見而正確的詞根不能被排除）
+        const distance = hasRootCost ? roundCost(r.distance + rootCost(r.term)) : r.distance
         const prev = best.get(r.term)
-        if (!prev || r.distance < prev.distance - EPSILON) best.set(r.term, { distance: r.distance, term: r.term, candidates: [{ channel: c, result: r }] })
-        else if (r.distance <= prev.distance + EPSILON) prev.candidates.push({ channel: c, result: r })
+        if (!prev || distance < prev.distance - EPSILON) best.set(r.term, { distance, term: r.term, candidates: [{ channel: c, result: r }] })
+        else if (distance <= prev.distance + EPSILON) prev.candidates.push({ channel: c, result: r })
       }
     })
     const sorted = [...best.values()].sort((a, b) => a.distance - b.distance || (a.term < b.term ? -1 : 1))
@@ -906,10 +919,12 @@ export function createMorphSearch({ analyzer, metric, index }) {
           const k = stepsKey(s)
           if (!seen.has(k) && Math.abs(stepCostOf(s) - stepCost) <= EPSILON) seen.add(k), ties.push(s)
         }
+        const rc = hasRootCost ? rootCost(result.term) : 0
         return {
           term: result.term,
           payloads: result.payloads,
           distance: roundCost(h.distance),
+          ...(rc > 0 ? { rootCost: rc } : {}),
           steps,
           analysis: { variant: channel, prefixes, suffixes, circumfix },
           ...(ties.length ? { ties } : {}),
@@ -1090,7 +1105,7 @@ export function createMorphSearch({ analyzer, metric, index }) {
     }
   }
 
-  return { search, prepare, seed, openStems, finish, explain, explainHit, notesOf, spec, clearCache: () => cache.clear() }
+  return { search, prepare, seed, openStems, finish, explain, explainHit, notesOf, spec, rootCost, clearCache: () => cache.clear() }
 }
 
 /**

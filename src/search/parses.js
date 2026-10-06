@@ -35,8 +35,9 @@ export const PARSES_FORMAT_VERSION = 1
  * @typedef {object} ParsedAnalysis 一個詞的一種拆法
  * @property {string} root 詞根（詞庫中的詞，或虛擬詞根）
  * @property {boolean} virtual 詞根是虛擬詞根（不在詞庫中）
- * @property {number} cost 總成本：構詞步驟＋整個詞的音變
- * @property {number} sound 整個詞的音變（成本扣掉各步驟的成本；構詞音變算在步驟裡）
+ * @property {number} cost 總成本：構詞步驟＋整個詞的音變＋詞根音節數的成本
+ * @property {number} sound 整個詞的音變（成本扣掉各步驟的成本與詞根音節數的成本；構詞音變算在步驟裡）
+ * @property {number} [rootCost] 詞根依音節數的成本（rootSyllableCost；0 時省略）
  * @property {import('../fuzzy/morph-search.js').MorphStepHit[]} steps 由外而內
  */
 
@@ -75,10 +76,12 @@ export function encodeParses(parses, virtual, bests, count) {
  * @param {boolean} virtual
  * @param {number} cost
  * @param {import('../fuzzy/morph-search.js').MorphStepHit[]} steps
+ * @param {number} [rootCost] 詞根依音節數的成本（不是音變）
  * @returns {ParsedAnalysis}
  */
-export function parsedAnalysis(root, virtual, cost, steps) {
-  return { root, virtual, cost, sound: Math.max(0, roundCost(cost - steps.reduce((sum, x) => sum + x.cost, 0))), steps }
+export function parsedAnalysis(root, virtual, cost, steps, rootCost = 0) {
+  const sound = Math.max(0, roundCost(cost - steps.reduce((sum, x) => sum + x.cost, 0) - rootCost))
+  return { root, virtual, cost, sound, steps, ...(rootCost > 0 ? { rootCost } : {}) }
 }
 
 /**
@@ -110,14 +113,16 @@ export class ParseChart {
   /**
    * @param {ParseData} data
    * @param {string[]} terms 詞圖的所有詞（詞編號＝索引）
+   * @param {(root: string) => number} [rootCost] 詞庫詞根依音節數的成本（構詞搜尋的 rootCost）：拆法的成本含它，音變扣掉它
    */
-  constructor(data, terms) {
+  constructor(data, terms, rootCost = () => 0) {
     if (data.version !== PARSES_FORMAT_VERSION) {
       throw new Error(`拆解表格式版本 ${data.version} 與框架（${PARSES_FORMAT_VERSION}）不符，請重新建置網站`)
     }
     if (data.count !== terms.length) throw new Error(`拆解表的詞數（${data.count}）與詞圖（${terms.length}）不符，請重新建置網站`)
     this.data = data
     this.terms = terms
+    this.rootCost = rootCost
     /** @type {Map<string, number>} 虛擬詞根 → 節點編號（詞庫中的詞之後） */
     this.virtualIds = new Map(data.virtual.map((v, k) => [v, terms.length + k]))
     /** @type {Map<number, number>} 詞 → 它的第一條邊在 edges 中的位置（邊依詞排序，同一個詞的邊相連） */
@@ -165,7 +170,8 @@ export class ParseChart {
       if (k > /** @type {number} */ (start) && edges[k] !== 0) break
       const r = edges[k + 1]
       const [cost, ids] = analyses[edges[k + 2]]
-      list.push(parsedAnalysis(r >= count ? virtual[r - count] : this.terms[r], r >= count, cost, ids.map((id) => steps[id])))
+      const root = r >= count ? virtual[r - count] : this.terms[r]
+      list.push(parsedAnalysis(root, r >= count, cost, ids.map((id) => steps[id]), r >= count ? 0 : this.rootCost(root)))
     }
     list = sortParses(list)
     this._cache.set(word, list)

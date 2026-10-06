@@ -80,7 +80,7 @@ describe('參考實作：BCDP 模型', () => {
           // 找回的詞綴鏈正確：整個詞的對齊成本加上步驟成本就是命中的成本
           const e = search.explainHit(p, h).explanation
           const steps = h.steps.reduce((a, s) => a + s.cost, 0)
-          expect(roundCost(e.distance + steps), `${query} → ${h.term}：${JSON.stringify(h.steps.map((s) => s.form))}`).toBeCloseTo(h.distance, 7)
+          expect(roundCost(e.distance + steps + (h.rootCost ?? 0)), `${query} → ${h.term}：${JSON.stringify(h.steps.map((s) => s.form))}`).toBeCloseTo(h.distance, 7)
           for (const s of h.steps) if (s.type !== 'prefix' && s.type !== 'suffix') reach(s.type === 'circumfix' ? `circumfix:${s.left?.type}` : (s.pattern ?? s.type))
           // 包覆單位的新形狀：外側緊貼前綴（m<a>-）、沒有後綴、要求詞幹元音開頭（ma-）
           const circ = h.analysis.circumfix
@@ -107,6 +107,48 @@ describe('參考實作：BCDP 模型', () => {
     }
     expect(compared).toBeGreaterThan(35)
   })
+
+  it.each([1, 2, 3, 4, 5, 6])(
+    '種子 %i：詞根音節數的成本（rootSyllableCost）與較窄的 lemmaSpread：每個命中與成本都等於窮舉，對齊＋步驟＋詞根成本＝命中的成本',
+    { timeout: 60_000 },
+    (seed) => {
+      const random = createRandom(seed * 7368787)
+      let compared = 0
+      let charged = 0
+      for (let round = 0; round < 8; round++) {
+        const setup = randomMorphSetup(random, { rootCost: true })
+        const { metric, spec, analyzer, roots, rootSyllableCost } = setup
+        const index = new FuzzyIndex(metric).addAll(roots.map((w) => [w, w]))
+        const search = createMorphSearch({ analyzer, metric, index })
+        const ctx = refJointContext(metric)
+        for (let k = 0; k < 8; k++) {
+          const query = randomDerived(random, setup)
+          const maxDistance = pick(random, [0.8, 1, 1.2])
+          const { prepared, hits } = run(search, index, query, maxDistance)
+          if (prepared?.truncated) continue
+          for (const h of hits) {
+            const e = search.explainHit(/** @type {NonNullable<typeof prepared>} */ (prepared), h).explanation
+            const steps = h.steps.reduce((a, s) => a + s.cost, 0)
+            expect(roundCost(e.distance + steps + (h.rootCost ?? 0)), `${query} → ${h.term}`).toBeCloseTo(h.distance, 7)
+            expect(h.rootCost ?? 0).toBe(search.rootCost(h.term))
+            if (h.rootCost) charged++
+          }
+          const got = new Map(hits.map((h) => [h.term, h.distance]))
+          /** @type {Map<string, string>} */
+          const why = new Map()
+          const want = refMorph(ctx, { query, lexicon: roots, spec, maxDistance, why, rootSyllableCost })
+          for (const t of new Set([...got.keys(), ...want.keys()])) {
+            const detail = `seed=${seed} round=${round} query=${query} term=${t}；參考：${why.get(t) ?? '—'}；詞根成本 ${JSON.stringify(rootSyllableCost)}、lemmaSpread ${spec.lemmaSpread}`
+            expect(got.get(t) ?? Infinity, detail).toBeCloseTo(want.get(t) ?? Infinity, 7)
+          }
+          compared++
+        }
+      }
+      expect(compared).toBeGreaterThan(35)
+      // 真的有命中被加上詞根成本（否則這個測試什麼也沒測到）
+      expect(charged).toBeGreaterThan(5)
+    },
+  )
 
   it('reaching check：上面的隨機測試涵蓋每種重疊型式、中綴、構詞音變、跨界規則與交界上的增生', () => {
     for (const kind of [...REDUPLICATION_PATTERNS, 'infix', 'alternation', 'crossing', 'glottal', 'circumfix:prefix', 'circumfix:infix', 'circumfix:reduplication', 'wrap:outer', 'wrap:no-suffix', 'wrap:vowel-stem']) {

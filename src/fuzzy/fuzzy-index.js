@@ -112,6 +112,8 @@ import { resolveNormalization } from './normalization.js'
  * @property {number} best 目前找到的最小距離（初始 Infinity）
  * @property {number} spread 只保留距離不超過「最佳 ＋ spread」的結果
  * @property {(term: string) => boolean} [eligible] 哪些詞算進最佳（呼叫端之後會丟掉的詞不能收緊上限）
+ * @property {(term: string) => number} [termCost] 呼叫端之後另加在這個詞上的非負成本（構詞的詞根音節數）：最佳以加上它的總和計算
+ *   （呼叫端也以總和排名、取「最佳 ＋ spread」之內的）。剪枝比的是不含它的距離，它只會讓總和更大，所以仍然精確
  */
 
 /**
@@ -626,7 +628,10 @@ export class FuzzyIndex {
                 result.exit = exit
               }
               ch.results.push(result)
-              if (ch.cutoff && distance < ch.cutoff.best && (!ch.cutoff.eligible || ch.cutoff.eligible(result.term))) ch.cutoff.best = distance
+              if (ch.cutoff && (!ch.cutoff.eligible || ch.cutoff.eligible(result.term))) {
+                const total = ch.cutoff.termCost ? roundCost(distance + ch.cutoff.termCost(result.term)) : distance
+                if (total < ch.cutoff.best) ch.cutoff.best = total
+              }
             }
           }
         }

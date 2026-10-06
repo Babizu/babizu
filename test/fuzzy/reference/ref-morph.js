@@ -4,7 +4,8 @@
  * 完全依照 docs/bcdp.md 第 1 節的定義，直接列舉所有「分析」：
  *   前綴鏈 π ·（中綴或重疊 ω，或緊貼詞幹的環綴）· 詞根 t · 後綴鏈 σ
  * 每個分析的成本是步驟成本的和，加上查詢與整個底層字串 π·t·σ 的聯合對齊（ref-joint.js：
- * 規則可以跨越交界、詞首詞尾規則與構詞音變在交界適用、空白只能在詞幹內消耗）。
+ * 規則可以跨越交界、詞首詞尾規則與構詞音變在交界適用、空白只能在詞幹內消耗），再加上詞根依音節數的成本
+ * （rootSyllableCost；總成本上限比的是不含它的成本，lemmaSpread 比的是含它的成本，docs/bcdp.md 1.6 第 9 項）。
  * 中綴、重疊是查詢上的模板：在查詢上拿掉，交界固定在查詢的位置上（ref-joint 的 pinIn／pinOut）。
  * 不用交界狀態、不用詞綴 trie、不用詞圖、不剪枝、不合併；重疊模板也以正規表示式另外寫一份。
  *
@@ -28,9 +29,10 @@ const EPS = 1e-9
  * @param {any} input.spec createAnalyzer(...).spec（已正規化、已補預設值）
  * @param {number} input.maxDistance 總成本上限
  * @param {Map<string, string>} [input.why] 除錯用：記下每個詞根的最佳分析
+ * @param {Record<string, number>} [input.rootSyllableCost] 設定檔原本的寫法（音節數 → 成本；最大的鍵也套用到更多音節）
  * @returns {Map<string, number>} 詞根 → 最小成本（lemmaSpread 截斷後）
  */
-export function refMorph(ctx, { query, lexicon, spec, maxDistance, why }) {
+export function refMorph(ctx, { query, lexicon, spec, maxDistance, why, rootSyllableCost }) {
   const q = Array.from(query)
   const n = q.length
   /** @type {Map<string, number>} */
@@ -66,10 +68,19 @@ export function refMorph(ctx, { query, lexicon, spec, maxDistance, why }) {
    */
   const put = (t, cost, how) => {
     if (cost > maxDistance + EPS) return
-    if (cost < (best.get(t) ?? Infinity) - EPS) {
-      best.set(t, cost)
-      why?.set(t, `${how} = ${Math.round(cost * 1e9) / 1e9}`)
+    const total = cost + rootCostOf(t)
+    if (total < (best.get(t) ?? Infinity) - EPS) {
+      best.set(t, total)
+      why?.set(t, `${how} = ${Math.round(total * 1e9) / 1e9}`)
     }
+  }
+  /** 詞根依音節數的成本 @param {string} t */
+  function rootCostOf(t) {
+    if (!rootSyllableCost || !Object.keys(rootSyllableCost).length) return 0
+    const syllables = Array.from(t).filter((ch) => vowels.has(ch)).length
+    const keys = Object.keys(rootSyllableCost).map(Number)
+    const key = Math.min(syllables, Math.max(...keys))
+    return rootSyllableCost[String(key)] ?? 0
   }
 
   const terms = lexicon.filter((t) => t !== query && Array.from(t).length >= spec.minStem)

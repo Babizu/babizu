@@ -248,6 +248,7 @@
   "環綴": "Circumfix",
   "查看演算法運作方式 →": "See how the algorithm works →",
   "音變（整個詞一起比對）": "Sound changes (matched over the whole word)",
+  "詞根「{root}」的音節數": "Syllable count of the root “{root}”",
   "位置|前綴": "prefix",
   "詞幹": "stem",
   "位置|後綴": "suffix",

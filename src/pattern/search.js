@@ -556,7 +556,7 @@ export class PatternSearch {
       if (!morphSearch || !text.morphology) return { all: [], floor: Infinity }
       // 虛擬詞根的條件與建置時相同（詞庫中最好的詞根取自動派生圖這個詞的邊）；詞庫外的詞不會是別的詞的詞根
       const a = analyzeWord(key, index, morphSearch, false, this.engine.virtualRootSearch)
-      const lexical = a.parses.map((p) => parsedAnalysis(index.terms[p.root], false, p.analysis.cost, p.analysis.steps))
+      const lexical = a.parses.map((p) => parsedAnalysis(index.terms[p.root], false, p.analysis.cost, p.analysis.steps, morphSearch.rootCost(index.terms[p.root])))
       const virtual = a.virtual.map((v) => parsedAnalysis(v.stem, true, roundCost(v.cost), v.steps))
       out = { all: sortParses([...lexical, ...virtual]), floor: Math.min(a.best ?? Infinity, ...lexical.map((p) => p.cost)) }
       this._unlisted.set(key, out)

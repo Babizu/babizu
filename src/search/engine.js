@@ -117,11 +117,12 @@ export const FUZZINESS = Object.freeze({
  * @typedef {object} LemmaAnalysis
  * @property {string} stem 詞幹（詞庫中的寫法）
  * @property {Array<import('../fuzzy/morph-search.js').MorphStepHit>} steps 由外而內的構詞步驟
- * @property {number} cost 總成本：構詞步驟＋整個詞的音變（docs/bcdp.md 1.2）
+ * @property {number} cost 總成本：構詞步驟＋整個詞的音變＋詞根音節數的成本（docs/bcdp.md 1.2、1.6 第 9 項）
+ * @property {number} [rootCost] 最後一層的詞根依音節數的成本（rootSyllableCost；0 時省略）
  * @property {string} [variantOf] 自動派生以查詢的相近寫法當起點時，查詢本身
  * @property {number} [variantDistance] 查詢 → 起點的距離
  * @property {AlignmentNote[]} [variantNotes] 查詢 → 起點的對齊說明
- * @property {Array<{term: string, stem: string, steps: Array<import('../fuzzy/morph-search.js').MorphStepHit>, cost: number}>} [chain]
+ * @property {Array<{term: string, stem: string, steps: Array<import('../fuzzy/morph-search.js').MorphStepHit>, cost: number, rootCost?: number}>} [chain]
  *   自動派生經過其他詞時，由起點往下的每一層（不含最後一層，那一層就是 stem、steps）：
  *   查 sungut 找到 pausunguday，chain 是 [pusungut ＝ pu- ＋ sungut]，stem 是 pusungut
  * @property {MorphNote[] | null} [notes] 整個詞的音變說明（自動拆解只為前幾筆結果計算）
@@ -253,9 +254,9 @@ export class SearchEngine {
     /** @type {Set<string> | null} 構詞規格中的詞綴寫法（_isAffixEntry） */
     this._affixForms = null
     /** 自動派生圖（查詞根找自動派生形，見 derivations.js） */
-    this.derivations = derivations && this.morphSearch ? new DerivationGraph(derivations, this.index.terms) : null
+    this.derivations = derivations && this.morphSearch ? new DerivationGraph(derivations, this.index.terms, this.morphSearch.rootCost) : null
     /** @type {ParseChart | null} 拆解表（句型搜尋的構詞樣式用，見 parses.js） */
-    this.parses = parses && this.morphSearch ? new ParseChart(parses, this.index.terms) : null
+    this.parses = parses && this.morphSearch ? new ParseChart(parses, this.index.terms, this.morphSearch.rootCost) : null
     /** @type {PatternSearch | null} 句型搜尋（第一次用到時建立，見 babizu/pattern） */
     this._pattern = null
   }
@@ -299,7 +300,7 @@ export class SearchEngine {
    */
   attachParseChart(data) {
     if (!this.morphSearch) return
-    this.parses = new ParseChart(data, this.index.terms)
+    this.parses = new ParseChart(data, this.index.terms, this.morphSearch.rootCost)
     this._pattern?.reset()
   }
 
@@ -1062,14 +1063,20 @@ export class SearchEngine {
     const nodes = /** @type {DerivationGraph} */ (this.derivations).nodes
     const last = /** @type {(typeof r.path)[number]} */ (r.path.at(-1))
     /** @type {LemmaAnalysis} */
+    const graph = /** @type {DerivationGraph} */ (this.derivations)
+    const lastRootCost = graph.rootCostOf(last.root)
     const analysis = {
       stem: nodes[last.root],
       steps: last.analysis.steps,
       cost,
+      ...(lastRootCost > 0 ? { rootCost: lastRootCost } : {}),
       notes: /** @type {MorphNote[]} */ (last.analysis.notes),
       ...(r.path.length > 1
         ? {
-            chain: r.path.slice(0, -1).map((e) => ({ term: nodes[e.word], stem: nodes[e.root], steps: e.analysis.steps, cost: e.analysis.cost })),
+            chain: r.path.slice(0, -1).map((e) => {
+              const rc = graph.rootCostOf(e.root)
+              return { term: nodes[e.word], stem: nodes[e.root], steps: e.analysis.steps, cost: e.analysis.cost, ...(rc > 0 ? { rootCost: rc } : {}) }
+            }),
           }
         : {}),
     }
@@ -1141,7 +1148,7 @@ export class SearchEngine {
     const length = Array.from(key).length
     for (const m of lemma) {
       if (m.distance > lemmaBest + EPSILON || m.term.includes(' ') || Array.from(m.term).length >= length || !m.analysis) continue
-      if (soundOf({ cost: m.distance, steps: m.analysis.steps }) > SIBLING_MAX_SOUND + EPSILON) continue
+      if (soundOf({ cost: m.distance, steps: m.analysis.steps }, m.analysis.rootCost ?? 0) > SIBLING_MAX_SOUND + EPSILON) continue
       const id = this.index.dawg.lookup(m.term)
       if (id !== -1) lexicalSeeds.push({ id, distance: m.distance, term: m.term, split: { cost: m.distance, steps: m.analysis.steps, penalty: 0, lexical: true } })
     }
@@ -1244,7 +1251,7 @@ export class SearchEngine {
     const search = /** @type {NonNullable<typeof this.morphSearch>} */ (this.morphSearch)
     return search.finish(prepared, results, this._lemmaMax(key, level)).map((h) => {
       /** @type {LemmaAnalysis} */
-      const analysis = { stem: h.term, steps: h.steps, cost: h.distance }
+      const analysis = { stem: h.term, steps: h.steps, cost: h.distance, ...(h.rootCost ? { rootCost: h.rootCost } : {}) }
       this._lazyNotes.set(analysis, () => search.notesOf(prepared, h))
       return { term: h.term, payloads: h.payloads, distance: h.distance, matchType: /** @type {MatchType} */ ('lemma'), analysis }
     })

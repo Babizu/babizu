@@ -60,7 +60,9 @@ const soundCost = computed(() => notes.value.reduce((sum, n) => sum + n.cost, 0)
 /** @param {Array<{cost: number}>} steps */
 const stepCost = (steps) => steps.reduce((sum, s) => sum + s.cost, 0)
 /** 自動派生經過的上層（由起點往下；不含最後一層，那一層就是 stem、steps） */
-const chain = computed(() => /** @type {Array<{term: string, stem: string, steps: any[], cost: number}>} */ (props.analysis.chain ?? []))
+const chain = computed(() => /** @type {Array<{term: string, stem: string, steps: any[], cost: number, rootCost?: number}>} */ (props.analysis.chain ?? []))
+/** 詞根依音節數的成本（語言設定檔 rootSyllableCost）：不是音變 */
+const rootCost = computed(() => props.analysis.rootCost ?? 0)
 /** 這一層本身的成本：總成本扣掉起點的距離（相近寫法、自動同根的拆解與代價）與上面幾層 */
 const ownCost = computed(
   () =>
@@ -74,8 +76,8 @@ const hasSoundChange = computed(
   () =>
     notes.value.length > 0 ||
     (props.analysis.variantDistance ?? 0) > 0 ||
-    ownCost.value > stepCost(props.analysis.steps) + 1e-9 ||
-    chain.value.some((c) => c.cost > stepCost(c.steps) + 1e-9),
+    ownCost.value > stepCost(props.analysis.steps) + rootCost.value + 1e-9 ||
+    chain.value.some((c) => c.cost > stepCost(c.steps) + (c.rootCost ?? 0) + 1e-9),
 )
 /** 起點（詞庫中的詞根）：有上層時是最上面那一層的詞根 */
 const root = computed(() => chain.value[0]?.stem ?? props.analysis.stem)
@@ -184,6 +186,10 @@ const partLabel = (part, k) => (part.type === 'prefix' ? `${part.form}-` : part.
               <span class="text-muted-foreground">{{ morphStepLabel(part.type) }}<template v-if="morphGloss(part.gloss)"> · {{ morphGloss(part.gloss) }}</template></span>
             </li>
           </ul>
+        </li>
+        <li v-if="rootCost > 0" class="flex items-baseline justify-between gap-3">
+          <span class="text-muted-foreground text-xs">{{ t('詞根「{root}」的音節數', { root: analysis.stem }) }}</span>
+          <span class="text-muted-foreground font-mono text-xs tabular-nums">+{{ formatDistance(rootCost) }}</span>
         </li>
         <li v-if="notes.length" class="flex items-baseline justify-between gap-3">
           <span class="flex min-w-0 flex-col gap-0.5">
