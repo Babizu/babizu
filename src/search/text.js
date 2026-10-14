@@ -7,16 +7,7 @@
  * - 與語言無關的函式（釋義斷詞、中文正規化、語言偵測）直接匯出。
  */
 
-import {
-  CostModel,
-  createAnalyzer,
-  createMetricFromProfile,
-  createNormalizer,
-  normalizerOptionsFromProfile,
-  notationCharsOf,
-  RuleSet,
-} from '#bcdp'
-import { alternationRules } from '#bcdp/morphology.js'
+import { createAlternationMetricFromProfile, createAnalyzer, createMetricFromProfile, createNormalizer, normalizerOptionsFromProfile, notationCharsOf } from '#bcdp'
 
 /**
  * 斷詞用的分隔字元：空白與中英文標點（保留撇號 ' 作為喉塞音）。
@@ -100,7 +91,7 @@ export function createTextTools(profile) {
   /** 搜尋用的距離函式（見下方匯出的 createSearchMetric），與這裡的 searchKey 共用正規化 */
   const createSearchMetric = () => searchMetric(profile, searchKey)
   /** 只有構詞音變的距離函式（見下方匯出的 createAlternationMetric），與這裡的 searchKey 共用正規化 */
-  const createAlternationMetric = () => alternationMetric(profile, searchKey)
+  const createAlternationMetric = () => createAlternationMetricFromProfile(profile, { normalize: searchKey })
 
   const morphology = profile.morphology ? createAnalyzer(profile.morphology, searchKey) : null
 
@@ -133,32 +124,15 @@ function searchMetric(profile, searchKey, { rules, costs } = {}) {
   return createMetricFromProfile(profile, { normalize: searchKey, ...(rules ? { rules } : {}), ...(costs ? { costs } : {}) })
 }
 
-/** 不可能的編輯成本：遠超過任何搜尋的上限（CostModel 只收有限數） */
-const UNREACHABLE = 1e6
-
 /**
  * 只有構詞音變的距離函式：構詞規格的交界規則（構詞音變），沒有方言規則，一般的替換、刪除、插入都不可能。
- *
- * 虛擬詞根（詞根不在詞庫中）的分析用它：這樣的分析中，不在詞庫裡的部分不能再加模糊——詞幹是查詢中原樣的一段，
- * 詞綴也必須原樣出現，只容許構詞音變（docs/bcdp.md 10.5）。正規化與詞邊界與 createSearchMetric 相同。
+ * 虛擬詞根的分析用它（BCDP 套件的 virtual-roots.js）。正規化與詞邊界與 createSearchMetric 相同。
  * @param {import('#bcdp/profile.js').LanguageProfile} profile
  * @returns {import('#bcdp/distance.js').WeightedEditDistance}
  */
 export function createAlternationMetric(profile) {
   const searchKey = createNormalizer({ ...normalizerOptionsFromProfile(profile), removeChars: notationCharsOf(profile) })
-  return alternationMetric(profile, searchKey)
-}
-
-/**
- * @param {import('#bcdp/profile.js').LanguageProfile} profile
- * @param {(text: string) => string} searchKey
- */
-function alternationMetric(profile, searchKey) {
-  return createMetricFromProfile(profile, {
-    normalize: searchKey,
-    rules: RuleSet.fromTable(alternationRules(profile.morphology)),
-    costs: new CostModel({ substitute: UNREACHABLE, delete: UNREACHABLE, insert: UNREACHABLE }),
-  })
+  return createAlternationMetricFromProfile(profile, { normalize: searchKey })
 }
 
 /** 是否含漢字 @param {string} text */

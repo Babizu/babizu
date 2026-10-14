@@ -27,8 +27,9 @@ export { NORMALIZATIONS, resolveNormalization } from './score-normalization.js'
 export { Dawg, DAWG_FORMAT, DAWG_VERSION } from './dawg.js'
 export { FuzzyIndex, INDEX_FORMAT, INDEX_VERSION } from './fuzzy-index.js'
 export { createAffixStripper } from './expanders.js'
-export { createAnalyzer, GLIDE_PATTERNS, REDUPLICATION_PATTERNS, validateMorphology } from './morphology.js'
+export { alternationRules, ALTERNATION_CATEGORY, circumfixStep, createAnalyzer, GLIDE_PATTERNS, REDUPLICATION_PATTERNS, rootCostOf, validateMorphology } from './morphology.js'
 export { createMorphSearch } from './morph-search.js'
+export { DERIVATION_MAX_COST, isVirtualRootShape, lexicalEdgeCost, soundOf, virtualRootCost, virtualRoots } from './virtual-roots.js'
 export { expandGrammar, isGrammarSpec, validateGrammar } from './grammar.js'
 export { roundCost, EPSILON } from './dp.js'
 export {
@@ -40,4 +41,5 @@ export {
   notationCharsOf,
   createMetricFromProfile,
   createRulesFromProfile,
+  createAlternationMetricFromProfile,
 } from './profile.js'

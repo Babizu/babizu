@@ -11,11 +11,11 @@
  * - 沒有循環：邊一定由較短的詞根指向較長的詞，所以依長度由短到長鬆弛一遍就是最短路徑，走訪一定停止。
  * - 只取最好的詞根、允許遞移：比收下所有詞根雜訊少得多，召回幾乎一樣（研究紀錄的評估）。
  *
- * ## 虛擬詞根：詞庫中沒有的共同詞根
+ * ## 虛擬詞根：詞庫中沒有的共同詞根（演算法在 BCDP 套件的 virtual-roots.js）
  * 詞根不在詞庫中時，在詞圖上走訪找不到它：查 binubuer（b<in>ubuer）找不到 mabubuer（ma-bubuer），
  * 因為兩者共同的詞根 bubuer 不是任何記錄的詞形。所以同一個 BCDP 也求「詞庫外的詞根」（`virtualRoots`，docs/bcdp.md 10.5）：
- * - **字面**：詞根是詞中原樣的一段（morph-search.js 的 openStems，成本直接由交界列讀出），分析中的詞綴也必須原樣出現，
- *   只容許構詞音變（只有構詞音變的距離函式，text.js 的 createAlternationMetric）。不在詞庫裡的部分不能再加模糊，
+ * - **字面**：詞根是詞中原樣的一段（BCDP 的 openStems，成本直接由交界列讀出），分析中的詞綴也必須原樣出現，
+ *   只容許構詞音變（只有構詞音變的距離函式，createAlternationMetric）。不在詞庫裡的部分不能再加模糊，
  *   否則會發明詞根（abuk → a- ＋ rabuk）與同根；
  * - **長度懲罰**（借用最小描述長度的直覺，但每個詞各自計算、拼寫成本不分攤，不是標準的 MDL；docs/bcdp.md 10.5）：
  *   詞庫中的詞根只要指出是哪一個，詞庫外的要逐字寫出來，所以分析的分數是
@@ -47,16 +47,15 @@
  * - `edges`：三個一組，詞 w（與上一條邊的差；邊依 w 排序）、詞根 r、分析編號 a
  */
 
-import { rootCostOf } from '#bcdp/morphology.js'
-import { createMorphSearch, EPSILON, FuzzyIndex, roundCost } from '#bcdp'
+import { createMorphSearch, DERIVATION_MAX_COST, EPSILON, FuzzyIndex, isVirtualRootShape, lexicalEdgeCost, roundCost, soundOf, virtualRootCost, virtualRoots } from '#bcdp'
 import { decodePosting } from './format.js'
 import { createTextTools } from './text.js'
 
+// 虛擬詞根的演算法在 BCDP 套件（packages/bcdp/src/virtual-roots.js）；這裡轉匯出，babizu/search 的 API 不變
+export { DERIVATION_MAX_COST, isVirtualRootShape, lexicalEdgeCost, soundOf, virtualRootCost, virtualRoots } from '#bcdp'
+
 /** derivations.json 的格式版本（2：加上虛擬詞根） */
 export const DERIVATIONS_FORMAT_VERSION = 2
-
-/** 一條邊的分析成本上限（與自動拆解方向的上限 LEMMA_MAX_DISTANCE 相同） */
-export const DERIVATION_MAX_COST = 1
 
 /**
  * 詞庫詞根的自動同根：兩條邊（查詢 → 詞根、詞根 → 同根詞）的音變上限（成本扣掉步驟成本）。
@@ -64,13 +63,6 @@ export const DERIVATION_MAX_COST = 1
  * 兩條巧合的邊接起來更不可靠（短的詞根 lat 收了 alasay、balas 這類巧合的子詞）
  */
 export const SIBLING_MAX_SOUND = 0.2
-
-/**
- * 一個分析的音變（成本扣掉步驟成本與詞根音節數的成本）
- * @param {{cost: number, steps: Array<{cost: number}>}} a
- * @param {number} [rootCost] 詞根依音節數的成本（rootSyllableCost；不是音變）
- */
-export const soundOf = (a, rootCost = 0) => Math.max(0, roundCost(a.cost - a.steps.reduce((x, s) => x + s.cost, 0) - rootCost))
 
 /**
  * 詞庫中的詞是不是辭典的詞條或標為詞根（rootSyllableCost 的 entry）：有任何一種不是例句中的詞（token）的 posting——
@@ -91,36 +83,12 @@ export function entryTest(index) {
 }
 
 /**
- * 經過虛擬詞根的代價（長度懲罰）：詞庫中沒有這個詞根，要逐字寫出來，每個字元 `virtualRootLengthCost`；
- * 語言設定檔有 rootSyllableCost 時另加音節數的成本（虛擬詞根不是辭典的詞條，用 other）。
- * 每個用到它的詞各付一次（不在共用的詞之間分攤）。
- * 建置時虛擬詞根的分析加上它仍比詞庫中最好的詞根便宜才成立；查詢時經過虛擬詞根的命中加上一次
- * （查詢 → 虛擬詞根 → 詞，只算一次）。
- * @param {string} stem
- * @param {{virtualRootLengthCost: number, rootSyllableCost: {entry: readonly number[], other: readonly number[]}, vowels: string}} spec 構詞規格（分析器的 spec）
- */
-export function virtualRootCost(stem, spec) {
-  return roundCost(spec.virtualRootLengthCost * Array.from(stem).length + rootCostOf(spec)(stem, false))
-}
-
-/**
  * 虛擬詞根用的構詞搜尋：只有構詞音變的距離函式上的 BCDP（詞綴必須原樣出現；詞根由 openStems 給）。
  * @param {import('./text.js').TextTools} text
  * @param {FuzzyIndex} index 詞庫（虛擬詞根不能是詞庫中的詞）
  */
 export function createVirtualRootSearch(text, index) {
   return createMorphSearch({ analyzer: /** @type {import('#bcdp/morphology.js').Analyzer} */ (text.morphology), metric: text.createAlternationMetric(), index, isEntry: entryTest(index) })
-}
-
-/**
- * 詞幹的形狀像不像一個詞根（虛擬詞根的條件）：比 minStem 長，而且至少兩個元音。
- * 巴宰語 karaw、kuraw、paraw 都拆得出 raw，但那只是巧合相同的一個音節。
- * @param {string} stem
- * @param {{minStem: number, vowels: string}} spec 構詞規格（分析器的 spec；vowels 是元音字母）
- */
-export function isVirtualRootShape(stem, spec) {
-  const chars = Array.from(stem)
-  return chars.length > spec.minStem && chars.filter((c) => spec.vowels.includes(c)).length >= 2
 }
 
 /**
@@ -303,68 +271,6 @@ export function analyzeWord(w, index, search, withNotes = true, open = null) {
   }
   const virtual = open ? virtualRoots(w, open, index, lexicalEdgeCost(w, hits)) : []
   return { edges, parses, best, virtual }
-}
-
-/**
- * 詞 w 在詞庫中最好的詞根的成本，也就是自動派生圖上 w 的詞庫詞根邊的成本：BCDP 最好的命中（含詞根不比詞短的）
- * 若有詞根比詞短的與它同分，就是那個成本；否則 w 沒有詞庫詞根的邊，是 Infinity（例如最好的命中是同樣長的 'a'ata，
- * 而不是 ma'ata 的詞根）。虛擬詞根要比它便宜才成立（virtualRoots 的 lexiconBest）。
- * 建置（analyzeWord）與查詢（engine 的自動同根）共用這個定義，詞庫中的詞在兩端拆出的虛擬詞根才會相同
- * （研究紀錄 U.24：查詢端原本取所有命中的最低成本，同樣長的相近詞把虛擬詞根擋掉）。
- * @param {string} w
- * @param {Array<{term: string, distance: number}>} hits BCDP 的全部命中（finish 的結果）
- */
-export function lexicalEdgeCost(w, hits) {
-  const length = Array.from(w).length
-  let best = Infinity
-  let edge = Infinity
-  for (const h of hits) {
-    best = Math.min(best, h.distance)
-    if (Array.from(h.term).length < length) edge = Math.min(edge, h.distance)
-  }
-  return edge <= best + EPSILON ? roundCost(edge) : Infinity
-}
-
-/**
- * 一個詞的虛擬詞根（條件見檔頭）：同一個 BCDP 的字面開放詞幹（open.openStems），詞綴必須原樣出現（open 只有構詞音變），
- * 詞根比詞短、不在詞庫中、形狀像詞根；分數（成本 ＋ virtualRootCost）比詞庫中最好的詞根（lexiconBest）便宜的，
- * 取分數最低的（同分全收）。成本是步驟成本加上構詞音變（BCDP 的成本），不含 virtualRootCost。
- * @param {string} w
- * @param {ReturnType<typeof createMorphSearch>} open 虛擬詞根用的構詞搜尋（createVirtualRootSearch）
- * @param {FuzzyIndex} index 詞庫
- * @param {number} lexiconBest BCDP 在詞庫中最好的詞根的成本（沒有時 Infinity）
- * @returns {Array<{stem: string, cost: number, steps: import('#bcdp/morph-search.js').MorphStepHit[], notes: DerivationAnalysis['notes']}>}
- *   notes 是構詞音變的說明（成本 ＝ 步驟成本 ＋ notes 的成本）
- */
-export function virtualRoots(w, open, index, lexiconBest) {
-  if (w.includes(' ')) return []
-  const spec = open.spec
-  const length = Array.from(w).length
-  // 詞根至少 minStem ＋ 1 個字元（形狀），所以成本超過這個上限的分析分數不可能比詞庫的好
-  const bound = Math.min(DERIVATION_MAX_COST, lexiconBest - spec.virtualRootLengthCost * (spec.minStem + 1))
-  if (bound < 0) return []
-  const prepared = open.prepare(w, DERIVATION_MAX_COST)
-  if (!prepared) return []
-  const keep = (/** @type {string} */ v) => Array.from(v).length < length && index.dawg.lookup(v) === -1 && isVirtualRootShape(v, spec)
-  const results = open.openStems(prepared, { keep, bound })
-  /** @type {Map<string, number>} 詞幹 → 分數 */
-  const score = new Map()
-  for (const list of results) for (const r of list) score.set(r.term, Math.min(score.get(r.term) ?? Infinity, r.distance + virtualRootCost(r.term, spec)))
-  const ok = [...score].filter(([, x]) => x < lexiconBest - EPSILON)
-  if (ok.length === 0) return []
-  const min = Math.min(...ok.map(([, x]) => x))
-  const chosen = new Set(ok.filter(([, x]) => x <= min + EPSILON).map(([v]) => v))
-  // 說明：每個選到的詞根取成本最低的分析，同分依 finish 的規則選一種拆法
-  return open
-    .finish(
-      prepared,
-      results.map((list) => list.filter((r) => chosen.has(r.term))),
-      DERIVATION_MAX_COST,
-    )
-    .filter((h) => chosen.has(h.term))
-    // finish 的成本含詞根音節數的成本（虛擬詞根用 other）；它算在 virtualRootCost 裡，分析的成本只有步驟與音變
-    // （自動派生圖、拆解表的 rootCostOf 對虛擬詞根是 0，音變＝成本 − 步驟）
-    .map((h) => ({ stem: h.term, cost: roundCost(h.distance - (h.rootCost ?? 0)), steps: h.steps, notes: open.notesOf(prepared, h) }))
 }
 
 /**

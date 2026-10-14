@@ -6,7 +6,7 @@
 import { describe, expect, it } from 'vitest'
 import en from '../../../locales/en.json' with { type: 'json' }
 import { createAnalyzer, createMorphSearch, FuzzyIndex, REDUPLICATION_PATTERNS, RuleSet, WeightedEditDistance } from '#bcdp'
-import { alternationRules } from '#bcdp/morphology.js'
+import { alternationRules } from '#bcdp'
 import { bcdpStateAt, bcdpSteps, dawgStateAt, dawgSteps, DISTANCE_PARAMS, dpStateAt, dpSteps } from './steps.js'
 import { sourceText } from '@babizu/site/messages.js'
 import { createRandom, pick, randomString } from '../../../packages/bcdp/test/helpers.js'

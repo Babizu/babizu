@@ -146,3 +146,23 @@ export function createRulesFromProfile(profile) {
   // 構詞音變也是規則（只在詞素交界適用），與方言規則放在同一個 RuleSet：構詞搜尋與普通搜尋共用一次詞圖走訪
   return RuleSet.fromTable(profile.rules ?? []).addTable(alternationRules(profile.morphology))
 }
+
+/** 不可能的編輯成本：遠超過任何搜尋的上限（CostModel 只收有限數） */
+const UNREACHABLE = 1e6
+
+/**
+ * 只有構詞音變的距離函式：構詞規格的交界規則（構詞音變），沒有方言規則，一般的替換、刪除、插入都不可能。
+ *
+ * 虛擬詞根（詞根不在詞庫中）的分析用它：這樣的分析中，不在詞庫裡的部分不能再加模糊——詞幹是查詢中原樣的一段，
+ * 詞綴也必須原樣出現，只容許構詞音變（docs/bcdp.md 10.5，virtual-roots.js）。
+ * @param {LanguageProfile} profile
+ * @param {{normalize?: (text: string) => string}} [options] 正規化（省略時依設定檔的 normalizer）；要與搜尋用的距離函式相同
+ * @returns {WeightedEditDistance}
+ */
+export function createAlternationMetricFromProfile(profile, { normalize } = {}) {
+  return createMetricFromProfile(profile, {
+    ...(normalize ? { normalize } : {}),
+    rules: RuleSet.fromTable(alternationRules(profile.morphology)),
+    costs: new CostModel({ substitute: UNREACHABLE, delete: UNREACHABLE, insert: UNREACHABLE }),
+  })
+}
