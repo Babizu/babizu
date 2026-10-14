@@ -13,7 +13,8 @@
  * - proofRef：對應的文件段落（選填），例如 `bcdp.md#4-交界狀態`
  */
 
-import { msg } from '../site/messages.js'
+// 相對路徑而不是 @babizu 別名：golden 快照與研究工具在 Vite 之外（純 Node）也載入這個模組
+import { msg } from '../../../src/site/messages.js'
 
 /** 動態規劃表：每一格的值由哪一種操作得到 */
 export const CELL_NOTES = {
@@ -81,7 +82,7 @@ const BCDP_DOC = {
 
 /**
  * 動態規劃表的步驟：依計算順序每格一步（起點格除外，它沒有候選轉移），最後一步標出最佳路徑。
- * @param {import('./distance.js').Explanation} e
+ * @param {import('#bcdp/distance.js').Explanation} e
  * @returns {Step[]}
  */
 export function dpSteps(e) {
@@ -121,7 +122,7 @@ export function dpSteps(e) {
 
 /**
  * 第 index 步（0 起算）時已經算好的格數；index ≥ 最後一步時整張表都算好，並顯示最佳路徑。
- * @param {import('./distance.js').Explanation} e
+ * @param {import('#bcdp/distance.js').Explanation} e
  * @param {Step[]} steps
  * @param {number} index
  */

@@ -23,7 +23,7 @@ import { readFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { marked } from 'marked'
-import { validateProfile } from '../fuzzy/index.js'
+import { validateProfile } from '#bcdp'
 import { PatternError } from '../pattern/errors.js'
 import { parsePattern } from '../pattern/parser.js'
 import { extractMessages } from './extract-messages.js'
@@ -178,7 +178,7 @@ export async function loadSiteConfig(siteDir) {
 
   // 語言設定檔
   const languageFile = join(root, input.language ?? 'language.json')
-  /** @type {import('../fuzzy/profile.js').LanguageProfile | null} */
+  /** @type {import('#bcdp/profile.js').LanguageProfile | null} */
   let profile = null
   if (!existsSync(languageFile)) errors.push(`找不到語言設定檔 ${languageFile}`)
   else {

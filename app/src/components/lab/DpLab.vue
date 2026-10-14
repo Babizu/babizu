@@ -3,7 +3,7 @@
  * 「動態規劃表」分頁：輸入兩個詞，逐格顯示 D(i, j)，點選任一格看它的候選轉移，並顯示最佳對齊。
  * 播放由 src/fuzzy/steps.js 的 dpSteps 決定（每格一步，最後一步標出最佳路徑）。
  */
-import { dpStateAt, dpSteps } from '@babizu/fuzzy/steps.js'
+import { dpStateAt, dpSteps } from '@babizu/../app/src/lab/steps.js'
 import { useEventListener } from '@vueuse/core'
 import { computed, ref, watch } from 'vue'
 import AlignmentStrip from '@/components/lab/AlignmentStrip.vue'

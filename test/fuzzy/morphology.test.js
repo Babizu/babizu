@@ -5,8 +5,8 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { createAnalyzer, REDUPLICATION_PATTERNS, validateMorphology, validateProfile } from '../../src/fuzzy/index.js'
-import { rootCostOf } from '../../src/fuzzy/morphology.js'
+import { createAnalyzer, REDUPLICATION_PATTERNS, validateMorphology, validateProfile } from '#bcdp'
+import { rootCostOf } from '#bcdp/morphology.js'
 import { openAnalyzer } from './open-stems.js'
 
 const SPEC = {

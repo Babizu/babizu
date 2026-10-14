@@ -27,7 +27,7 @@
 import { CostModel } from './costs.js'
 import { WeightedEditDistance } from './distance.js'
 import { alternationRules, validateMorphology } from './morphology.js'
-import { createNormalizer, DEFAULT_CHAR_MAP } from './normalize.js'
+import { createNormalizer, DEFAULT_CHAR_MAP } from './text-normalize.js'
 import { RuleSet } from './rules.js'
 
 export const PROFILE_FORMAT = 'babizu-language-profile'
@@ -104,7 +104,7 @@ export function assertProfile(profile) {
 /**
  * 設定檔 → `createNormalizer` 的選項。
  * @param {LanguageProfile} profile
- * @returns {import('./normalize.js').NormalizerOptions}
+ * @returns {import('./text-normalize.js').NormalizerOptions}
  */
 export function normalizerOptionsFromProfile(profile) {
   const n = profile.normalizer ?? {}

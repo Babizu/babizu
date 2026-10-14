@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { roundCost, RuleSet, WeightedEditDistance } from '../../src/fuzzy/index.js'
-import { createPazehKaxabuMetric } from '../fixtures/pazeh.js'
+import { roundCost, RuleSet, WeightedEditDistance } from '../src/index.js'
+import { createPazehKaxabuMetric } from './fixtures/pazeh.js'
 import { createRandom, pick, randomString } from './helpers.js'
 
 describe('explain', () => {

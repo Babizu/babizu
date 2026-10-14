@@ -136,7 +136,7 @@ export function refJoint(ctx, x, u, options = {}) {
 
 /**
  * 參考實作需要的規則與成本（規則以 RuleSet 展開，不經過 CompiledRules），規則帶 junction 欄位。
- * @param {import('../../../src/fuzzy/distance.js').WeightedEditDistance} metric
+ * @param {import('../../src/distance.js').WeightedEditDistance} metric
  */
 export function refJointContext(metric) {
   const rules = metric.ruleSet.expand(metric.normalize).map((r) => ({

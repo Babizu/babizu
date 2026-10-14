@@ -6,7 +6,7 @@
 import { describe, expect, it } from 'vitest'
 import { createCitation, createRecord, createSense } from '../../src/schema/index.js'
 import { SearchEngine, buildDerivationGraph, buildSearchIndex } from '../../src/search/index.js'
-import { PAZEH_PROFILE } from '../fixtures/pazeh.js'
+import { PAZEH_PROFILE } from '../../packages/bcdp/test/fixtures/pazeh.js'
 
 const MORPHOLOGY = {
   cost: 0.3,

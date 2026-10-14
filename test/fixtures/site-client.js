@@ -4,7 +4,7 @@
  */
 
 import en from '../../locales/en.json' with { type: 'json' }
-import PAZEH_PROFILE from './pazeh-kaxabu.profile.json' with { type: 'json' }
+import PAZEH_PROFILE from '../../packages/bcdp/test/fixtures/pazeh-kaxabu.profile.json' with { type: 'json' }
 
 export default {
   id: 'test-site',

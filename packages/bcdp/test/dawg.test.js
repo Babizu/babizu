@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { Dawg, FuzzyIndex } from '../../src/fuzzy/index.js'
-import { createPazehKaxabuMetric } from '../fixtures/pazeh.js'
+import { Dawg, FuzzyIndex } from '../src/index.js'
+import { createPazehKaxabuMetric } from './fixtures/pazeh.js'
 import { createRandom, randomString } from './helpers.js'
 
 describe('Dawg', () => {

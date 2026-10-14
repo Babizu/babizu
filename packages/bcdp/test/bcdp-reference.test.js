@@ -8,8 +8,8 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { createAnalyzer, createMorphSearch, EPSILON, FuzzyIndex, REDUPLICATION_PATTERNS, roundCost, RuleSet, WeightedEditDistance } from '../../src/fuzzy/index.js'
-import { alternationRules } from '../../src/fuzzy/morphology.js'
+import { createAnalyzer, createMorphSearch, EPSILON, FuzzyIndex, REDUPLICATION_PATTERNS, roundCost, RuleSet, WeightedEditDistance } from '../src/index.js'
+import { alternationRules } from '../src/morphology.js'
 import { createRandom, pick, randomString } from './helpers.js'
 import { metricFor, randomDerived, randomMorphSetup } from './random-morph.js'
 import { refContext, refDistance } from './reference/ref-distance.js'
@@ -554,7 +554,7 @@ describe('多通道走訪（searchChannels）', () => {
     const specs = Array.from({ length: channels }, () => {
       const query = randomString(random, alphabet, 1, 6)
       const n = Array.from(query).length
-      /** @type {import('../../src/fuzzy/fuzzy-index.js').SearchOptions} */
+      /** @type {import('../src/fuzzy-index.js').SearchOptions} */
       const options = { maxDistance: pick(random, [0.3, 0.8, 1.5]) }
       if (random() < 0.5) {
         options.start = Array.from({ length: n + 1 }, (_, i) => (i === 0 || random() < 0.3 ? pick(random, [0, 0.1, 0.3]) : Infinity))

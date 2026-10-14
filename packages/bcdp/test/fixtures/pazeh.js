@@ -9,14 +9,14 @@
  */
 
 import { readFileSync } from 'node:fs'
-import { createMetricFromProfile, createRulesFromProfile } from '../../src/fuzzy/index.js'
+import { createMetricFromProfile, createRulesFromProfile } from '../../src/index.js'
 
-/** @type {import('../../src/fuzzy/profile.js').LanguageProfile} */
+/** @type {import('../../src/profile.js').LanguageProfile} */
 export const PAZEH_PROFILE = JSON.parse(readFileSync(new URL('./pazeh-kaxabu.profile.json', import.meta.url), 'utf8'))
 
 export const PAZEH_KAXABU_RULES = PAZEH_PROFILE.rules ?? []
 
-/** @param {Partial<import('../../src/fuzzy/distance.js').MetricOptions>} [overrides] */
+/** @param {Partial<import('../../src/distance.js').MetricOptions>} [overrides] */
 export const createPazehKaxabuMetric = (overrides) => createMetricFromProfile(PAZEH_PROFILE, overrides)
 
 export const createPazehKaxabuRules = () => createRulesFromProfile(PAZEH_PROFILE)

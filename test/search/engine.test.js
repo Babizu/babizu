@@ -10,7 +10,7 @@ import {
   encodePosting,
   glossTokens,
 } from '../../src/search/index.js'
-import { PAZEH_PROFILE } from '../fixtures/pazeh.js'
+import { PAZEH_PROFILE } from '../../packages/bcdp/test/fixtures/pazeh.js'
 
 /** 測試用的語言變體：愛蘭是巴宰的地方變體 */
 const VARIETIES = [

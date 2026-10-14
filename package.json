@@ -13,8 +13,8 @@
   },
   "exports": {
     ".": "./src/index.js",
-    "./fuzzy": "./src/fuzzy/index.js",
-    "./fst": "./src/fst/index.js",
+    "./fuzzy": "./packages/bcdp/src/index.js",
+    "./fst": "./packages/bcdp/src/fst/index.js",
     "./schema": "./src/schema/index.js",
     "./schema/constants": "./src/schema/constants.js",
     "./schema/types": "./src/schema/types.js",
@@ -29,13 +29,19 @@
     "./site": "./src/site/index.js",
     "./package.json": "./package.json"
   },
+  "imports": {
+    "#bcdp": "./packages/bcdp/src/index.js",
+    "#bcdp/*": "./packages/bcdp/src/*"
+  },
   "files": [
     "bin",
     "src",
     "app",
     "locales",
     "docs",
-    "README.md"
+    "README.md",
+    "packages/bcdp/src",
+    "packages/bcdp/package.json"
   ],
   "engines": {
     "node": ">=20.19"
@@ -46,7 +52,7 @@
     "example:dev": "node bin/babizu.js dev examples/minimal",
     "example:build": "node bin/babizu.js build examples/minimal",
     "example:preview": "node bin/babizu.js preview examples/minimal",
-    "bench": "node test/fuzzy/bench.js",
+    "bench": "node packages/bcdp/test/bench.js",
     "format": "prettier --write \"src/**/*.{js,json}\" \"app/src/**/*.{js,vue,css}\" \"test/**/*.js\" \"docs/**/*.md\" \"locales/*.json\"",
     "zoo": "node test/zoo/run.mjs"
   },

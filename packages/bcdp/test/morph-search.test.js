@@ -8,9 +8,9 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { createAnalyzer, createMorphSearch, EPSILON, FuzzyIndex, RuleSet, WeightedEditDistance } from '../../src/fuzzy/index.js'
-import { toForwardEnd } from '../../src/fuzzy/junction.js'
-import { alternationRules } from '../../src/fuzzy/morphology.js'
+import { createAnalyzer, createMorphSearch, EPSILON, FuzzyIndex, RuleSet, WeightedEditDistance } from '../src/index.js'
+import { toForwardEnd } from '../src/junction.js'
+import { alternationRules } from '../src/morphology.js'
 import { createRandom, pick, randomString } from './helpers.js'
 import { refJoint, refJointContext } from './reference/ref-joint.js'
 

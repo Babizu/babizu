@@ -4,14 +4,14 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import en from '../../locales/en.json' with { type: 'json' }
-import { createAnalyzer, createMorphSearch, FuzzyIndex, REDUPLICATION_PATTERNS, RuleSet, WeightedEditDistance } from '../../src/fuzzy/index.js'
-import { alternationRules } from '../../src/fuzzy/morphology.js'
-import { bcdpStateAt, bcdpSteps, dawgStateAt, dawgSteps, DISTANCE_PARAMS, dpStateAt, dpSteps } from '../../src/fuzzy/steps.js'
-import { sourceText } from '../../src/site/messages.js'
-import { createRandom, pick, randomString } from './helpers.js'
+import en from '../../../locales/en.json' with { type: 'json' }
+import { createAnalyzer, createMorphSearch, FuzzyIndex, REDUPLICATION_PATTERNS, RuleSet, WeightedEditDistance } from '#bcdp'
+import { alternationRules } from '#bcdp/morphology.js'
+import { bcdpStateAt, bcdpSteps, dawgStateAt, dawgSteps, DISTANCE_PARAMS, dpStateAt, dpSteps } from './steps.js'
+import { sourceText } from '@babizu/site/messages.js'
+import { createRandom, pick, randomString } from '../../../packages/bcdp/test/helpers.js'
 
-/** 說明（中文原文）有英文譯文，文字中的 {參數} 都由步驟提供 @param {import('../../src/fuzzy/steps.js').Step} step */
+/** 說明（中文原文）有英文譯文，文字中的 {參數} 都由步驟提供 @param {import('./steps.js').Step} step */
 function expectNote(step) {
   for (const text of [sourceText(step.note.key), /** @type {Record<string, string>} */ (en)[step.note.key]]) {
     expect(typeof text, step.note.key).toBe('string')

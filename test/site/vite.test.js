@@ -32,7 +32,8 @@ describe('createViteConfig', () => {
     const packages = new Set()
     for (const file of files(join(FRAMEWORK_ROOT, 'app/src'))) {
       for (const [, spec] of readFileSync(file, 'utf8').matchAll(/from '([^'.\/][^']*)'/g)) {
-        if (spec.startsWith('@/') || spec.startsWith('@babizu/') || spec.startsWith('virtual:')) continue
+        // @/、@babizu/ 是框架自己的程式；#bcdp 是框架內的套件（package.json 的 imports），都不是前端的依賴
+        if (spec.startsWith('@/') || spec.startsWith('@babizu/') || spec.startsWith('#') || spec.startsWith('virtual:')) continue
         packages.add(spec.startsWith('@') ? spec.split('/').slice(0, 2).join('/') : spec.split('/')[0])
       }
     }

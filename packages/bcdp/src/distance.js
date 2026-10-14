@@ -5,15 +5,15 @@
 import { CostModel } from './costs.js'
 import { advanceCrossing, CompiledRules, createCrossing, EDGE_JUNCTION, EDGE_NONE, EDGE_WORD, fillRow, jumpBound, PathMatcher, prepareColumn, roundCost, EPSILON } from './dp.js'
 import { requireString } from './guards.js'
-import { createNormalizer } from './normalize.js'
-import { resolveNormalization } from './normalization.js'
+import { createNormalizer } from './text-normalize.js'
+import { resolveNormalization } from './score-normalization.js'
 import { RuleSet } from './rules.js'
 
 /**
  * @typedef {object} MetricOptions
  * @property {CostModel | import('./costs.js').CostOptions} [costs] 基本成本（預設替換 1.5／刪除 1.0／插入 0.8／空白 0.1）
  * @property {RuleSet | import('./rules.js').RuleTableRow[] | import('./rules.js').RuleGroup[]} [rules] 語音對應規則
- * @property {((text: string) => string) | import('./normalize.js').NormalizerOptions} [normalize] 正規化函式或其選項
+ * @property {((text: string) => string) | import('./text-normalize.js').NormalizerOptions} [normalize] 正規化函式或其選項
  * @property {string[]} [boundaries=[' ']] 詞邊界字元，決定 initial／final 規則的「詞」範圍
  */
 
@@ -174,7 +174,7 @@ export class WeightedEditDistance {
    * 正規化後的距離。
    * @param {string} query
    * @param {string} candidate
-   * @param {string | Partial<import('./normalization.js').NormalizationStrategy>} [strategy='max']
+   * @param {string | Partial<import('./score-normalization.js').NormalizationStrategy>} [strategy='max']
    */
   normalizedDistance(query, candidate, strategy = 'max') {
     const norm = resolveNormalization(strategy)

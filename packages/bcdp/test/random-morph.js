@@ -2,8 +2,8 @@
  * @file 隨機的平面清單構詞規格、詞庫與衍生形（BCDP 與窮舉參考實作的比對測試用）。
  */
 
-import { createAnalyzer, REDUPLICATION_PATTERNS, RuleSet, WeightedEditDistance } from '../../src/fuzzy/index.js'
-import { alternationRules } from '../../src/fuzzy/morphology.js'
+import { createAnalyzer, REDUPLICATION_PATTERNS, RuleSet, WeightedEditDistance } from '../src/index.js'
+import { alternationRules } from '../src/morphology.js'
 import { createRandom, pick, randomString } from './helpers.js'
 
 /** 空白的增刪只算 0.1（與網站相同），讓含空白的查詢有機會對到詞根 */

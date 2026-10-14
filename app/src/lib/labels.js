@@ -7,7 +7,7 @@
 
 import site from 'virtual:babizu/site'
 import { QUALITY_STATUSES } from '@babizu/schema/constants.js'
-import { circumfixLabel } from '@babizu/fuzzy/steps.js'
+import { circumfixLabel } from '@babizu/../app/src/lab/steps.js'
 import { locale, msg, t, tr } from '@/i18n.js'
 
 export { QUALITY_STATUSES }

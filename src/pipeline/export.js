@@ -31,7 +31,7 @@ import { Report } from './report.js'
  * @property {string} root 原始資料的根目錄（input 的相對基準）
  * @property {string} outDir 資料集輸出目錄
  * @property {string[]} [dialects] 允許的語言變體代碼（通常取自站台設定），用於驗證
- * @property {import('../fuzzy/profile.js').LanguageProfile | null} [profile] 語言設定檔，傳給轉接器使用
+ * @property {import('#bcdp/profile.js').LanguageProfile | null} [profile] 語言設定檔，傳給轉接器使用
  * @property {string[] | null} [only] 只匯出這些來源（開發用；其餘來源會從輸出中消失）
  * @property {boolean} [skipScans] 略過掃描圖轉檔
  * @property {string} [reportFile] 建置報告的輸出路徑（JSON）

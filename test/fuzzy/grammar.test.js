@@ -9,12 +9,12 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { validateMorphology } from '../../src/fuzzy/morphology.js'
-import { evaluate, expandGrammar } from '../../src/fuzzy/grammar.js'
+import { validateMorphology } from '#bcdp/morphology.js'
+import { evaluate, expandGrammar } from '#bcdp/grammar.js'
 import { createCitation, createRecord, createSense } from '../../src/schema/index.js'
 import { SearchEngine, buildDerivationGraph, buildSearchIndex } from '../../src/search/index.js'
-import { PAZEH_PROFILE } from '../fixtures/pazeh.js'
-import { createRandom, pick } from './helpers.js'
+import { PAZEH_PROFILE } from '../../packages/bcdp/test/fixtures/pazeh.js'
+import { createRandom, pick } from '../../packages/bcdp/test/helpers.js'
 import { openAnalyzer } from './open-stems.js'
 
 /** 仿照巴宰語：主事焦點 m-／mu-／mi-／me-、非完成貌 <a>、完成貌 <in>、非實現 -ay（docs/morph-grammar.md） */

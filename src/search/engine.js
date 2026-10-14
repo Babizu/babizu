@@ -15,7 +15,7 @@
  * 除了詞圖之外，其餘索引都在第一次用到時才建立（lazy）。
  */
 
-import { createMorphSearch, EPSILON, FuzzyIndex, roundCost } from '../fuzzy/index.js'
+import { createMorphSearch, EPSILON, FuzzyIndex, roundCost } from '#bcdp'
 import { atomsOf } from '../pattern/ast.js'
 import { PatternError } from '../pattern/errors.js'
 import { parsePattern } from '../pattern/parser.js'
@@ -116,17 +116,17 @@ export const FUZZINESS = Object.freeze({
 /**
  * @typedef {object} LemmaAnalysis
  * @property {string} stem 詞幹（詞庫中的寫法）
- * @property {Array<import('../fuzzy/morph-search.js').MorphStepHit>} steps 由外而內的構詞步驟
+ * @property {Array<import('#bcdp/morph-search.js').MorphStepHit>} steps 由外而內的構詞步驟
  * @property {number} cost 總成本：構詞步驟＋整個詞的音變＋詞根音節數的成本（docs/bcdp.md 1.2、1.6 第 9 項）
  * @property {number} [rootCost] 最後一層的詞根依音節數的成本（rootSyllableCost；0 時省略）
  * @property {string} [variantOf] 自動派生以查詢的相近寫法當起點時，查詢本身
  * @property {number} [variantDistance] 查詢 → 起點的距離
  * @property {AlignmentNote[]} [variantNotes] 查詢 → 起點的對齊說明
- * @property {Array<{term: string, stem: string, steps: Array<import('../fuzzy/morph-search.js').MorphStepHit>, cost: number, rootCost?: number}>} [chain]
+ * @property {Array<{term: string, stem: string, steps: Array<import('#bcdp/morph-search.js').MorphStepHit>, cost: number, rootCost?: number}>} [chain]
  *   自動派生經過其他詞時，由起點往下的每一層（不含最後一層，那一層就是 stem、steps）：
  *   查 sungut 找到 pausunguday，chain 是 [pusungut ＝ pu- ＋ sungut]，stem 是 pusungut
  * @property {MorphNote[] | null} [notes] 整個詞的音變說明（自動拆解只為前幾筆結果計算）
- * @property {{root: string, steps: Array<import('../fuzzy/morph-search.js').MorphStepHit>, cost: number, penalty: number, lexical: boolean, rootCost?: number}} [sibling]
+ * @property {{root: string, steps: Array<import('#bcdp/morph-search.js').MorphStepHit>, cost: number, penalty: number, lexical: boolean, rootCost?: number}} [sibling]
  *   自動同根（matchType 'sibling'）：查詢拆出的詞根 root 與拆法；stem、steps、chain 是這個詞往上到 root 的路。
  *   lexical：root 是詞庫中的詞（查 kali'angidan：root 是 angit，這個詞 'inangidan ＝ ‹in› ＋ 'angit ＋ -an，penalty 是 0）；
  *   否則是虛擬詞根（查 binubuer：root 是 bubuer（b<in>ubuer），這個詞 mabubuer ＝ ma- ＋ bubuer；
@@ -213,8 +213,8 @@ export class SearchEngine {
   /**
    * @param {{
    *   docs: import('./format.js').SearchDocs,
-   *   lexicon: import('../fuzzy/fuzzy-index.js').SerializedIndex,
-   *   profile: import('../fuzzy/profile.js').LanguageProfile,
+   *   lexicon: import('#bcdp/fuzzy-index.js').SerializedIndex,
+   *   profile: import('#bcdp/profile.js').LanguageProfile,
    *   derivations?: import('./derivations.js').DerivationData | null,
    *   parses?: import('./derivations.js').DerivationData | null,
    * }} data `profile` 必須是建索引時用的同一份語言設定檔（建置輸出的 search/language.json）；
@@ -1248,7 +1248,7 @@ export class SearchEngine {
    * @param {string} key
    * @param {typeof FUZZINESS[Fuzziness]} level
    * @param {ReturnType<NonNullable<SearchEngine['morphSearch']>['prepare']>} prepared
-   * @param {import('../fuzzy/fuzzy-index.js').SearchResult[][]} results 各通道的結果
+   * @param {import('#bcdp/fuzzy-index.js').SearchResult[][]} results 各通道的結果
    * @returns {TermMatch[]}
    * @private
    */

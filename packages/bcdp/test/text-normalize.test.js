@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { createNormalizer, normalizerOptionsFromProfile } from '../../src/fuzzy/index.js'
-import { PAZEH_PROFILE } from '../fixtures/pazeh.js'
+import { createNormalizer, normalizerOptionsFromProfile } from '../src/index.js'
+import { PAZEH_PROFILE } from './fixtures/pazeh.js'
 import { createRandom, randomString } from './helpers.js'
 
 describe('createNormalizer', () => {

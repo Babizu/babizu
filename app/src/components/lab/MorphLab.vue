@@ -6,7 +6,7 @@
  * 播放由 src/fuzzy/steps.js 的 bcdpSteps 決定。四個面板依計算順序排列：
  * ① 詞綴各層與交界狀態 → ② 通道與詞圖走訪 → ③ 整個詞的對齊 → ④ 分析。
  */
-import { MISS_NOTES, bcdpStateAt, bcdpSteps } from '@babizu/fuzzy/steps.js'
+import { MISS_NOTES, bcdpStateAt, bcdpSteps } from '@babizu/../app/src/lab/steps.js'
 import { useDebounceFn, useEventListener } from '@vueuse/core'
 import { computed, ref, shallowRef, watch } from 'vue'
 import AlignmentStrip from '@/components/lab/AlignmentStrip.vue'

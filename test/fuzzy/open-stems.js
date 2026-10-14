@@ -4,7 +4,7 @@
  * 只容許構詞音變；不需要詞庫。
  */
 
-import { FuzzyIndex } from '../../src/fuzzy/index.js'
+import { FuzzyIndex } from '#bcdp'
 import { createVirtualRootSearch } from '../../src/search/derivations.js'
 import { createTextTools } from '../../src/search/text.js'
 
@@ -15,7 +15,7 @@ import { createTextTools } from '../../src/search/text.js'
 export function openAnalyzer(morphology, profile = {}) {
   const text = createTextTools(/** @type {any} */ ({ format: 'babizu-language-profile', version: 1, ...profile, morphology: { lemmaSpread: 10, ...morphology } }))
   const search = createVirtualRootSearch(text, new FuzzyIndex(text.createSearchMetric()))
-  const analyzer = /** @type {import('../../src/fuzzy/morphology.js').Analyzer} */ (text.morphology)
+  const analyzer = /** @type {import('#bcdp/morphology.js').Analyzer} */ (text.morphology)
   /**
    * 詞的所有開放詞幹（每個詞幹取成本最低的分析；依成本排序，同分依詞幹）
    * @param {string} w

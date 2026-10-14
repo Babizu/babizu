@@ -29,7 +29,7 @@
 
 /**
  * 由 WeightedEditDistance 取出參考實作需要的資料（規則以 RuleSet 展開，不經過 CompiledRules）。
- * @param {import('../../../src/fuzzy/distance.js').WeightedEditDistance} metric
+ * @param {import('../../src/distance.js').WeightedEditDistance} metric
  */
 export function refContext(metric) {
   /** @type {RefRule[]} */

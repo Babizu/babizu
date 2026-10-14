@@ -47,8 +47,8 @@
  * - `edges`：三個一組，詞 w（與上一條邊的差；邊依 w 排序）、詞根 r、分析編號 a
  */
 
-import { rootCostOf } from '../fuzzy/morphology.js'
-import { createMorphSearch, EPSILON, FuzzyIndex, roundCost } from '../fuzzy/index.js'
+import { rootCostOf } from '#bcdp/morphology.js'
+import { createMorphSearch, EPSILON, FuzzyIndex, roundCost } from '#bcdp'
 import { decodePosting } from './format.js'
 import { createTextTools } from './text.js'
 
@@ -109,7 +109,7 @@ export function virtualRootCost(stem, spec) {
  * @param {FuzzyIndex} index 詞庫（虛擬詞根不能是詞庫中的詞）
  */
 export function createVirtualRootSearch(text, index) {
-  return createMorphSearch({ analyzer: /** @type {import('../fuzzy/morphology.js').Analyzer} */ (text.morphology), metric: text.createAlternationMetric(), index, isEntry: entryTest(index) })
+  return createMorphSearch({ analyzer: /** @type {import('#bcdp/morphology.js').Analyzer} */ (text.morphology), metric: text.createAlternationMetric(), index, isEntry: entryTest(index) })
 }
 
 /**
@@ -126,7 +126,7 @@ export function isVirtualRootShape(stem, spec) {
 /**
  * @typedef {object} DerivationAnalysis 一條邊的分析：w 由 r 加上這些步驟而來
  * @property {number} cost 步驟成本＋整個詞的音變
- * @property {import('../fuzzy/morph-search.js').MorphStepHit[]} steps 由外而內
+ * @property {import('#bcdp/morph-search.js').MorphStepHit[]} steps 由外而內
  * @property {Array<{op: string, source: string, target: string, cost: number, category: string | null, where: string}>} notes
  */
 
@@ -135,7 +135,7 @@ export function isVirtualRootShape(stem, spec) {
  * @property {number} version
  * @property {number} count
  * @property {string[]} virtual 虛擬詞根
- * @property {import('../fuzzy/morph-search.js').MorphStepHit[]} steps
+ * @property {import('#bcdp/morph-search.js').MorphStepHit[]} steps
  * @property {Array<[number, number[], Array<[string, string, string, number, string | null, string]>]>} analyses
  * @property {number[]} edges
  */
@@ -151,7 +151,7 @@ export function isVirtualRootShape(stem, spec) {
  *    src/site/derivations.js；各塊的結果依詞編號接起來，與一次算完相同）。`analyzeAll` 另外收下拆解表與虛擬詞根的候選；
  * 2. `virtual(edges, candidates)`：拿第 1 階段全部的邊，過濾虛擬詞根的候選（詞本身是別的詞的詞根時不往上拆，
  *    要知道全部的邊）。沒有候選時這裡現算（單執行緒）。
- * @param {{lexicon: import('../fuzzy/fuzzy-index.js').SerializedIndex, profile: import('../fuzzy/profile.js').LanguageProfile}} input
+ * @param {{lexicon: import('#bcdp/fuzzy-index.js').SerializedIndex, profile: import('#bcdp/profile.js').LanguageProfile}} input
  */
 export function createDerivationAnalyzer({ lexicon, profile }) {
   const text = createTextTools(profile)
@@ -333,7 +333,7 @@ export function lexicalEdgeCost(w, hits) {
  * @param {ReturnType<typeof createMorphSearch>} open 虛擬詞根用的構詞搜尋（createVirtualRootSearch）
  * @param {FuzzyIndex} index 詞庫
  * @param {number} lexiconBest BCDP 在詞庫中最好的詞根的成本（沒有時 Infinity）
- * @returns {Array<{stem: string, cost: number, steps: import('../fuzzy/morph-search.js').MorphStepHit[], notes: DerivationAnalysis['notes']}>}
+ * @returns {Array<{stem: string, cost: number, steps: import('#bcdp/morph-search.js').MorphStepHit[], notes: DerivationAnalysis['notes']}>}
  *   notes 是構詞音變的說明（成本 ＝ 步驟成本 ＋ notes 的成本）
  */
 export function virtualRoots(w, open, index, lexiconBest) {
@@ -422,7 +422,7 @@ export function encodeEdges(edges, count, version) {
 
 /**
  * 建立自動派生圖（單執行緒；測試與評估工具用，網站建置另有平行版本）。
- * @param {{lexicon: import('../fuzzy/fuzzy-index.js').SerializedIndex, profile: import('../fuzzy/profile.js').LanguageProfile}} input
+ * @param {{lexicon: import('#bcdp/fuzzy-index.js').SerializedIndex, profile: import('#bcdp/profile.js').LanguageProfile}} input
  * @returns {DerivationData}
  */
 export function buildDerivationGraph({ lexicon, profile }) {

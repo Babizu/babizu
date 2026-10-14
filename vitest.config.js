@@ -1,7 +1,7 @@
 /**
  * @file 框架的單元測試設定。
  *
- * - node：演算法、schema、搜尋引擎、資料管線、站台設定（test/）
+ * - node：BCDP 套件（packages/bcdp/test/）、schema、搜尋引擎、資料管線、站台設定（test/）
  * - app：前端元件與工具（app/src/**\/*.test.js），用 jsdom；
  *   `virtual:babizu/site` 換成測試用的站台設定（test/fixtures/site-client.js）
  */
@@ -16,7 +16,9 @@ export default defineConfig({
   test: {
     projects: [
       {
-        test: { name: 'node', include: ['test/**/*.test.js'], environment: 'node' },
+        // golden 測試也比對實驗室的步驟（app/src/lab/steps.js），所以 node 端也要有 app 的別名
+        resolve: { alias: { '@babizu': here('./src'), '@': here('./app/src') } },
+        test: { name: 'node', include: ['test/**/*.test.js', 'packages/bcdp/test/**/*.test.js'], environment: 'node' },
       },
       {
         plugins: [vue()],

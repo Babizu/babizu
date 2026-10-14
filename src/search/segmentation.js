@@ -109,7 +109,7 @@ export function parseSegmentation(segmentation, searchKey) {
  * @property {Array<GoldAffix & {condition: string | null, status: 'match' | 'miss' | 'unknown'}>} affixes
  *   拆解中的詞綴：比到、漏，或規格沒有（不比）
  * @property {string[]} extras 誤配：搜尋比到、拆解沒有的條件
- * @property {Array<{root: string, steps: import('../fuzzy/morph-search.js').MorphStepHit[], cost: number, virtual: boolean}>} parses
+ * @property {Array<{root: string, steps: import('#bcdp/morph-search.js').MorphStepHit[], cost: number, virtual: boolean}>} parses
  *   這個詞依模糊程度取到的拆法（搜尋比對的就是這些；最多 3 種）
  */
 

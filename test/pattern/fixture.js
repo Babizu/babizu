@@ -5,7 +5,7 @@
 
 import { createCitation, createRecord, createSense } from '../../src/schema/index.js'
 import { buildDerivationGraph, buildParseChart, buildSearchIndex, SearchEngine } from '../../src/search/index.js'
-import { PAZEH_PROFILE } from '../fixtures/pazeh.js'
+import { PAZEH_PROFILE } from '../../packages/bcdp/test/fixtures/pazeh.js'
 
 /** 構詞文法：主事焦點的同位詞素組 {m, mu, mi, me}、中綴 <in> <a>、組合規則（docs/morph-grammar.md） */
 export const PATTERN_GRAMMAR = {

@@ -10,7 +10,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { EPSILON, FuzzyIndex, RuleSet, WeightedEditDistance } from '../../src/fuzzy/index.js'
+import { EPSILON, FuzzyIndex, RuleSet, WeightedEditDistance } from '../src/index.js'
 import { createRandom, pick, randomString } from './helpers.js'
 
 const alphabet = ['a', 'b', 'r', 'l', 'n', 'e']

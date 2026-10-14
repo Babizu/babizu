@@ -5,9 +5,9 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { EPSILON, FuzzyIndex, RuleSet, WeightedEditDistance, createAnalyzer } from '../../src/fuzzy/index.js'
-import { compose, editTransducer, fstLemmaSearch, shortestDistance, stringAcceptor, surfaceLexicon } from '../../src/fst/index.js'
-import { createRandom, pick, randomString } from '../fuzzy/helpers.js'
+import { EPSILON, FuzzyIndex, RuleSet, WeightedEditDistance, createAnalyzer } from '../src/index.js'
+import { compose, editTransducer, fstLemmaSearch, shortestDistance, stringAcceptor, surfaceLexicon } from '../src/fst/index.js'
+import { createRandom, pick, randomString } from './helpers.js'
 
 describe('WFST 基本運算', () => {
   it('字串接受器 ∘ 編輯轉錄器 ∘ 字串接受器 = 加權編輯距離', () => {

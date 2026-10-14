@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { RuleSet } from '../../src/fuzzy/index.js'
-import { createPazehKaxabuRules, PAZEH_KAXABU_RULES } from '../fixtures/pazeh.js'
+import { RuleSet } from '../src/index.js'
+import { createPazehKaxabuRules, PAZEH_KAXABU_RULES } from './fixtures/pazeh.js'
 
 describe('RuleSet', () => {
   it('fromTable 接受陣列列與物件列', () => {

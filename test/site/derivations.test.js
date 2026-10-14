@@ -9,7 +9,7 @@ import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
 import { buildDerivationGraph, buildParseChart, buildSearchIndex } from '../../src/search/index.js'
 import { buildDerivations } from '../../src/site/derivations.js'
-import { PAZEH_PROFILE } from '../fixtures/pazeh.js'
+import { PAZEH_PROFILE } from '../../packages/bcdp/test/fixtures/pazeh.js'
 import { morphCorpus, PAZEH_LIKE_GRAMMAR } from '../search/morph-corpus.js'
 
 const cacheDir = mkdtempSync(join(tmpdir(), 'babizu-derivations-'))

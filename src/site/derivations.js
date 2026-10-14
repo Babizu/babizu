@@ -21,8 +21,8 @@ const CHUNK = 250
 
 /**
  * @param {{
- *   lexicon: import('../fuzzy/fuzzy-index.js').SerializedIndex,
- *   profile: import('../fuzzy/profile.js').LanguageProfile,
+ *   lexicon: import('#bcdp/fuzzy-index.js').SerializedIndex,
+ *   profile: import('#bcdp/profile.js').LanguageProfile,
  *   count: number,
  *   cacheDir: string,
  * }} input
@@ -56,7 +56,7 @@ export async function buildDerivations({ lexicon, profile, count, cacheDir }) {
 
 /** 分析結果取決於哪些原始碼（快取鍵的一部分） */
 async function analysisSources() {
-  const fuzzy = new URL('../fuzzy/', import.meta.url)
+  const fuzzy = new URL('../../packages/bcdp/src/', import.meta.url)
   const names = (await readdir(fuzzy)).filter((n) => n.endsWith('.js')).sort()
   return [
     ...names.map((n) => new URL(n, fuzzy)),
@@ -67,8 +67,8 @@ async function analysisSources() {
 }
 
 /**
- * @param {import('../fuzzy/fuzzy-index.js').SerializedIndex} lexicon
- * @param {import('../fuzzy/profile.js').LanguageProfile} profile
+ * @param {import('#bcdp/fuzzy-index.js').SerializedIndex} lexicon
+ * @param {import('#bcdp/profile.js').LanguageProfile} profile
  * @param {number} count
  */
 async function analyzeParallel(lexicon, profile, count) {

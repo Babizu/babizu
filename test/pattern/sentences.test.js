@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'vitest'
 import { MAX_READINGS, segmentText } from '../../src/pattern/sentences.js'
 import { createTextTools } from '../../src/search/text.js'
-import { PAZEH_PROFILE } from '../fixtures/pazeh.js'
+import { PAZEH_PROFILE } from '../../packages/bcdp/test/fixtures/pazeh.js'
 
 const { searchKey, splitWords } = createTextTools(PAZEH_PROFILE)
 /** 每一句的各種讀法，寫成「詞 詞 詞」 @param {string} text */

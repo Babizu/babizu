@@ -15,8 +15,8 @@ import {
   normalizerOptionsFromProfile,
   notationCharsOf,
   RuleSet,
-} from '../fuzzy/index.js'
-import { alternationRules } from '../fuzzy/morphology.js'
+} from '#bcdp'
+import { alternationRules } from '#bcdp/morphology.js'
 
 /**
  * 斷詞用的分隔字元：空白與中英文標點（保留撇號 ' 作為喉塞音）。
@@ -34,15 +34,15 @@ const MORPHEME_SEPARATORS = /[-=~<>]+/u
  * @property {(text: string) => string} searchKey 族語搜尋鍵
  * @property {(text: string) => string[]} tokenize 族語斷詞（含構詞部分）
  * @property {(text: string) => string[]} splitWords 只切整詞
- * @property {() => import('../fuzzy/distance.js').WeightedEditDistance} createSearchMetric
- * @property {() => import('../fuzzy/distance.js').WeightedEditDistance} createAlternationMetric
+ * @property {() => import('#bcdp/distance.js').WeightedEditDistance} createSearchMetric
+ * @property {() => import('#bcdp/distance.js').WeightedEditDistance} createAlternationMetric
  *   只有構詞音變的距離函式（虛擬詞根的分析用，見下方匯出的同名函式）
- * @property {import('../fuzzy/morphology.js').Analyzer | null} morphology 構詞規格；語言設定檔沒有 `morphology` 時為 null
+ * @property {import('#bcdp/morphology.js').Analyzer | null} morphology 構詞規格；語言設定檔沒有 `morphology` 時為 null
  */
 
 /**
  * 依語言設定檔建立文字工具。
- * @param {import('../fuzzy/profile.js').LanguageProfile} profile
+ * @param {import('#bcdp/profile.js').LanguageProfile} profile
  * @returns {TextTools}
  *
  * @example
@@ -113,11 +113,11 @@ export function createTextTools(profile) {
  * 建置、搜尋引擎與演算法實驗室都用這個函式建立距離函式，三者算出的距離才會一致。
  * 實驗室可以換掉規則或成本（使用者編輯過的），其餘（正規化、詞邊界）仍與搜尋相同。
  *
- * @param {import('../fuzzy/profile.js').LanguageProfile} profile
+ * @param {import('#bcdp/profile.js').LanguageProfile} profile
  * @param {object} [options]
- * @param {import('../fuzzy/rules.js').RuleSet} [options.rules] 取代設定檔的規則
- * @param {import('../fuzzy/costs.js').CostOptions} [options.costs] 取代設定檔的成本
- * @returns {import('../fuzzy/distance.js').WeightedEditDistance}
+ * @param {import('#bcdp/rules.js').RuleSet} [options.rules] 取代設定檔的規則
+ * @param {import('#bcdp/costs.js').CostOptions} [options.costs] 取代設定檔的成本
+ * @returns {import('#bcdp/distance.js').WeightedEditDistance}
  */
 export function createSearchMetric(profile, options = {}) {
   const searchKey = createNormalizer({ ...normalizerOptionsFromProfile(profile), removeChars: notationCharsOf(profile) })
@@ -125,9 +125,9 @@ export function createSearchMetric(profile, options = {}) {
 }
 
 /**
- * @param {import('../fuzzy/profile.js').LanguageProfile} profile
+ * @param {import('#bcdp/profile.js').LanguageProfile} profile
  * @param {(text: string) => string} searchKey
- * @param {{rules?: import('../fuzzy/rules.js').RuleSet, costs?: import('../fuzzy/costs.js').CostOptions}} [options]
+ * @param {{rules?: import('#bcdp/rules.js').RuleSet, costs?: import('#bcdp/costs.js').CostOptions}} [options]
  */
 function searchMetric(profile, searchKey, { rules, costs } = {}) {
   return createMetricFromProfile(profile, { normalize: searchKey, ...(rules ? { rules } : {}), ...(costs ? { costs } : {}) })
@@ -141,8 +141,8 @@ const UNREACHABLE = 1e6
  *
  * 虛擬詞根（詞根不在詞庫中）的分析用它：這樣的分析中，不在詞庫裡的部分不能再加模糊——詞幹是查詢中原樣的一段，
  * 詞綴也必須原樣出現，只容許構詞音變（docs/bcdp.md 10.5）。正規化與詞邊界與 createSearchMetric 相同。
- * @param {import('../fuzzy/profile.js').LanguageProfile} profile
- * @returns {import('../fuzzy/distance.js').WeightedEditDistance}
+ * @param {import('#bcdp/profile.js').LanguageProfile} profile
+ * @returns {import('#bcdp/distance.js').WeightedEditDistance}
  */
 export function createAlternationMetric(profile) {
   const searchKey = createNormalizer({ ...normalizerOptionsFromProfile(profile), removeChars: notationCharsOf(profile) })
@@ -150,7 +150,7 @@ export function createAlternationMetric(profile) {
 }
 
 /**
- * @param {import('../fuzzy/profile.js').LanguageProfile} profile
+ * @param {import('#bcdp/profile.js').LanguageProfile} profile
  * @param {(text: string) => string} searchKey
  */
 function alternationMetric(profile, searchKey) {

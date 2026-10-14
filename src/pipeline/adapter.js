@@ -18,7 +18,7 @@
  * @property {string} root 專案根目錄（絕對路徑）
  * @property {string} input 此來源的輸入路徑（絕對路徑，由資料生產端的來源登錄表設定）
  * @property {import('./report.js').Report} report 警告與錯誤收集器
- * @property {import('../fuzzy/profile.js').LanguageProfile | null} profile 站台的語言設定檔
+ * @property {import('#bcdp/profile.js').LanguageProfile | null} profile 站台的語言設定檔
  *   （轉接器需要比對拼寫時用，例如以加權編輯距離核對兩份資料；沒有提供時為 null）
  */
 

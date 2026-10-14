@@ -3,7 +3,7 @@
  * 目前這一步的說明（一句話）。距離參數以 formatDistance 格式化（null 表示 ∞）。
  * 播放中不讓螢幕閱讀器逐步朗讀（aria-live 關閉），停下來時才念出目前這一步。
  */
-import { DISTANCE_PARAMS } from '@babizu/fuzzy/steps.js'
+import { DISTANCE_PARAMS } from '@babizu/../app/src/lab/steps.js'
 import { computed } from 'vue'
 import { t } from '@/i18n.js'
 import { formatDistance } from '@/lib/labels.js'

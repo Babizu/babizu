@@ -8,8 +8,8 @@
  *
  * 逐步播放：每個走訪的節點一步（src/fuzzy/steps.js 的 dawgSteps），依深度優先的走訪順序。
  */
-import { FuzzyIndex } from '@babizu/fuzzy/index.js'
-import { dawgStateAt, dawgSteps } from '@babizu/fuzzy/steps.js'
+import { FuzzyIndex } from '#bcdp'
+import { dawgStateAt, dawgSteps } from '@babizu/../app/src/lab/steps.js'
 import { useEventListener } from '@vueuse/core'
 import { computed, ref } from 'vue'
 import PlaybackControls from '@/components/lab/PlaybackControls.vue'

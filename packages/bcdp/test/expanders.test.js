@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createAffixStripper } from '../../src/fuzzy/index.js'
+import { createAffixStripper } from '../src/index.js'
 
 describe('createAffixStripper（實驗性）', () => {
   const expand = createAffixStripper({

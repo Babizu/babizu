@@ -1,0 +1,12 @@
+{
+  "name": "@babizu/bcdp",
+  "version": "0.11.0",
+  "description": "跨方言加權模糊搜尋與構詞搜尋 BCDP（邊界耦合 DP）：加權編輯距離、DAWG 詞圖搜尋、構詞規格、虛擬詞根；零依賴",
+  "type": "module",
+  "license": "MIT",
+  "private": true,
+  "exports": {
+    ".": "./src/index.js",
+    "./fst": "./src/fst/index.js"
+  }
+}

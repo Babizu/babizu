@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { WeightedEditDistance, RuleSet } from '../../src/fuzzy/index.js'
-import { createPazehKaxabuMetric } from '../fixtures/pazeh.js'
+import { WeightedEditDistance, RuleSet } from '../src/index.js'
+import { createPazehKaxabuMetric } from './fixtures/pazeh.js'
 
 describe('基本成本（無規則）', () => {
   const metric = new WeightedEditDistance()

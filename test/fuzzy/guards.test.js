@@ -4,9 +4,9 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { createAnalyzer, createMorphSearch, FuzzyIndex } from '../../src/fuzzy/index.js'
+import { createAnalyzer, createMorphSearch, FuzzyIndex } from '#bcdp'
 import { buildSearchIndex, SearchEngine } from '../../src/search/index.js'
-import { createPazehKaxabuMetric, PAZEH_PROFILE } from '../fixtures/pazeh.js'
+import { createPazehKaxabuMetric, PAZEH_PROFILE } from '../../packages/bcdp/test/fixtures/pazeh.js'
 import { createCitation, createRecord, createSense } from '../../src/schema/index.js'
 
 const metric = createPazehKaxabuMetric()

@@ -6,11 +6,11 @@
 import { describe, expect, it } from 'vitest'
 import { createCitation, createGroup, createRecord, createSense } from '../../src/schema/index.js'
 import { buildDerivationGraph, buildSearchIndex, createDerivationAnalyzer, DerivationGraph, isVirtualRootShape, SearchEngine, virtualRootCost } from '../../src/search/index.js'
-import { createAnalyzer } from '../../src/fuzzy/index.js'
+import { createAnalyzer } from '#bcdp'
 import { entryTest } from '../../src/search/derivations.js'
 import { mergeEdges } from '../../src/search/derivations.js'
 import { compareHits, compareOccurrences, mergeMorphMatch, replacesRecordHit, siblingTier } from '../../src/search/scoring.js'
-import { PAZEH_PROFILE } from '../fixtures/pazeh.js'
+import { PAZEH_PROFILE } from '../../packages/bcdp/test/fixtures/pazeh.js'
 
 const MORPHOLOGY = {
   cost: 0.3,

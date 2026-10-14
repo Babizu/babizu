@@ -20,7 +20,7 @@ import { compose, EPS, shortestDistance, stringAcceptor } from './wfst.js'
 
 /**
  * 方言規則與編輯成本 → 加權轉錄器 E。
- * @param {import('../fuzzy/distance.js').WeightedEditDistance} metric
+ * @param {import('../distance.js').WeightedEditDistance} metric
  * @param {Iterable<string>} alphabet 標準拼寫可能出現的所有字元（詞庫與詞綴的字元）
  * @returns {import('./wfst.js').Wfst}
  */
@@ -126,9 +126,9 @@ function buildTrie(affixes) {
  * 表面詞形接受器 S：前綴鏈 · 詞幹 · 後綴鏈（輸入＝輸出），權重為構詞步驟的成本。
  *
  * @param {object} options
- * @param {import('../fuzzy/dawg.js').Dawg} options.dawg 詞幹的詞圖
+ * @param {import('../dawg.js').Dawg} options.dawg 詞幹的詞圖
  * @param {(base: number) => boolean} [options.accept] 詞幹（依詞圖名次）是否可用，例如只收詞條身分的詞
- * @param {import('../fuzzy/morphology.js').Analyzer['spec']} options.spec 已正規化的構詞規格
+ * @param {import('../morphology.js').Analyzer['spec']} options.spec 已正規化的構詞規格
  * @param {boolean} [options.requireStep=true] 至少要有一個構詞步驟（沒有步驟的是普通模糊命中）
  * @returns {import('./wfst.js').Wfst}
  */

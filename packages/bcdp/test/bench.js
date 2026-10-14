@@ -5,8 +5,8 @@
  */
 
 import { performance } from 'node:perf_hooks'
-import { FuzzyIndex } from '../../src/fuzzy/index.js'
-import { createPazehKaxabuMetric } from '../fixtures/pazeh.js'
+import { FuzzyIndex } from '../src/index.js'
+import { createPazehKaxabuMetric } from './fixtures/pazeh.js'
 
 /** 可重現的亂數 */
 function createRandom(seed) {

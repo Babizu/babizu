@@ -117,7 +117,7 @@ export function selectParses(parses, fuzziness, floor = Infinity) {
 
 /**
  * 依構詞規格建立解析與比對的函式。
- * @param {import('../fuzzy/morphology.js').Analyzer['spec']} spec 分析器的規格（構詞文法已展開）
+ * @param {import('#bcdp/morphology.js').Analyzer['spec']} spec 分析器的規格（構詞文法已展開）
  * @param {(text: string) => string} searchKey
  * @param {(a: string, b: string) => number} distance 語言設定檔的距離函式（方言寫法的詞綴用）
  * @param {(key: string) => boolean} [isRoot] 是不是詞根（詞庫中的詞或虛擬詞根）：兩段都可以當詞根時（`tau-en`，
@@ -136,7 +136,7 @@ export function createPatternMorphology(spec, searchKey, distance, isRoot = () =
     if (!node) nodes.set(key, (node = { type, forms: new Set() }))
     node.forms.add(form)
   }
-  /** @type {Array<{type: AffixType, form: string, parts: import('../fuzzy/grammar.js').Part[] | undefined}>} 規格中的各個寫法 */
+  /** @type {Array<{type: AffixType, form: string, parts: import('#bcdp/grammar.js').Part[] | undefined}>} 規格中的各個寫法 */
   const entries = [
     ...spec.prefixes.map((a) => ({ type: /** @type {AffixType} */ ('prefix'), form: a.form, parts: a.parts })),
     ...spec.suffixes.map((a) => ({ type: /** @type {AffixType} */ ('suffix'), form: a.form, parts: a.parts })),
@@ -188,7 +188,7 @@ export function createPatternMorphology(spec, searchKey, distance, isRoot = () =
   // 2. 組合的整體寫法（mina、pina、minu、min…）→ 它的詞素（不含後綴：後綴在詞根的另一側）
   /** @type {Map<string, Array<Array<{type: AffixType, form: string}>>>} (類型, 寫法) → 各種組合 */
   const surfaces = new Map()
-  /** @param {AffixType} side @param {string} form @param {import('../fuzzy/grammar.js').Part[] | undefined} parts */
+  /** @param {AffixType} side @param {string} form @param {import('#bcdp/grammar.js').Part[] | undefined} parts */
   const addSurface = (side, form, parts) => {
     const list = (parts ?? []).filter((p) => p.type === 'prefix' || p.type === 'infix' || (side === 'suffix' && p.type === 'suffix'))
     if (list.length < 2 && !(list.length === 1 && list[0].form !== form)) return
@@ -350,7 +350,7 @@ export function createPatternMorphology(spec, searchKey, distance, isRoot = () =
 /**
  * 一個構詞步驟的詞素（構詞文法的 parts 依推導順序：前綴由內而外、後綴由內而外）。
  * 沒有 parts 的規格（平面清單）依步驟的類型拆。
- * @param {import('../fuzzy/morph-search.js').MorphStepHit} step
+ * @param {import('#bcdp/morph-search.js').MorphStepHit} step
  * @returns {MorphReading}
  */
 export function stepMorphs(step) {
@@ -392,7 +392,7 @@ export function stepMorphs(step) {
 
 /**
  * 一種拆法（步驟由外而內）的所有詞素：前綴由外而內＝由最外層的步驟開始；後綴由內而外＝由最內層的步驟開始。
- * @param {import('../fuzzy/morph-search.js').MorphStepHit[]} steps
+ * @param {import('#bcdp/morph-search.js').MorphStepHit[]} steps
  * @returns {MorphReading}
  */
 export function readingOfSteps(steps) {

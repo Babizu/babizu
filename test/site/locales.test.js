@@ -75,7 +75,7 @@ describe('介面語系', () => {
 
   it('不用樣板字串或舊的點號鍵呼叫 t()', () => {
     const offenders = []
-    for (const file of [...sourceFiles(join(ROOT, 'app', 'src')), join(ROOT, 'src', 'fuzzy', 'steps.js')]) {
+    for (const file of sourceFiles(join(ROOT, 'app', 'src'))) {
       const code = readFileSync(file, 'utf8')
       for (const m of code.matchAll(/\bt\(\s*`[^`]*`|\bt\(\s*'[a-z]\w*(?:\.\w+)+'/g)) offenders.push(`${file}: ${m[0]}`)
     }
