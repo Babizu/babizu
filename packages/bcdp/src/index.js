@@ -19,11 +19,11 @@
  * 也可以不用設定檔，直接組合 RuleSet、CostModel、createNormalizer 建立 WeightedEditDistance。
  */
 
-export { createNormalizer, defaultNormalize, toChars, DEFAULT_CHAR_MAP } from './text-normalize.js'
-export { CostModel, DEFAULT_COSTS } from './costs.js'
-export { RuleSet } from './rules.js'
+export { createNormalizer, defaultNormalize, toChars, DEFAULT_CHAR_MAP } from './text-normalize.ts'
+export { CostModel, DEFAULT_COSTS } from './costs.ts'
+export { RuleSet } from './rules.ts'
 export { WeightedEditDistance } from './distance.js'
-export { NORMALIZATIONS, resolveNormalization } from './score-normalization.js'
+export { NORMALIZATIONS, resolveNormalization } from './score-normalization.ts'
 export { Dawg, DAWG_FORMAT, DAWG_VERSION } from './dawg.js'
 export { FuzzyIndex, INDEX_FORMAT, INDEX_VERSION } from './fuzzy-index.js'
 export { alternationRules, ALTERNATION_CATEGORY, circumfixStep, createAnalyzer, GLIDE_PATTERNS, REDUPLICATION_PATTERNS, rootCostOf, validateMorphology } from './morphology.js'

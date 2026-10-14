@@ -24,11 +24,11 @@
  * 完整說明見 docs/language-profile.md。
  */
 
-import { CostModel } from './costs.js'
+import { CostModel } from './costs.ts'
 import { WeightedEditDistance } from './distance.js'
 import { alternationRules, validateMorphology } from './morphology.js'
-import { createNormalizer, DEFAULT_CHAR_MAP } from './text-normalize.js'
-import { RuleSet } from './rules.js'
+import { createNormalizer, DEFAULT_CHAR_MAP } from './text-normalize.ts'
+import { RuleSet } from './rules.ts'
 
 export const PROFILE_FORMAT = 'babizu-language-profile'
 export const PROFILE_VERSION = 1
@@ -47,8 +47,8 @@ export const PROFILE_VERSION = 1
  *   `useDefaultCharMap: false` 可以不要預設對應
  * @property {string} [notationChars] 辭典體例符號（連字號、等號…），搜尋時忽略
  * @property {string[]} [boundaries] 詞邊界字元，決定「詞首」「詞尾」規則的範圍
- * @property {import('./costs.js').CostOptions} [costs] 基本編輯成本
- * @property {import('./rules.js').RuleGroup[]} [rules] 語音對應規則表（依分類分組）
+ * @property {import('./costs.ts').CostOptions} [costs] 基本編輯成本
+ * @property {import('./rules.ts').RuleGroup[]} [rules] 語音對應規則表（依分類分組）
  * @property {import('./morphology.js').MorphologySpec} [morphology] 構詞規格（去詞綴／還原詞綴；選填）
  */
 
@@ -104,7 +104,7 @@ export function assertProfile(profile) {
 /**
  * 設定檔 → `createNormalizer` 的選項。
  * @param {LanguageProfile} profile
- * @returns {import('./text-normalize.js').NormalizerOptions}
+ * @returns {import('./text-normalize.ts').NormalizerOptions}
  */
 export function normalizerOptionsFromProfile(profile) {
   const n = profile.normalizer ?? {}

@@ -31,7 +31,7 @@
 
 import { EDGE_JUNCTION, EDGE_WORD, EPSILON, roundCost } from './dp.js'
 import { FuzzyIndex } from './fuzzy-index.js'
-import { requireCost, requireString } from './guards.js'
+import { requireCost, requireString } from './guards.ts'
 import { copyTagged, emptyEnd, emptyJunction, isReachable, mergeEndInto, mergeInto, mergeTagged, minOf, toForwardEnd } from './junction.js'
 import { circumfixStep, rootCostOf } from './morphology.js'
 

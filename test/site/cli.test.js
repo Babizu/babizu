@@ -16,7 +16,8 @@ function run(...args) {
   return { status: r.status, stdout: r.stdout, stderr: r.stderr }
 }
 
-describe('babizu 指令', () => {
+// 每個測試啟動一到三個 Node 子行程，整套測試同時跑時比較慢
+describe('babizu 指令', { timeout: 30_000 }, () => {
   it('check：示範站台通過，結束碼 0', () => {
     const r = run('check', MINIMAL)
     expect(r.status).toBe(0)

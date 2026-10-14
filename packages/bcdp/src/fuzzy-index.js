@@ -54,9 +54,9 @@
  */
 
 import { Dawg } from './dawg.js'
-import { requireCost, requireLimit, requireString } from './guards.js'
+import { requireCost, requireLimit, requireString } from './guards.ts'
 import { advanceCrossing, createCrossing, EDGE_JUNCTION, EDGE_WORD, fillRow, jumpBound, PathMatcher, prepareColumn, roundCost, EPSILON } from './dp.js'
-import { resolveNormalization } from './score-normalization.js'
+import { resolveNormalization } from './score-normalization.ts'
 
 /**
  * @typedef {object} JunctionState 詞素交界上的 DP 狀態（docs/bcdp.md 第 4 節）
@@ -78,7 +78,7 @@ import { resolveNormalization } from './score-normalization.js'
  * @typedef {object} SearchOptions
  * @property {number} [maxDistance=1] 絕對距離上限（含）
  * @property {number} [maxNormalized=Infinity] 正規化分數上限（含）
- * @property {string | Partial<import('./score-normalization.js').NormalizationStrategy>} [normalization='none'] 用於 score 與 maxNormalized
+ * @property {string | Partial<import('./score-normalization.ts').NormalizationStrategy>} [normalization='none'] 用於 score 與 maxNormalized
  * @property {number} [limit=Infinity] 最多回傳幾筆
  * @property {(event: NodeVisit) => void} [onNode] 每走訪一個節點回呼一次（視覺化用）
  * @property {ArrayLike<number>} [start] 第 0 列的起點成本（長度 = 查詢長度 + 1）：沒有跨界狀態的 from

@@ -760,7 +760,7 @@ export const MUTANTS = [
   },
   {
     name: '空白可以與字母互換（邊界的價錢讓字母消失）',
-    file: 'packages/bcdp/src/costs.js',
+    file: 'packages/bcdp/src/costs.ts',
     find: '    if (this.boundaries.has(a) !== this.boundaries.has(b)) return Infinity',
     replace: '    if (this.boundaries.has(a) !== this.boundaries.has(b)) return 0.1',
     why: 'dabran ≈ da ran 只要 0.1（pinahazaban 經 b → 空白找到 daran）；distance 測試',

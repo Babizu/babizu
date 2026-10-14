@@ -63,7 +63,7 @@ function defaultGroups() {
  * 空白的三種操作在介面上合成一個滑桿。
  */
 function defaultCosts() {
-  const costs = /** @type {import('#bcdp/costs.js').CostOptions} */ (PROFILE.costs ?? {})
+  const costs = /** @type {import('#bcdp/costs.ts').CostOptions} */ (PROFILE.costs ?? {})
   const space = (costs.overrides ?? DEFAULT_COSTS.overrides)[' ']
   return {
     substitute: costs.substitute ?? DEFAULT_COSTS.substitute,
@@ -129,7 +129,7 @@ function editedCosts(costs) {
   if (costs.substitute === base.substitute && costs.delete === base.delete && costs.insert === base.insert && costs.space === base.space) {
     return undefined
   }
-  const profileCosts = /** @type {import('#bcdp/costs.js').CostOptions} */ (PROFILE.costs ?? {})
+  const profileCosts = /** @type {import('#bcdp/costs.ts').CostOptions} */ (PROFILE.costs ?? {})
   const overrides = { ...(profileCosts.overrides ?? DEFAULT_COSTS.overrides) }
   if (costs.space !== base.space) overrides[' '] = { substitute: costs.space, delete: costs.space, insert: costs.space }
   return { substitute: costs.substitute, delete: costs.delete, insert: costs.insert, overrides }

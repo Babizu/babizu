@@ -106,8 +106,8 @@ export function createTextTools(profile) {
  *
  * @param {import('#bcdp/profile.js').LanguageProfile} profile
  * @param {object} [options]
- * @param {import('#bcdp/rules.js').RuleSet} [options.rules] 取代設定檔的規則
- * @param {import('#bcdp/costs.js').CostOptions} [options.costs] 取代設定檔的成本
+ * @param {import('#bcdp/rules.ts').RuleSet} [options.rules] 取代設定檔的規則
+ * @param {import('#bcdp/costs.ts').CostOptions} [options.costs] 取代設定檔的成本
  * @returns {import('#bcdp/distance.js').WeightedEditDistance}
  */
 export function createSearchMetric(profile, options = {}) {
@@ -118,7 +118,7 @@ export function createSearchMetric(profile, options = {}) {
 /**
  * @param {import('#bcdp/profile.js').LanguageProfile} profile
  * @param {(text: string) => string} searchKey
- * @param {{rules?: import('#bcdp/rules.js').RuleSet, costs?: import('#bcdp/costs.js').CostOptions}} [options]
+ * @param {{rules?: import('#bcdp/rules.ts').RuleSet, costs?: import('#bcdp/costs.ts').CostOptions}} [options]
  */
 function searchMetric(profile, searchKey, { rules, costs } = {}) {
   return createMetricFromProfile(profile, { normalize: searchKey, ...(rules ? { rules } : {}), ...(costs ? { costs } : {}) })

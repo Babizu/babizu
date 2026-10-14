@@ -132,7 +132,7 @@ function admissible(flag, start, end) {
 }
 
 /**
- * @typedef {import('./rules.js').Rule & {sourceLength: number, targetLength: number, targetId: number}} CompiledRule
+ * @typedef {import('./rules.ts').Rule & {sourceLength: number, targetLength: number, targetId: number}} CompiledRule
  */
 
 /**
@@ -140,7 +140,7 @@ function admissible(flag, start, end) {
  * @property {string[]} chars 查詢字串 X
  * @property {Int32Array} ids X 的字元編號
  * @property {number} n X 的長度
- * @property {import('./costs.js').CostModel} costs
+ * @property {import('./costs.ts').CostModel} costs
  * @property {Float64Array} del del[i] = del(X[i-1])（i ≥ 1）
  * @property {Array<Float64Array | undefined>} subRows subRows[y] = 對候選字元 y 的替換成本列（用到時才算）
  * @property {Array<number | undefined>} insCosts insCosts[y] = ins(y)（用到時才算）
@@ -171,7 +171,7 @@ function admissible(flag, start, end) {
  */
 export class CompiledRules {
   /**
-   * @param {import('./rules.js').Rule[]} rules 已正規化、已展開反向的規則
+   * @param {import('./rules.ts').Rule[]} rules 已正規化、已展開反向的規則
    * @param {Set<string>} boundaries 詞邊界字元（預設為空白）
    */
   constructor(rules, boundaries) {
@@ -336,7 +336,7 @@ export class CompiledRules {
   /**
    * 為查詢字串建立成本表與規則表。
    * @param {string[]} x 查詢字串（code point 陣列）
-   * @param {import('./costs.js').CostModel} costs
+   * @param {import('./costs.ts').CostModel} costs
    * @param {QueryOptions} [options]
    * @returns {QueryPlan}
    */

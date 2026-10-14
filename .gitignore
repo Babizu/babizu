@@ -14,3 +14,6 @@ playwright-report/
 .DS_Store
 Thumbs.db
 *.log
+
+# TypeScript 增量建置資訊（commit 了的話，乾淨的 clone 中 tsc -b 會以為已經建置過、不產生 dist）
+*.tsbuildinfo

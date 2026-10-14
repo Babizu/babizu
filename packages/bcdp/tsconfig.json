@@ -1,0 +1,25 @@
+{
+  // BCDP 套件：零依賴，所以沒有 Node 或 DOM 的型別（types: []、lib 只有 ECMAScript）；用到它們就編譯失敗。
+  // erasableSyntaxOnly：只用可以直接抹掉的 TypeScript 語法，Node（≥ 22.18）不經編譯也能執行原始碼。
+  "compilerOptions": {
+    "composite": true,
+    "rootDir": "src",
+    "outDir": "dist",
+    "tsBuildInfoFile": "dist/.tsbuildinfo",
+    "target": "es2022",
+    "lib": ["es2023"],
+    "types": [],
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "strict": true,
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true,
+    "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": true,
+    "declaration": true,
+    "allowJs": true,
+    "checkJs": false,
+    "skipLibCheck": true
+  },
+  "include": ["src"]
+}

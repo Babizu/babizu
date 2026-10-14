@@ -7,19 +7,19 @@
  * 「絕對距離上界」，因此剪枝仍然正確。
  */
 
-/**
- * @typedef {object} NormalizationStrategy
- * @property {string} name
- * @property {(distance: number, queryLength: number, candidateLength: number) => number} score
- *   由絕對距離算出正規化分數
- * @property {((threshold: number, queryLength: number, maxCandidateLength: number) => number) | null} bound
- *   給定正規化門檻，回傳絕對距離的上界。必須對 candidateLength 單調不減，
- *   這樣以子樹最長詞長計算出的上界才對整個子樹成立。
- *   沒有提供時，搜尋只能用絕對距離 maxDistance 剪枝。
- */
+export interface NormalizationStrategy {
+  name: string
+  /** 由絕對距離算出正規化分數 */
+  score: (distance: number, queryLength: number, candidateLength: number) => number
+  /**
+   * 給定正規化門檻，回傳絕對距離的上界。必須對 candidateLength 單調不減，
+   * 這樣以子樹最長詞長計算出的上界才對整個子樹成立。
+   * 沒有提供時，搜尋只能用絕對距離 maxDistance 剪枝。
+   */
+  bound: ((threshold: number, queryLength: number, maxCandidateLength: number) => number) | null
+}
 
-/** @type {Readonly<Record<string, NormalizationStrategy>>} */
-export const NORMALIZATIONS = Object.freeze({
+export const NORMALIZATIONS: Readonly<Record<string, NormalizationStrategy>> = Object.freeze<Record<string, NormalizationStrategy>>({
   /** 不正規化：分數就是絕對距離 */
   none: {
     name: 'none',
@@ -46,12 +46,8 @@ export const NORMALIZATIONS = Object.freeze({
   },
 })
 
-/**
- * 解析正規化策略：可傳策略名稱或自訂物件。
- * @param {string | Partial<NormalizationStrategy>} strategy
- * @returns {NormalizationStrategy}
- */
-export function resolveNormalization(strategy = 'none') {
+/** 解析正規化策略：可傳策略名稱或自訂物件。 */
+export function resolveNormalization(strategy: string | Partial<NormalizationStrategy> = 'none'): NormalizationStrategy {
   if (typeof strategy === 'string') {
     const found = NORMALIZATIONS[strategy]
     if (!found) {

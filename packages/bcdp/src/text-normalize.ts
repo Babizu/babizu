@@ -11,9 +11,8 @@
  * - 各種撇號統一為 ASCII `'`（喉塞音）
  * - `ǝ`（U+01DD，turned e）統一為 `ə`（U+0259，schwa）：噶哈巫語分類辭典用前者，規則表用後者
  * - 不斷行空白統一為一般空白
- * @type {Readonly<Record<string, string>>}
  */
-export const DEFAULT_CHAR_MAP = Object.freeze({
+export const DEFAULT_CHAR_MAP: Readonly<Record<string, string>> = Object.freeze({
   '’': "'", // ’
   '‘': "'", // ‘
   'ʼ': "'", // ʼ
@@ -24,30 +23,35 @@ export const DEFAULT_CHAR_MAP = Object.freeze({
   '　': ' ',
 })
 
-/**
- * @typedef {object} NormalizerOptions
- * @property {boolean} [lowercase=true] 轉小寫
- * @property {Record<string, string>} [charMap=DEFAULT_CHAR_MAP] 逐字元對映（在 NFC 之後套用）
- * @property {boolean} [stripDiacritics=false] 去除附加符號（例如 Reed 詞表的 `ā`、`ū́`）
- * @property {string[]} [preserve=['é']] 去附加符號時仍保留的「合成字元」（噶哈巫語的 `é` 是獨立音位）
- * @property {string} [removeChars=''] 直接刪除的字元集合（例如 `'-<>…'`）
- * @property {boolean} [collapseWhitespace=true] 連續空白壓成一個，並去除頭尾空白
- */
+export interface NormalizerOptions {
+  /** 轉小寫（預設 true） */
+  lowercase?: boolean
+  /** 逐字元對映（在 NFC 之後套用；預設 DEFAULT_CHAR_MAP） */
+  charMap?: Record<string, string>
+  /** 去除附加符號（例如 Reed 詞表的 `ā`、`ū́`；預設 false） */
+  stripDiacritics?: boolean
+  /** 去附加符號時仍保留的「合成字元」（噶哈巫語的 `é` 是獨立音位；預設 ['é']） */
+  preserve?: string[]
+  /** 直接刪除的字元集合（例如 `'-<>…'`；預設 ''） */
+  removeChars?: string
+  /** 連續空白壓成一個，並去除頭尾空白（預設 true） */
+  collapseWhitespace?: boolean
+}
+
+/** 正規化函式 */
+export type Normalizer = (text: string) => string
 
 /**
  * 建立一個正規化函式。
  *
  * 處理順序：NFC → 小寫 → 字元對映 → （可選）去附加符號 → （可選）刪除指定字元 → 空白整理 → NFC。
  *
- * @param {NormalizerOptions} [options]
- * @returns {(text: string) => string}
- *
  * @example
  * const normalize = createNormalizer({ stripDiacritics: true })
  * normalize('Tūhūbū́ss') // → 'tuhubuss'
  * normalize('akhéhan') // → 'akhéhan'（é 保留）
  */
-export function createNormalizer(options = {}) {
+export function createNormalizer(options: NormalizerOptions = {}): Normalizer {
   const {
     lowercase = true,
     charMap = DEFAULT_CHAR_MAP,
@@ -61,7 +65,7 @@ export function createNormalizer(options = {}) {
   const removed = new Set(Array.from(removeChars))
   const mapEntries = Object.entries(charMap)
 
-  return function normalize(text) {
+  return function normalize(text: string): string {
     let s = String(text ?? '').normalize('NFC')
     if (lowercase) s = s.toLowerCase()
     for (const [from, to] of mapEntries) {
@@ -81,10 +85,9 @@ export function createNormalizer(options = {}) {
 /**
  * 去除附加符號，但保留 `preserved` 中的合成字元。
  * 做法：逐一檢查 NFC 字元，不在保留清單的就拆成 NFD 並丟掉所有組合記號（\p{M}）。
- * @param {string} s 已 NFC 的字串
- * @param {Set<string>} preserved
+ * @param s 已 NFC 的字串
  */
-function removeMarks(s, preserved) {
+function removeMarks(s: string, preserved: Set<string>): string {
   let out = ''
   for (const ch of s) {
     if (preserved.has(ch)) {
@@ -96,12 +99,8 @@ function removeMarks(s, preserved) {
   return out
 }
 
-/**
- * 把字串拆成 code point 陣列（處理 BMP 以外字元時不會被切成半個代理對）。
- * @param {string} s
- * @returns {string[]}
- */
-export function toChars(s) {
+/** 把字串拆成 code point 陣列（處理 BMP 以外字元時不會被切成半個代理對）。 */
+export function toChars(s: string): string[] {
   return Array.from(s)
 }
 

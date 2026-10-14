@@ -59,7 +59,7 @@ export function validateMorphology(spec) {
  * 構詞音變換成規則表的列：只在詞素交界適用的規則（docs/bcdp.md 1.3），與方言規則放在同一個 RuleSet、
  * 同一套 DP。查詢（表面）的 surface 對應到底層的 underlying，所以 source ＝ surface、target ＝ underlying，單向。
  * @param {MorphologySpec | undefined} spec
- * @returns {import('./rules.js').RuleTableRow[]}
+ * @returns {import('./rules.ts').RuleTableRow[]}
  */
 export function alternationRules(spec) {
   if (!spec?.alternations) return []
