@@ -35,10 +35,10 @@
  * 都用到組合規則時，才依組合規則的順序選——與原本的 BCDP 在平面清單上的行為相同。
  */
 
-import { GLIDE_PATTERNS, REDUPLICATION_PATTERNS, validateMorphology } from './morphology.js'
+import { GLIDE_PATTERNS, REDUPLICATION_PATTERNS, validateFlatMorphology } from './morphology-spec.js'
 
-/** @typedef {import('./morphology.js').Gloss} Gloss */
-/** @typedef {import('./morphology.js').MorphologySpec} MorphologySpec */
+/** @typedef {import('./morphology-spec.js').Gloss} Gloss */
+/** @typedef {import('./morphology-spec.js').MorphologySpec} MorphologySpec */
 
 /**
  * @typedef {object} Part 展開後的一項由哪個詞素構成（推導順序中的一個）
@@ -52,7 +52,7 @@ import { GLIDE_PATTERNS, REDUPLICATION_PATTERNS, validateMorphology } from './mo
 export const MAX_EXPANDED = 5000
 
 const TYPES = new Set(['prefix', 'suffix', 'infix', 'reduplication'])
-/** 文法寫法的頂層欄位；與平面清單共用的欄位（cost、alternations…）由 validateMorphology 檢查 */
+/** 文法寫法的頂層欄位；與平面清單共用的欄位（cost、alternations…）由 validateFlatMorphology 檢查 */
 const GRAMMAR_KEYS = new Set(['morphemes', 'constructions'])
 const SHARED_KEYS = new Set(['cost', 'minStem', 'maxSteps', 'lemmaSpread', 'virtualRootLengthCost', 'rootSyllableCost', 'vowels', 'glides', 'alternations'])
 const MORPHEME_KEYS = new Set(['id', 'type', 'form', 'forms', 'pattern', 'gloss', 'cost', 'free', 'ref', 'note'])
@@ -68,7 +68,7 @@ export function isGrammarSpec(spec) {
 }
 
 /**
- * 檢查文法寫法的規格，回傳錯誤訊息清單。與平面清單共用的欄位交給 validateMorphology。
+ * 檢查文法寫法的規格，回傳錯誤訊息清單。與平面清單共用的欄位交給 validateFlatMorphology。
  * @param {Record<string, any>} spec
  * @returns {string[]}
  */
@@ -83,7 +83,7 @@ export function validateGrammar(spec) {
       )
     }
   }
-  errors.push(...validateMorphology(Object.fromEntries(Object.entries(spec).filter(([key]) => SHARED_KEYS.has(key)))))
+  errors.push(...validateFlatMorphology(Object.fromEntries(Object.entries(spec).filter(([key]) => SHARED_KEYS.has(key)))))
 
   const morphemes = Array.isArray(spec.morphemes) ? spec.morphemes : []
   if (spec.morphemes !== undefined && !Array.isArray(spec.morphemes)) errors.push('morphology.morphemes 必須是陣列')
