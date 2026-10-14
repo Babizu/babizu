@@ -31,6 +31,7 @@
 
 import { EDGE_JUNCTION, EDGE_WORD, EPSILON, roundCost } from './dp.js'
 import { FuzzyIndex } from './fuzzy-index.js'
+import { requireCost, requireString } from './guards.js'
 import { copyTagged, emptyEnd, emptyJunction, isReachable, mergeEndInto, mergeInto, mergeTagged, minOf, toForwardEnd } from './junction.js'
 import { circumfixStep, rootCostOf } from './morphology.js'
 
@@ -466,6 +467,8 @@ export function createMorphSearch({ analyzer, metric, index, isEntry = () => tru
    * @returns {Prepared | null} 查詢太短時為 null
    */
   function prepare(query, maxDistance = 1) {
+    requireString(query, '查詢')
+    requireCost(maxDistance, 'maxDistance ')
     const chars = Array.from(query)
     const n = chars.length
     if (n < spec.minStem + 1) return null
@@ -1014,7 +1017,7 @@ export function createMorphSearch({ analyzer, metric, index, isEntry = () => tru
    * @param {{maxDistance: number, stats?: {visitedNodes: number}}} options
    * @returns {MorphHit[]}
    */
-  function search(query, { maxDistance, stats }) {
+  function search(query, { maxDistance = 1, stats } = {}) {
     const prepared = prepare(query, maxDistance)
     if (!prepared) return []
     const local = { visitedNodes: 0, prunedNodes: 0, computedRows: 0 }

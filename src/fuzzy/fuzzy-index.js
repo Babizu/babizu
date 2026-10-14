@@ -54,6 +54,7 @@
  */
 
 import { Dawg } from './dawg.js'
+import { requireCost, requireLimit, requireString } from './guards.js'
 import { advanceCrossing, createCrossing, EDGE_JUNCTION, EDGE_WORD, fillRow, jumpBound, PathMatcher, prepareColumn, roundCost, EPSILON } from './dp.js'
 import { resolveNormalization } from './normalization.js'
 
@@ -210,6 +211,7 @@ export class FuzzyIndex {
    * @returns {this}
    */
   add(term, payload) {
+    requireString(term, '詞')
     const key = this.metric.normalize(term)
     if (key === '') return this
     const entries = this._unfreeze()
@@ -304,6 +306,7 @@ export class FuzzyIndex {
    */
   searchWithStats(query, options = {}) {
     const { limit = Infinity, expanders = [] } = options
+    requireLimit(limit, 'limit ')
     const stats = { visitedNodes: 0, prunedNodes: 0, computedRows: 0 }
     const norm = resolveNormalization(options.normalization ?? 'none')
     const queryLength = this.metric.prepare(query).length
@@ -413,6 +416,7 @@ export class FuzzyIndex {
 
     const channels = specs.map(({ query, options }) => {
       const x = Array.isArray(query) ? query : this.metric.prepare(query)
+      if (options.maxDistance !== undefined) requireCost(options.maxDistance, 'maxDistance ')
       const n = x.length
       // start／end 是沒有跨界狀態的 from／to；只有 initialFrom 時，其他詞沒有起點（全部是 Infinity）
       const initialFrom = options.initialFrom ?? null

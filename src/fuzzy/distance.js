@@ -4,6 +4,7 @@
 
 import { CostModel } from './costs.js'
 import { advanceCrossing, CompiledRules, createCrossing, EDGE_JUNCTION, EDGE_NONE, EDGE_WORD, fillRow, jumpBound, PathMatcher, prepareColumn, roundCost, EPSILON } from './dp.js'
+import { requireString } from './guards.js'
 import { createNormalizer } from './normalize.js'
 import { resolveNormalization } from './normalization.js'
 import { RuleSet } from './rules.js'
@@ -126,6 +127,7 @@ export class WeightedEditDistance {
    * @param {string} text
    */
   prepare(text) {
+    requireString(text, '字串')
     return Array.from(this.normalize(text))
   }
 
