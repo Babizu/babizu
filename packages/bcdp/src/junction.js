@@ -46,7 +46,7 @@ export function mergeInto(into, state, add, tag, before) {
       target = { node: p.node, row: new Float64Array(n).fill(Infinity) }
       into.pending.push(target)
     }
-    // into 原本就有、但還沒有 tag 的跨界狀態（例如 shifted 的複本）：補上空的 tag
+    // into 原本就有、但還沒有 tag 的跨界狀態：補上空的 tag
     let tags = into.tags.pending.get(p.node)
     if (!tags) into.tags.pending.set(p.node, (tags = new Array(n).fill(null)))
     for (let x = 0; x < n; x++) {
@@ -123,19 +123,6 @@ export function minOf(state) {
   let min = Math.min(...state.row)
   for (const p of state.pending) min = Math.min(min, ...p.row)
   return min
-}
-
-/**
- * 每個值加上 c 的複本（例如詞綴本身的成本）。
- * @param {JunctionState} state
- * @param {number} c
- * @returns {JunctionState}
- */
-export function shifted(state, c) {
-  return {
-    row: Float64Array.from(state.row, (v) => v + c),
-    pending: state.pending.map((p) => ({ node: p.node, row: Float64Array.from(p.row, (v) => v + c) })),
-  }
 }
 
 /**

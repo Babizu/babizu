@@ -89,14 +89,6 @@ describe('FuzzyIndex', () => {
     expect(events[0]).toMatchObject({ prefix: '', depth: 0 })
     expect(events.some((e) => e.terminal && e.accepted && e.prefix === 'apay')).toBe(true)
   })
-
-  it('查詢展開（實驗性）', () => {
-    const results = index.search('mubintun', {
-      maxDistance: 0.5,
-      expanders: [(q) => (q.startsWith('mu') ? [{ form: q.slice(2), cost: 0.3, note: '去前綴 mu-' }] : [])],
-    })
-    expect(results[0]).toMatchObject({ term: 'bintun', distance: 0.3, via: '去前綴 mu-' })
-  })
 })
 
 describe('性質測試：詞圖搜尋結果必須等於暴力逐一計算', () => {

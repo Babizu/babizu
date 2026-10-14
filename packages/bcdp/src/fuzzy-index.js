@@ -75,21 +75,11 @@ import { resolveNormalization } from './score-normalization.js'
  */
 
 /**
- * @typedef {object} QueryExpansion 查詢展開（詞形還原的預留介面）
- * @property {string} form 展開後的查詢形式，例如去掉前綴後的詞根
- * @property {number} cost 額外加上的成本
- * @property {string} [note] 說明，例如「去前綴 mu-」
- */
-
-/** @typedef {(query: string) => QueryExpansion[]} QueryExpander */
-
-/**
  * @typedef {object} SearchOptions
  * @property {number} [maxDistance=1] 絕對距離上限（含）
  * @property {number} [maxNormalized=Infinity] 正規化分數上限（含）
  * @property {string | Partial<import('./score-normalization.js').NormalizationStrategy>} [normalization='none'] 用於 score 與 maxNormalized
  * @property {number} [limit=Infinity] 最多回傳幾筆
- * @property {QueryExpander[]} [expanders] 查詢展開器（實驗性，見 expanders.js）
  * @property {(event: NodeVisit) => void} [onNode] 每走訪一個節點回呼一次（視覺化用）
  * @property {ArrayLike<number>} [start] 第 0 列的起點成本（長度 = 查詢長度 + 1）：沒有跨界狀態的 from
  * @property {ArrayLike<number>} [end] 詞尾在查詢各位置結束的附加成本（長度同上）：沒有跨界狀態的 to
@@ -136,7 +126,6 @@ import { resolveNormalization } from './score-normalization.js'
  * @property {number} distance 絕對距離
  * @property {number} score 正規化分數（normalization='none' 時等於 distance）
  * @property {unknown[]} payloads 加入詞庫時附帶的資料
- * @property {string} [via] 若經由查詢展開找到，記錄展開說明
  * @property {number} [endAt] 有 to 時，詞在查詢中結束的位置（達到最小值的 x）
  * @property {{kind: 'word' | 'row' | 'pending', x: number, tail: number}} [exit] 有 to 時，最小值來自哪裡：
  *   詞尾（word）、交界列（row）、跨界規則（pending，tail 是 to.pending 的序號，x 是後一段開始的位置）
@@ -305,35 +294,10 @@ export class FuzzyIndex {
    * @returns {{results: SearchResult[], stats: SearchStats}}
    */
   searchWithStats(query, options = {}) {
-    const { limit = Infinity, expanders = [] } = options
+    const { limit = Infinity } = options
     requireLimit(limit, 'limit ')
     const stats = { visitedNodes: 0, prunedNodes: 0, computedRows: 0 }
-    const norm = resolveNormalization(options.normalization ?? 'none')
-    const queryLength = this.metric.prepare(query).length
-
-    /** @type {Map<string, SearchResult>} */
-    const merged = new Map()
-    for (const r of this._searchCore(query, options, stats)) merged.set(r.term, r)
-
-    // 查詢展開：以較低的距離預算搜尋展開形式，加上展開成本後合併（取較小者）
-    for (const expand of expanders) {
-      for (const { form, cost, note } of expand(query)) {
-        const budget = (options.maxDistance ?? 1) - cost
-        if (budget < 0) continue
-        const sub = this._searchCore(form, { ...options, maxDistance: budget, maxNormalized: Infinity }, stats)
-        for (const r of sub) {
-          const distance = roundCost(r.distance + cost)
-          const score = roundCost(norm.score(distance, queryLength, Array.from(r.term).length))
-          if (score > (options.maxNormalized ?? Infinity) + EPSILON) continue
-          const prev = merged.get(r.term)
-          if (!prev || score < prev.score) {
-            merged.set(r.term, { ...r, distance, score, via: note ?? form })
-          }
-        }
-      }
-    }
-
-    const results = [...merged.values()].sort(
+    const results = this._searchCore(query, options, stats).sort(
       (a, b) => a.score - b.score || a.distance - b.distance || (a.term < b.term ? -1 : a.term > b.term ? 1 : 0),
     )
     return { results: Number.isFinite(limit) ? results.slice(0, limit) : results, stats }

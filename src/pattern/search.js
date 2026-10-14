@@ -25,7 +25,7 @@ import { findMatches, matchesAnywhere } from './match.js'
 import { createPatternMorphology, PARSE_SELECTION, readingOfSteps, satisfies, selectParses } from './morph.js'
 import { parsePattern } from './parser.js'
 import { segmentText } from './sentences.js'
-import { FuzzyIndex, roundCost } from '#bcdp'
+import { EPSILON, FuzzyIndex, roundCost } from '#bcdp'
 import { analyzeWord, DERIVATION_MAX_COST } from '../search/derivations.js'
 import { parsedAnalysis, sortParses } from '../search/parses.js'
 import { alternativesOf, rankScore, recordScore, termScore } from '../search/scoring.js'
@@ -49,7 +49,6 @@ export const TIME_BUDGET_MS = 2000
 const CONTEXT_WORDS = 3
 /** 頻率表每一格最多列幾種詞形 */
 const FREQUENCY_ROWS = 100
-const EPSILON = 1e-9
 
 /**
  * @typedef {import('../search/engine.js').OccurrenceMatch & {score: number}} PatternEvidence
@@ -660,7 +659,7 @@ export class PatternSearch {
               cond: c,
               start,
               end,
-              score: round(cells.reduce((sum, x) => sum + (x.evidence?.score ?? 0), 0)),
+              score: roundCost(cells.reduce((sum, x) => sum + (x.evidence?.score ?? 0), 0)),
               cells,
               left: tokens.slice(Math.max(0, span.start - CONTEXT_WORDS), span.start).map((t) => t.key).reverse(),
               right: tokens.slice(span.end, span.end + CONTEXT_WORDS).map((t) => t.key),
@@ -677,7 +676,7 @@ export class PatternSearch {
       score += Math.min(...own.map((m) => m.score))
     }
     matches.sort((a, b) => a.cond - b.cond || a.start - b.start)
-    return { score: round(score), matches }
+    return { score: roundCost(score), matches }
   }
 }
 
@@ -764,7 +763,6 @@ function keyOf(engine, text, at) {
 /** @param {string} s */
 const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')
 /** @param {number} x */
-const round = (x) => Math.round(x * 1e9) / 1e9
 const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now())
 /** @param {number} started */
 const elapsed = (started) => Math.round((now() - started) * 10) / 10

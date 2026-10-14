@@ -286,7 +286,7 @@ export const MUTANTS = [
   {
     name: '辭典派生詞不加層數的差距',
     file: 'src/search/scoring.js',
-    find: '  return Math.round((score + depth * DERIVATIVE_PENALTY) * 1e9) / 1e9',
+    find: '  return roundCost(score + depth * DERIVATIVE_PENALTY)',
     replace: '  return score',
     why: '派生詞與詞本身同分；scoring 測試、derivations 測試「含 mukusa 的例句分數是 usa 的分數加一層」',
   },

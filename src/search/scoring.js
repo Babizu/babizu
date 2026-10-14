@@ -13,6 +13,8 @@
  * 後者是命中方式（`lemma` 自動拆解、`derived` 自動派生、`sibling` 自動同根）。
  */
 
+import { EPSILON, roundCost } from '#bcdp'
+
 /**
  * 命中方式：
  * - fuzzy：加權編輯距離在門檻內（含完全相同、跨方言變體）
@@ -49,8 +51,6 @@ export const MORPHOLOGY_BASE_SCORE = 0.4
 /** 辭典標註的派生關係每一層的差距：派生詞排在詞本身之後 */
 export const DERIVATIVE_PENALTY = 0.1
 
-/** 分數是幾個小數相加（0.4 ＋ 0.2），比較時容許的浮點誤差 */
-const EPSILON = 1e-9
 
 /**
  * 命中方式換算成等效距離。
@@ -94,7 +94,7 @@ export function termScore(m, key) {
  * @param {number} [depth=0] 經過幾層辭典標註的派生關係（詞就是記錄的詞形或句中的詞時為 0）
  */
 export function recordScore(score, depth = 0) {
-  return Math.round((score + depth * DERIVATIVE_PENALTY) * 1e9) / 1e9
+  return roundCost(score + depth * DERIVATIVE_PENALTY)
 }
 
 /**

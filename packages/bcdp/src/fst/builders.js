@@ -16,6 +16,7 @@
  * 這是評估用的參考實作，不追求速度：狀態以字串為鍵、以雜湊表記錄。
  */
 
+import { roundCost } from '../dp.js'
 import { compose, EPS, shortestDistance, stringAcceptor } from './wfst.js'
 
 /**
@@ -292,7 +293,7 @@ export function fstLemmaSearch({ E, S, termAt }, query, { bound }) {
     bound,
     onFinal: (state, cost) => {
       const term = termAt(state.b.b[3])
-      const c = Math.round(cost * 1e9) / 1e9
+      const c = roundCost(cost)
       if (!(hits.get(term) <= c)) hits.set(term, c)
     },
   })

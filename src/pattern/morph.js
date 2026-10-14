@@ -45,6 +45,7 @@
  * 準確與召回都比較差（72.6%、60.2%，上限 0.2 時 75.4%、85.2%；研究紀錄 U.20）。
  */
 
+import { EPSILON } from '#bcdp'
 import { PatternError } from './errors.js'
 
 /** 方言寫法的詞綴最多差多少，才視為同一個（兩條 0.1 的方言規則） */
@@ -66,7 +67,6 @@ export const PARSE_SELECTION = Object.freeze({
   loose: Object.freeze({ spread: Infinity, sound: 0.4 }),
 })
 
-const EPSILON = 1e-9
 
 /**
  * 依模糊程度取一個詞的拆法（PARSE_SELECTION；規則見檔頭「取哪些拆法」）。

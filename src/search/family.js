@@ -31,10 +31,10 @@
  * - 同形詞組排在其中最前面那一筆原本的位置。
  */
 
+import { EPSILON } from '#bcdp'
 import { DICTIONARY_KINDS, siblingTier } from './scoring.js'
 
 /** 分數比較容許的浮點誤差（分數是幾個小數相加） */
-const EPSILON = 1e-9
 
 /** 上層關係的最大深度（防止資料錯誤造成過長的鏈） */
 const MAX_DEPTH = 32

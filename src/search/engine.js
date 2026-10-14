@@ -820,8 +820,8 @@ export class SearchEngine {
       .map(([k, v]) => ({
         doc: this.doc(k),
         terms: [...new Set(v.terms)],
-        distance: Math.round(v.distance * 1e9) / 1e9,
-        score: Math.round(v.score * 1e9) / 1e9,
+        distance: roundCost(v.distance),
+        score: roundCost(v.score),
         matchType: /** @type {MatchType} */ (MATCH_TYPES[v.rank]),
         matches: v.matches,
       }))

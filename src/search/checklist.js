@@ -17,6 +17,7 @@
  *    （attachSegmentations；網站第一次需要時才載入）。
  */
 
+import { EPSILON } from '#bcdp'
 import { decodePosting, docAt } from './format.js'
 import { compareSegmentations, SEGMENTATIONS_FORMAT_VERSION } from './segmentation.js'
 
@@ -381,7 +382,7 @@ function groupByText(docs, accept, normalize) {
  */
 export function classify(hits) {
   if (!hits.length) return 'none'
-  const best = hits.filter((h) => h.score <= hits[0].score + 1e-9)
+  const best = hits.filter((h) => h.score <= hits[0].score + EPSILON)
   if (best.some((h) => h.matchType === 'lemma')) return 'derivation'
   if (best.some((h) => h.matchType === 'fuzzy' && h.alignment?.length && h.alignment.every((n) => n.op === 'rule'))) return 'variant'
   return 'near'
