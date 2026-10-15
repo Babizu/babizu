@@ -24,33 +24,41 @@
  * 完整說明見 docs/language-profile.md。
  */
 
-import { CostModel } from './costs.ts'
-import { WeightedEditDistance } from './distance.js'
-import { alternationRules, validateMorphology } from './morphology.js'
-import { createNormalizer, DEFAULT_CHAR_MAP } from './text-normalize.ts'
-import { RuleSet } from './rules.ts'
+import { CostModel, type CostOptions } from './costs.ts'
+import { WeightedEditDistance, type MetricOptions } from './distance.ts'
+import type { GrammarSpec } from './grammar.ts'
+import { alternationRules, validateMorphology, type MorphologySpec } from './morphology.ts'
+import { RuleSet, type RuleGroup } from './rules.ts'
+import { createNormalizer, DEFAULT_CHAR_MAP, type NormalizerOptions } from './text-normalize.ts'
 
 export const PROFILE_FORMAT = 'babizu-language-profile'
 export const PROFILE_VERSION = 1
 
-/**
- * @typedef {object} LanguageProfile
- * @property {'babizu-language-profile'} format
- * @property {1} version
- * @property {{
- *   lowercase?: boolean,
- *   charMap?: Record<string, string>,
- *   useDefaultCharMap?: boolean,
- *   stripDiacritics?: boolean,
- *   preserve?: string[],
- * }} [normalizer] 正規化選項；`charMap` 疊加在框架預設對應（撇號統一、ǝ→ə、全形空白）之上，
- *   `useDefaultCharMap: false` 可以不要預設對應
- * @property {string} [notationChars] 辭典體例符號（連字號、等號…），搜尋時忽略
- * @property {string[]} [boundaries] 詞邊界字元，決定「詞首」「詞尾」規則的範圍
- * @property {import('./costs.ts').CostOptions} [costs] 基本編輯成本
- * @property {import('./rules.ts').RuleGroup[]} [rules] 語音對應規則表（依分類分組）
- * @property {import('./morphology.js').MorphologySpec} [morphology] 構詞規格（去詞綴／還原詞綴；選填）
- */
+export interface LanguageProfile {
+  format: 'babizu-language-profile'
+  version: 1
+  /**
+   * 正規化選項；`charMap` 疊加在框架預設對應（撇號統一、ǝ→ə、全形空白）之上，
+   * `useDefaultCharMap: false` 可以不要預設對應
+   */
+  normalizer?: {
+    lowercase?: boolean
+    charMap?: Record<string, string>
+    useDefaultCharMap?: boolean
+    stripDiacritics?: boolean
+    preserve?: string[]
+  }
+  /** 辭典體例符號（連字號、等號…），搜尋時忽略 */
+  notationChars?: string
+  /** 詞邊界字元，決定「詞首」「詞尾」規則的範圍 */
+  boundaries?: string[]
+  /** 基本編輯成本 */
+  costs?: CostOptions
+  /** 語音對應規則表（依分類分組） */
+  rules?: RuleGroup[]
+  /** 構詞規格（平面清單或構詞文法寫法；選填） */
+  morphology?: MorphologySpec | GrammarSpec
+}
 
 /** 沒有提供時的預設值 */
 const DEFAULTS = Object.freeze({
@@ -61,13 +69,12 @@ const DEFAULTS = Object.freeze({
 /**
  * 檢查設定檔格式，回傳錯誤訊息清單（空陣列表示正確）。
  * 只檢查結構；規則內容是否合理（例如權重非負）由 RuleSet 與 CostModel 在建立時檢查。
- * @param {unknown} profile
- * @returns {string[]}
  */
-export function validateProfile(profile) {
-  const errors = []
+export function validateProfile(profile: unknown): string[] {
+  const errors: string[] = []
   if (!profile || typeof profile !== 'object') return ['語言設定檔必須是物件']
-  const p = /** @type {Record<string, any>} */ (profile)
+  // 內容還沒檢查過，所以各欄位以 any 讀取
+  const p = profile as Record<string, any>
   if (p.format !== PROFILE_FORMAT) errors.push(`format 必須是 "${PROFILE_FORMAT}"`)
   if (p.version !== PROFILE_VERSION) errors.push(`version 必須是 ${PROFILE_VERSION}（目前支援的版本）`)
   if (p.normalizer !== undefined && (typeof p.normalizer !== 'object' || p.normalizer === null)) {
@@ -90,23 +97,15 @@ export function validateProfile(profile) {
   return errors
 }
 
-/**
- * 檢查設定檔，有錯就丟出例外。
- * @param {unknown} profile
- * @returns {LanguageProfile}
- */
-export function assertProfile(profile) {
+/** 檢查設定檔，有錯就丟出例外。 */
+export function assertProfile(profile: unknown): LanguageProfile {
   const errors = validateProfile(profile)
   if (errors.length > 0) throw new TypeError(`語言設定檔格式錯誤：\n- ${errors.join('\n- ')}`)
-  return /** @type {LanguageProfile} */ (profile)
+  return profile as LanguageProfile
 }
 
-/**
- * 設定檔 → `createNormalizer` 的選項。
- * @param {LanguageProfile} profile
- * @returns {import('./text-normalize.ts').NormalizerOptions}
- */
-export function normalizerOptionsFromProfile(profile) {
+/** 設定檔 → `createNormalizer` 的選項。 */
+export function normalizerOptionsFromProfile(profile: LanguageProfile): NormalizerOptions {
   const n = profile.normalizer ?? {}
   return {
     lowercase: n.lowercase ?? true,
@@ -116,18 +115,15 @@ export function normalizerOptionsFromProfile(profile) {
   }
 }
 
-/** @param {LanguageProfile} profile */
-export function notationCharsOf(profile) {
+export function notationCharsOf(profile: LanguageProfile): string {
   return profile.notationChars ?? DEFAULTS.notationChars
 }
 
 /**
  * 依設定檔建立距離函式。
- * @param {LanguageProfile} profile
- * @param {Partial<import('./distance.js').MetricOptions>} [overrides] 例如換掉 normalize
- * @returns {WeightedEditDistance}
+ * @param overrides 例如換掉 normalize
  */
-export function createMetricFromProfile(profile, overrides = {}) {
+export function createMetricFromProfile(profile: LanguageProfile, overrides: Partial<MetricOptions> = {}): WeightedEditDistance {
   assertProfile(profile)
   return new WeightedEditDistance({
     costs: new CostModel(profile.costs ?? {}),
@@ -138,11 +134,8 @@ export function createMetricFromProfile(profile, overrides = {}) {
   })
 }
 
-/**
- * 依設定檔建立規則集（每次都是新物件，可以自由開關分類，實驗室頁面用）。
- * @param {LanguageProfile} profile
- */
-export function createRulesFromProfile(profile) {
+/** 依設定檔建立規則集（每次都是新物件，可以自由開關分類，實驗室頁面用）。 */
+export function createRulesFromProfile(profile: LanguageProfile): RuleSet {
   // 構詞音變也是規則（只在詞素交界適用），與方言規則放在同一個 RuleSet：構詞搜尋與普通搜尋共用一次詞圖走訪
   return RuleSet.fromTable(profile.rules ?? []).addTable(alternationRules(profile.morphology))
 }
@@ -154,12 +147,10 @@ const UNREACHABLE = 1e6
  * 只有構詞音變的距離函式：構詞規格的交界規則（構詞音變），沒有方言規則，一般的替換、刪除、插入都不可能。
  *
  * 虛擬詞根（詞根不在詞庫中）的分析用它：這樣的分析中，不在詞庫裡的部分不能再加模糊——詞幹是查詢中原樣的一段，
- * 詞綴也必須原樣出現，只容許構詞音變（docs/bcdp.md 10.5，virtual-roots.js）。
- * @param {LanguageProfile} profile
- * @param {{normalize?: (text: string) => string}} [options] 正規化（省略時依設定檔的 normalizer）；要與搜尋用的距離函式相同
- * @returns {WeightedEditDistance}
+ * 詞綴也必須原樣出現，只容許構詞音變（docs/bcdp.md 10.5，virtual-roots.ts）。
+ * @param options.normalize 正規化（省略時依設定檔的 normalizer）；要與搜尋用的距離函式相同
  */
-export function createAlternationMetricFromProfile(profile, { normalize } = {}) {
+export function createAlternationMetricFromProfile(profile: LanguageProfile, { normalize }: { normalize?: (text: string) => string } = {}): WeightedEditDistance {
   return createMetricFromProfile(profile, {
     ...(normalize ? { normalize } : {}),
     rules: RuleSet.fromTable(alternationRules(profile.morphology)),

@@ -11,7 +11,7 @@
  * - 沒有循環：邊一定由較短的詞根指向較長的詞，所以依長度由短到長鬆弛一遍就是最短路徑，走訪一定停止。
  * - 只取最好的詞根、允許遞移：比收下所有詞根雜訊少得多，召回幾乎一樣（研究紀錄的評估）。
  *
- * ## 虛擬詞根：詞庫中沒有的共同詞根（演算法在 BCDP 套件的 virtual-roots.js）
+ * ## 虛擬詞根：詞庫中沒有的共同詞根（演算法在 BCDP 套件的 virtual-roots.ts）
  * 詞根不在詞庫中時，在詞圖上走訪找不到它：查 binubuer（b<in>ubuer）找不到 mabubuer（ma-bubuer），
  * 因為兩者共同的詞根 bubuer 不是任何記錄的詞形。所以同一個 BCDP 也求「詞庫外的詞根」（`virtualRoots`，docs/bcdp.md 10.5）：
  * - **字面**：詞根是詞中原樣的一段（BCDP 的 openStems，成本直接由交界列讀出），分析中的詞綴也必須原樣出現，
@@ -51,7 +51,7 @@ import { createMorphSearch, DERIVATION_MAX_COST, EPSILON, FuzzyIndex, isVirtualR
 import { decodePosting } from './format.js'
 import { createTextTools } from './text.js'
 
-// 虛擬詞根的演算法在 BCDP 套件（packages/bcdp/src/virtual-roots.js）；這裡轉匯出，babizu/search 的 API 不變
+// 虛擬詞根的演算法在 BCDP 套件（packages/bcdp/src/virtual-roots.ts）；這裡轉匯出，babizu/search 的 API 不變
 export { DERIVATION_MAX_COST, isVirtualRootShape, lexicalEdgeCost, soundOf, virtualRootCost, virtualRoots } from '#bcdp'
 
 /** derivations.json 的格式版本（2：加上虛擬詞根） */
@@ -88,13 +88,13 @@ export function entryTest(index) {
  * @param {FuzzyIndex} index 詞庫（虛擬詞根不能是詞庫中的詞）
  */
 export function createVirtualRootSearch(text, index) {
-  return createMorphSearch({ analyzer: /** @type {import('#bcdp/morphology.js').Analyzer} */ (text.morphology), metric: text.createAlternationMetric(), index, isEntry: entryTest(index) })
+  return createMorphSearch({ analyzer: /** @type {import('#bcdp/morphology.ts').Analyzer} */ (text.morphology), metric: text.createAlternationMetric(), index, isEntry: entryTest(index) })
 }
 
 /**
  * @typedef {object} DerivationAnalysis 一條邊的分析：w 由 r 加上這些步驟而來
  * @property {number} cost 步驟成本＋整個詞的音變
- * @property {import('#bcdp/morph-search.js').MorphStepHit[]} steps 由外而內
+ * @property {import('#bcdp/morph-search.ts').MorphStepHit[]} steps 由外而內
  * @property {Array<{op: string, source: string, target: string, cost: number, category: string | null, where: string}>} notes
  */
 
@@ -103,7 +103,7 @@ export function createVirtualRootSearch(text, index) {
  * @property {number} version
  * @property {number} count
  * @property {string[]} virtual 虛擬詞根
- * @property {import('#bcdp/morph-search.js').MorphStepHit[]} steps
+ * @property {import('#bcdp/morph-search.ts').MorphStepHit[]} steps
  * @property {Array<[number, number[], Array<[string, string, string, number, string | null, string]>]>} analyses
  * @property {number[]} edges
  */
@@ -119,7 +119,7 @@ export function createVirtualRootSearch(text, index) {
  *    src/site/derivations.js；各塊的結果依詞編號接起來，與一次算完相同）。`analyzeAll` 另外收下拆解表與虛擬詞根的候選；
  * 2. `virtual(edges, candidates)`：拿第 1 階段全部的邊，過濾虛擬詞根的候選（詞本身是別的詞的詞根時不往上拆，
  *    要知道全部的邊）。沒有候選時這裡現算（單執行緒）。
- * @param {{lexicon: import('#bcdp/fuzzy-index.js').SerializedIndex, profile: import('#bcdp/profile.js').LanguageProfile}} input
+ * @param {{lexicon: import('#bcdp/fuzzy-index.ts').SerializedIndex, profile: import('#bcdp/profile.ts').LanguageProfile}} input
  */
 export function createDerivationAnalyzer({ lexicon, profile }) {
   const text = createTextTools(profile)
@@ -328,7 +328,7 @@ export function encodeEdges(edges, count, version) {
 
 /**
  * 建立自動派生圖（單執行緒；測試與評估工具用，網站建置另有平行版本）。
- * @param {{lexicon: import('#bcdp/fuzzy-index.js').SerializedIndex, profile: import('#bcdp/profile.js').LanguageProfile}} input
+ * @param {{lexicon: import('#bcdp/fuzzy-index.ts').SerializedIndex, profile: import('#bcdp/profile.ts').LanguageProfile}} input
  * @returns {DerivationData}
  */
 export function buildDerivationGraph({ lexicon, profile }) {

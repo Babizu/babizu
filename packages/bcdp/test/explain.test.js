@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { roundCost, RuleSet, WeightedEditDistance } from '../src/index.js'
+import { roundCost, RuleSet, WeightedEditDistance } from '../src/index.ts'
 import { createPazehKaxabuMetric } from './fixtures/pazeh.js'
 import { createRandom, pick, randomString } from './helpers.js'
 

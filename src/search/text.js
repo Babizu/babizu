@@ -25,15 +25,15 @@ const MORPHEME_SEPARATORS = /[-=~<>]+/u
  * @property {(text: string) => string} searchKey 族語搜尋鍵
  * @property {(text: string) => string[]} tokenize 族語斷詞（含構詞部分）
  * @property {(text: string) => string[]} splitWords 只切整詞
- * @property {() => import('#bcdp/distance.js').WeightedEditDistance} createSearchMetric
- * @property {() => import('#bcdp/distance.js').WeightedEditDistance} createAlternationMetric
+ * @property {() => import('#bcdp/distance.ts').WeightedEditDistance} createSearchMetric
+ * @property {() => import('#bcdp/distance.ts').WeightedEditDistance} createAlternationMetric
  *   只有構詞音變的距離函式（虛擬詞根的分析用，見下方匯出的同名函式）
- * @property {import('#bcdp/morphology.js').Analyzer | null} morphology 構詞規格；語言設定檔沒有 `morphology` 時為 null
+ * @property {import('#bcdp/morphology.ts').Analyzer | null} morphology 構詞規格；語言設定檔沒有 `morphology` 時為 null
  */
 
 /**
  * 依語言設定檔建立文字工具。
- * @param {import('#bcdp/profile.js').LanguageProfile} profile
+ * @param {import('#bcdp/profile.ts').LanguageProfile} profile
  * @returns {TextTools}
  *
  * @example
@@ -104,11 +104,11 @@ export function createTextTools(profile) {
  * 建置、搜尋引擎與演算法實驗室都用這個函式建立距離函式，三者算出的距離才會一致。
  * 實驗室可以換掉規則或成本（使用者編輯過的），其餘（正規化、詞邊界）仍與搜尋相同。
  *
- * @param {import('#bcdp/profile.js').LanguageProfile} profile
+ * @param {import('#bcdp/profile.ts').LanguageProfile} profile
  * @param {object} [options]
  * @param {import('#bcdp/rules.ts').RuleSet} [options.rules] 取代設定檔的規則
  * @param {import('#bcdp/costs.ts').CostOptions} [options.costs] 取代設定檔的成本
- * @returns {import('#bcdp/distance.js').WeightedEditDistance}
+ * @returns {import('#bcdp/distance.ts').WeightedEditDistance}
  */
 export function createSearchMetric(profile, options = {}) {
   const searchKey = createNormalizer({ ...normalizerOptionsFromProfile(profile), removeChars: notationCharsOf(profile) })
@@ -116,7 +116,7 @@ export function createSearchMetric(profile, options = {}) {
 }
 
 /**
- * @param {import('#bcdp/profile.js').LanguageProfile} profile
+ * @param {import('#bcdp/profile.ts').LanguageProfile} profile
  * @param {(text: string) => string} searchKey
  * @param {{rules?: import('#bcdp/rules.ts').RuleSet, costs?: import('#bcdp/costs.ts').CostOptions}} [options]
  */
@@ -126,9 +126,9 @@ function searchMetric(profile, searchKey, { rules, costs } = {}) {
 
 /**
  * 只有構詞音變的距離函式：構詞規格的交界規則（構詞音變），沒有方言規則，一般的替換、刪除、插入都不可能。
- * 虛擬詞根的分析用它（BCDP 套件的 virtual-roots.js）。正規化與詞邊界與 createSearchMetric 相同。
- * @param {import('#bcdp/profile.js').LanguageProfile} profile
- * @returns {import('#bcdp/distance.js').WeightedEditDistance}
+ * 虛擬詞根的分析用它（BCDP 套件的 virtual-roots.ts）。正規化與詞邊界與 createSearchMetric 相同。
+ * @param {import('#bcdp/profile.ts').LanguageProfile} profile
+ * @returns {import('#bcdp/distance.ts').WeightedEditDistance}
  */
 export function createAlternationMetric(profile) {
   const searchKey = createNormalizer({ ...normalizerOptionsFromProfile(profile), removeChars: notationCharsOf(profile) })

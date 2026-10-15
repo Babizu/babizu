@@ -4,7 +4,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { createAnalyzer, createMorphSearch, FuzzyIndex } from '../src/index.js'
+import { createAnalyzer, createMorphSearch, FuzzyIndex } from '../src/index.ts'
 import { createPazehKaxabuMetric } from './fixtures/pazeh.js'
 
 const metric = createPazehKaxabuMetric()

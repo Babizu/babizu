@@ -10,8 +10,8 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { validateMorphology } from '../src/morphology.js'
-import { evaluate, expandGrammar } from '../src/grammar.js'
+import { validateMorphology } from '../src/morphology.ts'
+import { evaluate, expandGrammar } from '../src/grammar.ts'
 import { createRandom, pick } from './helpers.js'
 import { GRAMMAR } from './fixtures/grammar.js'
 import { openAnalyzer } from './open-stems.js'

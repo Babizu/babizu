@@ -16,7 +16,7 @@ import site from 'virtual:babizu/site'
 import { computed, reactive } from 'vue'
 import { t } from '@/i18n.js'
 
-/** @type {import('#bcdp/profile.js').LanguageProfile} */
+/** @type {import('#bcdp/profile.ts').LanguageProfile} */
 const PROFILE = /** @type {any} */ (site.profile)
 
 /**

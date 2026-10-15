@@ -8,7 +8,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { EPSILON, FuzzyIndex, RuleSet, WeightedEditDistance } from '../src/index.js'
+import { EPSILON, FuzzyIndex, RuleSet, WeightedEditDistance } from '../src/index.ts'
 import { emptyJunction, mergeInto, toForwardEnd } from '../src/junction.ts'
 import { createRandom, pick, randomString } from './helpers.js'
 import { refJoint, refJointContext } from './reference/ref-joint.js'
@@ -42,10 +42,10 @@ function randomMetric(random) {
  * @param {WeightedEditDistance} metric
  * @param {string} form
  * @param {string[]} x
- * @param {import('../src/fuzzy-index.js').JunctionState | undefined} from
+ * @param {import('../src/fuzzy-index.ts').JunctionState | undefined} from
  */
 function walk(metric, form, x, from) {
-  /** @type {import('../src/fuzzy-index.js').JunctionState | null} */
+  /** @type {import('../src/fuzzy-index.ts').JunctionState | null} */
   let state = null
   new FuzzyIndex(metric).addAll([[form, form]]).searchChannels([
     { query: x, options: { maxDistance: 1e9, from, lockBoundary: true, onJunction: (_t, s) => (state = s) } },

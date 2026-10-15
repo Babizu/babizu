@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { RuleSet } from '../src/index.js'
+import { RuleSet } from '../src/index.ts'
 import { createPazehKaxabuRules, PAZEH_KAXABU_RULES } from './fixtures/pazeh.js'
 
 describe('RuleSet', () => {

@@ -1,6 +1,6 @@
 /**
- * @file 測試用：去詞綴＝同一個 BCDP 的字面開放詞幹（morph-search.js 的 openStems），用只有構詞音變的距離函式，
- * 與虛擬詞根走同一條路（virtual-roots.js）。詞幹是詞中原樣的一段，詞綴原樣出現，只容許構詞音變；不需要詞庫。
+ * @file 測試用：去詞綴＝同一個 BCDP 的字面開放詞幹（morph-search.ts 的 openStems），用只有構詞音變的距離函式，
+ * 與虛擬詞根走同一條路（virtual-roots.ts）。詞幹是詞中原樣的一段，詞綴原樣出現，只容許構詞音變；不需要詞庫。
  */
 
 import {
@@ -11,7 +11,7 @@ import {
   FuzzyIndex,
   normalizerOptionsFromProfile,
   notationCharsOf,
-} from '../src/index.js'
+} from '../src/index.ts'
 
 /**
  * @param {any} morphology 構詞規格（平面清單或構詞文法）；lemmaSpread 沒有寫時放寬到 10，列出所有詞幹

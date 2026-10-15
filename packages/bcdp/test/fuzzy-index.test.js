@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { FuzzyIndex, RuleSet, WeightedEditDistance, EPSILON } from '../src/index.js'
+import { FuzzyIndex, RuleSet, WeightedEditDistance, EPSILON } from '../src/index.ts'
 import { createPazehKaxabuMetric } from './fixtures/pazeh.js'
 import { createRandom, pick, randomString } from './helpers.js'
 
@@ -69,7 +69,7 @@ describe('FuzzyIndex', () => {
     for (const w of lexicon) for (let k = 0; k <= w.length; k++) prefixes.add(w.slice(0, k))
     const channels = Array.from({ length: 40 }, () => {
       const query = randomString(random, alphabet, 4, 10)
-      /** @type {import('../src/fuzzy-index.js').SearchOptions} */
+      /** @type {import('../src/fuzzy-index.ts').SearchOptions} */
       const options = { maxDistance: 1 }
       if (withBoundary) {
         // 像詞綴圖表：開頭與幾個前綴終點可以起始、詞尾與幾個後綴起點可以結束

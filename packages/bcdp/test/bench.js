@@ -5,7 +5,7 @@
  */
 
 import { performance } from 'node:perf_hooks'
-import { FuzzyIndex } from '../src/index.js'
+import { FuzzyIndex } from '../src/index.ts'
 import { createPazehKaxabuMetric } from './fixtures/pazeh.js'
 
 /** 可重現的亂數 */

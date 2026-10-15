@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { WeightedEditDistance, RuleSet } from '../src/index.js'
+import { WeightedEditDistance, RuleSet } from '../src/index.ts'
 import { createPazehKaxabuMetric } from './fixtures/pazeh.js'
 
 describe('基本成本（無規則）', () => {

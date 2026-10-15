@@ -21,8 +21,8 @@ const CHUNK = 250
 
 /**
  * @param {{
- *   lexicon: import('#bcdp/fuzzy-index.js').SerializedIndex,
- *   profile: import('#bcdp/profile.js').LanguageProfile,
+ *   lexicon: import('#bcdp/fuzzy-index.ts').SerializedIndex,
+ *   profile: import('#bcdp/profile.ts').LanguageProfile,
  *   count: number,
  *   cacheDir: string,
  * }} input
@@ -54,10 +54,10 @@ export async function buildDerivations({ lexicon, profile, count, cacheDir }) {
   return { data, parses, cached: false }
 }
 
-/** 分析結果取決於哪些原始碼（快取鍵的一部分） */
+/** 分析結果取決於哪些原始碼（快取鍵的一部分）：BCDP 套件的模組（.ts 與尚未移植的 .js）與搜尋層的分析 */
 async function analysisSources() {
   const fuzzy = new URL('../../packages/bcdp/src/', import.meta.url)
-  const names = (await readdir(fuzzy)).filter((n) => n.endsWith('.js')).sort()
+  const names = (await readdir(fuzzy)).filter((n) => /\.(js|ts)$/.test(n)).sort()
   return [
     ...names.map((n) => new URL(n, fuzzy)),
     new URL('../search/derivations.js', import.meta.url),
@@ -67,8 +67,8 @@ async function analysisSources() {
 }
 
 /**
- * @param {import('#bcdp/fuzzy-index.js').SerializedIndex} lexicon
- * @param {import('#bcdp/profile.js').LanguageProfile} profile
+ * @param {import('#bcdp/fuzzy-index.ts').SerializedIndex} lexicon
+ * @param {import('#bcdp/profile.ts').LanguageProfile} profile
  * @param {number} count
  */
 async function analyzeParallel(lexicon, profile, count) {

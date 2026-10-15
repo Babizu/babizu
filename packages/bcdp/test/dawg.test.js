@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { Dawg, FuzzyIndex } from '../src/index.js'
+import { Dawg, FuzzyIndex } from '../src/index.ts'
 import { createPazehKaxabuMetric } from './fixtures/pazeh.js'
 import { createRandom, randomString } from './helpers.js'
 

@@ -202,7 +202,7 @@ export function refMorph(ctx, { query, lexicon, spec, maxDistance, why, rootSyll
 
 /**
  * 重疊模板的獨立寫法（bcdp.md 1.6 第 2 項、language-profile.md「重疊」）：以正規表示式直接寫出定義，
- * 不共用 src/fuzzy/morphology.js 的程式。V 是元音字母，C 是其他字元；元音核是連續的元音。
+ * 不共用 src/morphology.ts 的程式。V 是元音字母，C 是其他字元；元音核是連續的元音。
  * @param {string} vowels
  * @returns {(pattern: string, base: string) => string | null}
  */

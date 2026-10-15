@@ -178,7 +178,7 @@ export async function loadSiteConfig(siteDir) {
 
   // 語言設定檔
   const languageFile = join(root, input.language ?? 'language.json')
-  /** @type {import('#bcdp/profile.js').LanguageProfile | null} */
+  /** @type {import('#bcdp/profile.ts').LanguageProfile | null} */
   let profile = null
   if (!existsSync(languageFile)) errors.push(`找不到語言設定檔 ${languageFile}`)
   else {

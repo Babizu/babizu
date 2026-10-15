@@ -6,7 +6,7 @@
  * 欄式比「物件陣列」少了重複的鍵名，gzip 後也更小。代碼類欄位存成小整數，
  * 對照表放在同一個檔案裡。
  *
- * ## lexicon.json：序列化的 FuzzyIndex（見 babizu/fuzzy 的 fuzzy-index.js）
+ * ## lexicon.json：序列化的 FuzzyIndex（見 @babizu/bcdp 的 fuzzy-index.ts）
  * 詞圖的每個詞（族語搜尋鍵）附帶一組整數 posting，
  * 每個 posting 同時編碼「哪一筆記錄」與「這個詞以什麼身分出現在該記錄」：
  *   code = docIndex × MATCH_KINDS.length + kindIndex

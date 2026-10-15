@@ -29,12 +29,12 @@ import { collectSegmentations } from './segmentation.js'
  * @param {Array<{record: CorpusRecord, shard: string}>} input.items 所有記錄及其所在分片（順序即 doc 編號）
  * @param {CorpusGroup[]} input.groups 所有群組（用來取群組標題）
  * @param {string[]} input.sourceIds 來源 id（決定來源代碼）
- * @param {import('#bcdp/profile.js').LanguageProfile} input.profile 語言設定檔（搜尋鍵與距離規則）
+ * @param {import('#bcdp/profile.ts').LanguageProfile} input.profile 語言設定檔（搜尋鍵與距離規則）
  * @param {import('./format.js').VarietyRef[]} [input.varieties] 語言變體（方言）清單，順序決定位元位置
  * @returns {{
  *   docs: import('./format.js').SearchDocs,
- *   lexicon: import('#bcdp/fuzzy-index.js').SerializedIndex,
- *   profile: import('#bcdp/profile.js').LanguageProfile,
+ *   lexicon: import('#bcdp/fuzzy-index.ts').SerializedIndex,
+ *   profile: import('#bcdp/profile.ts').LanguageProfile,
  *   segmentations: import('./segmentation.js').SegmentationData,
  *   stats: {terms: number, postings: number, nodes: number, edges: number},
  * }}

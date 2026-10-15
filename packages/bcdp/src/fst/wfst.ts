@@ -19,21 +19,33 @@
 /** ε（空標籤） */
 export const EPS = ''
 
-/**
- * @typedef {{i: string, o: string, w: number, to: any}} Arc
- * @typedef {object} Wfst
- * @property {any} start
- * @property {(state: any) => string} key
- * @property {(state: any) => number} final
- * @property {(state: any) => Arc[]} arcs
- * @property {(state: any, label: string) => Arc[]} [arcsWithInput]
- * @property {(state: any) => Arc[]} [epsInputArcs]
- */
+/** 一條弧：輸入標籤 i、輸出標籤 o、權重 w、到達的狀態 to */
+export interface Arc<S> {
+  i: string
+  o: string
+  w: number
+  to: S
+}
 
-/** @param {Wfst} t @param {any} s @param {string} label */
-const withInput = (t, s, label) => (t.arcsWithInput ? t.arcsWithInput(s, label) : t.arcs(s).filter((a) => a.i === label))
-/** @param {Wfst} t @param {any} s */
-const epsInput = (t, s) => (t.epsInputArcs ? t.epsInputArcs(s) : t.arcs(s).filter((a) => a.i === EPS))
+/** 惰性的加權有限狀態轉錄器，狀態的型別是 S */
+export interface Wfst<S> {
+  start: S
+  key: (state: S) => string
+  final: (state: S) => number
+  arcs: (state: S) => Arc<S>[]
+  arcsWithInput?: (state: S, label: string) => Arc<S>[]
+  epsInputArcs?: (state: S) => Arc<S>[]
+}
+
+const withInput = <S>(t: Wfst<S>, s: S, label: string) => (t.arcsWithInput ? t.arcsWithInput(s, label) : t.arcs(s).filter((a) => a.i === label))
+const epsInput = <S>(t: Wfst<S>, s: S) => (t.epsInputArcs ? t.epsInputArcs(s) : t.arcs(s).filter((a) => a.i === EPS))
+
+/** 組合後的狀態：兩側的狀態與 ε 過濾器的狀態 f */
+export interface ComposedState<A, B> {
+  a: A
+  b: B
+  f: number
+}
 
 /**
  * 惰性組合 A ∘ B（A 的輸出接 B 的輸入）。
@@ -44,21 +56,12 @@ const epsInput = (t, s) => (t.epsInputArcs ? t.epsInputArcs(s) : t.arcs(s).filte
  * 兩者交錯的不同順序會產生重複路徑。過濾器規定：在兩次「同時前進」之間，B 的單獨前進必須全部排在 A 的前面——
  * 狀態 1 表示「剛讓 A 單獨前進過」，此時不再允許 B 單獨前進；同時前進後回到狀態 0。
  * 每一組 ε 動作因此恰好保留一種排列，不遺漏任何路徑（對最短距離而言重複路徑只影響效率，不影響正確性）。
- *
- * @param {Wfst} A
- * @param {Wfst} B
- * @returns {Wfst}
  */
-export function compose(A, B) {
-  /** @param {any} a @param {any} b @param {number} f */
-  const state = (a, b, f) => ({ a, b, f })
-  /**
-   * 以 A 的一條弧為起點的組合弧。
-   * @param {Arc} arc
-   * @param {{a: any, b: any, f: number}} s
-   * @param {Arc[]} out
-   */
-  const fromA = (arc, s, out) => {
+export function compose<A, B>(A: Wfst<A>, B: Wfst<B>): Wfst<ComposedState<A, B>> {
+  type State = ComposedState<A, B>
+  const state = (a: A, b: B, f: number): State => ({ a, b, f })
+  /** 以 A 的一條弧為起點的組合弧。 */
+  const fromA = (arc: Arc<A>, s: State, out: Arc<State>[]) => {
     if (arc.o === EPS) {
       // A 單獨前進（x:ε），B 停在原地
       out.push({ i: arc.i, o: EPS, w: arc.w, to: state(arc.to, s.b, 1) })
@@ -66,8 +69,8 @@ export function compose(A, B) {
     }
     for (const b of withInput(B, s.b, arc.o)) out.push({ i: arc.i, o: b.o, w: arc.w + b.w, to: state(arc.to, b.to, 0) })
   }
-  /** B 單獨前進（ε:z），A 停在原地 @param {{a: any, b: any, f: number}} s @param {Arc[]} out */
-  const bAlone = (s, out) => {
+  /** B 單獨前進（ε:z），A 停在原地 */
+  const bAlone = (s: State, out: Arc<State>[]) => {
     if (s.f === 1) return
     for (const b of epsInput(B, s.b)) out.push({ i: EPS, o: b.o, w: b.w, to: state(s.a, b.to, 0) })
   }
@@ -76,21 +79,18 @@ export function compose(A, B) {
     key: (s) => `${A.key(s.a)}‖${B.key(s.b)}‖${s.f}`,
     final: (s) => A.final(s.a) + B.final(s.b),
     arcs(s) {
-      /** @type {Arc[]} */
-      const out = []
+      const out: Arc<State>[] = []
       for (const arc of A.arcs(s.a)) fromA(arc, s, out)
       bAlone(s, out)
       return out
     },
     arcsWithInput(s, label) {
-      /** @type {Arc[]} */
-      const out = []
+      const out: Arc<State>[] = []
       for (const arc of withInput(A, s.a, label)) fromA(arc, s, out)
       return out
     },
     epsInputArcs(s) {
-      /** @type {Arc[]} */
-      const out = []
+      const out: Arc<State>[] = []
       for (const arc of epsInput(A, s.a)) fromA(arc, s, out)
       bAlone(s, out)
       return out
@@ -98,12 +98,8 @@ export function compose(A, B) {
   }
 }
 
-/**
- * 字串接受器：只接受 chars 本身（輸入＝輸出），權重 0。
- * @param {string[]} chars
- * @returns {Wfst}
- */
-export function stringAcceptor(chars) {
+/** 字串接受器：只接受 chars 本身（輸入＝輸出），權重 0。狀態是已讀的字元數。 */
+export function stringAcceptor(chars: string[]): Wfst<number> {
   const n = chars.length
   return {
     start: 0,
@@ -115,13 +111,9 @@ export function stringAcceptor(chars) {
   }
 }
 
-/**
- * 反轉：交換輸入與輸出標籤。
- * @param {Wfst} t
- * @returns {Wfst}
- */
-export function invert(t) {
-  const flip = (/** @type {Arc} */ a) => ({ i: a.o, o: a.i, w: a.w, to: a.to })
+/** 反轉：交換輸入與輸出標籤。 */
+export function invert<S>(t: Wfst<S>): Wfst<S> {
+  const flip = (a: Arc<S>): Arc<S> => ({ i: a.o, o: a.i, w: a.w, to: a.to })
   return {
     start: t.start,
     key: t.key,
@@ -133,23 +125,21 @@ export function invert(t) {
 /**
  * 最短距離（Dijkstra）：從起始狀態出發，列出所有「成本 ≤ bound」可到達的終止狀態。
  * 同一個終止狀態（依 key）只回報一次，取最小成本。
- *
- * @param {Wfst} t
- * @param {{bound?: number, onFinal?: (state: any, cost: number) => void, maxStates?: number}} [options]
- * @returns {{best: number, expanded: number}} best：最小的終止成本（沒有則 Infinity）；expanded：展開的狀態數
+ * @returns best：最小的終止成本（沒有則 Infinity）；expanded：展開的狀態數
  */
-export function shortestDistance(t, { bound = Infinity, onFinal, maxStates = 5e6 } = {}) {
-  const heap = new MinHeap()
-  /** @type {Map<string, number>} */
-  const settled = new Map()
-  /** @type {Map<string, number>} */
-  const tentative = new Map()
+export function shortestDistance<S>(
+  t: Wfst<S>,
+  { bound = Infinity, onFinal, maxStates = 5e6 }: { bound?: number; onFinal?: (state: S, cost: number) => void; maxStates?: number } = {},
+): { best: number; expanded: number } {
+  const heap = new MinHeap<S>()
+  const settled = new Map<string, number>()
+  const tentative = new Map<string, number>()
   heap.push(0, t.start)
   tentative.set(t.key(t.start), 0)
   let best = Infinity
   let expanded = 0
   while (heap.size > 0) {
-    const [cost, s] = /** @type {[number, any]} */ (heap.pop())
+    const [cost, s] = heap.pop() as [number, S]
     if (cost > bound + 1e-9) break
     const k = t.key(s)
     if (settled.has(k)) continue
@@ -177,18 +167,15 @@ export function shortestDistance(t, { bound = Infinity, onFinal, maxStates = 5e6
 }
 
 /** 二元最小堆（成本, 值） */
-class MinHeap {
-  constructor() {
-    /** @type {number[]} */
-    this.keys = []
-    /** @type {any[]} */
-    this.values = []
-  }
-  get size() {
+class MinHeap<T> {
+  private keys: number[] = []
+  private values: T[] = []
+
+  get size(): number {
     return this.keys.length
   }
-  /** @param {number} key @param {any} value */
-  push(key, value) {
+
+  push(key: number, value: T): void {
     const { keys, values } = this
     let i = keys.length
     keys.push(key)
@@ -203,12 +190,13 @@ class MinHeap {
     keys[i] = key
     values[i] = value
   }
-  pop() {
+
+  pop(): [number, T] | undefined {
     const { keys, values } = this
     if (keys.length === 0) return undefined
-    const top = [keys[0], values[0]]
-    const lastKey = /** @type {number} */ (keys.pop())
-    const lastValue = values.pop()
+    const top: [number, T] = [keys[0], values[0]]
+    const lastKey = keys.pop() as number
+    const lastValue = values.pop() as T
     if (keys.length > 0) {
       let i = 0
       const n = keys.length

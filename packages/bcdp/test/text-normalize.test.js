@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createNormalizer, normalizerOptionsFromProfile } from '../src/index.js'
+import { createNormalizer, normalizerOptionsFromProfile } from '../src/index.ts'
 import { PAZEH_PROFILE } from './fixtures/pazeh.js'
 import { createRandom, randomString } from './helpers.js'
 

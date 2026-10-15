@@ -5,7 +5,7 @@
  * 深度優先走訪詞圖。走到深度 j 的節點，就代表候選字串 Y 的前 j 個字元已確定，
  * 這時算出 DP 的第 j 列。共用前綴的詞共用上層的列，不必重算。
  *
- * 底層結構是 DAWG（見 dawg.js）：它同時合併共同前綴與共同後綴，節點數比 Trie 少很多。
+ * 底層結構是 DAWG（見 dawg.ts）：它同時合併共同前綴與共同後綴，節點數比 Trie 少很多。
  * 對搜尋演算法而言介面幾乎一樣（取子節點、是否為詞尾、子樹高度），差別有兩點：
  * - 節點會被多個詞共用，所以附帶資料不能掛在節點上。改用完美雜湊：DFS 沿著邊累加
  *   `wordsBefore`，抵達詞尾時就得到這個詞的字典序名次，再用名次索引 payload 陣列。
@@ -13,7 +13,7 @@
  *   DP 的列取決於「走到這裡的路徑」，而 DFS 中每條路徑只會走一次。
  *
  * ## 詞尾規則
- * 每個節點最多算兩列（見 dp.js 檔頭）：N_j 假設下一字元不是邊界，F_j 假設是詞尾。
+ * 每個節點最多算兩列（見 dp.ts 檔頭）：N_j 假設下一字元不是邊界，F_j 假設是詞尾。
  * - 節點本身是詞尾時，距離取 F_j[N]
  * - 子節點引用第 j 列時，依子節點字元是否為邊界選用 F_j 或 N_j
  * 因此 F_j 只在「本節點是詞尾」或「有邊界字元的子節點」時才需要計算，大多數節點只算一列。
@@ -36,7 +36,7 @@
  *
  * ## 詞素交界（構詞搜尋，docs/bcdp.md 第 4–7 節）
  * 構詞搜尋把「前綴鏈 · 詞幹 · 後綴鏈」看成一條底層字串，每一段各走一次（詞綴 trie 或詞庫詞圖），
- * 段與段之間以「交界狀態」銜接（dp.js 檔頭）：
+ * 段與段之間以「交界狀態」銜接（dp.ts 檔頭）：
  * - `from`：起點是前一段留下的交界狀態——交界列當作第 0 列，還沒走完的規則 target 由跨界狀態延續
  * - `onJunction`：走到詞尾時回報這一段結束時的交界狀態（前綴鏈、後綴鏈一段一段接下去）
  * - `to`：走到詞尾時與後一段的交界狀態（由反方向算好）耦合，得到整個詞的成本
@@ -48,145 +48,274 @@
  * ## 實作上的最佳化（結果與最佳化前逐位元相同）
  * - 詞圖的邊標籤預先轉成字元編號（`_edgeCodes`，每個索引、每組規則只算一次），
  *   並預先標出哪些邊是邊界字元，走訪時不再做字串比較。
- * - 路徑上的規則 target 匹配與跨列剪枝改由 `PathMatcher` 逐層維護（見 dp.js 檔頭第 3 點）。
+ * - 路徑上的規則 target 匹配與跨列剪枝改由 `PathMatcher` 逐層維護（見 dp.ts 檔頭第 3 點）。
  *   它只依賴路徑、與通道無關，所以每個節點只算一次，所有通道共用。
  * - 列的最小值由 `fillRow` 順便回傳。
  */
 
-import { Dawg } from './dawg.ts'
+import { Dawg, type SerializedDawg } from './dawg.ts'
+import type { WeightedEditDistance } from './distance.ts'
+import {
+  advanceCrossing,
+  createCrossing,
+  EDGE_JUNCTION,
+  EDGE_WORD,
+  EPSILON,
+  fillRow,
+  jumpBound,
+  PathMatcher,
+  prepareColumn,
+  roundCost,
+  type CompiledRules,
+  type Crossing,
+  type QueryPlan,
+} from './dp.ts'
 import { requireCost, requireLimit, requireString } from './guards.ts'
-import { advanceCrossing, createCrossing, EDGE_JUNCTION, EDGE_WORD, fillRow, jumpBound, PathMatcher, prepareColumn, roundCost, EPSILON } from './dp.ts'
-import { resolveNormalization } from './score-normalization.ts'
+import type { JunctionEnd, JunctionState } from './junction.ts'
+import { resolveNormalization, type NormalizationStrategy } from './score-normalization.ts'
 
-/** @typedef {import('./junction.ts').JunctionState} JunctionState 詞素交界上的 DP 狀態（定義在 junction.ts） */
-/** @typedef {import('./junction.ts').JunctionEnd} JunctionEnd 詞尾要耦合的後一段（定義在 junction.ts） */
+export type { JunctionEnd, JunctionState } from './junction.ts'
+
+export interface SearchOptions {
+  /** 絕對距離上限（含；預設 1） */
+  maxDistance?: number
+  /** 正規化分數上限（含；預設 Infinity） */
+  maxNormalized?: number
+  /** 用於 score 與 maxNormalized（預設 'none'） */
+  normalization?: string | Partial<NormalizationStrategy>
+  /** 最多回傳幾筆（預設 Infinity） */
+  limit?: number
+  /** 每走訪一個節點回呼一次（視覺化用） */
+  onNode?: (event: NodeVisit) => void
+  /** 第 0 列的起點成本（長度 = 查詢長度 + 1）：沒有跨界狀態的 from */
+  start?: ArrayLike<number>
+  /** 詞尾在查詢各位置結束的附加成本（長度同上）：沒有跨界狀態的 to */
+  end?: ArrayLike<number>
+  /** 起點：前一段留下的交界狀態（位置 0 是詞素交界） */
+  from?: JunctionState
+  /** 位置 0 的種類（dp.ts 的 EDGE_*）；預設有 from 時是交界，否則是詞首 */
+  startEdge?: number
+  /** 詞尾：與後一段的交界狀態耦合；結果的 distance 是整個詞的成本 */
+  to?: JunctionEnd
+  /** 每走到一個詞尾就回呼一次，附上這一段結束時的交界狀態（複本） */
+  onJunction?: (term: string, state: JunctionState, payloads: unknown[]) => void
+  /** 查詢的邊界字元（空白）完全不能被消耗（詞綴不含空白；預設 false） */
+  lockBoundary?: boolean
+  /**
+   * 第一個字元在 initials 中的詞改由 initialFrom.from 出發，其他詞照常由 from 出發（沒有 from 時不走）。
+   * 只有第 0 列依根節點的邊切換，之後的列照常計算
+   * （構詞：要求詞根元音開頭的環綴併進後綴相同的通道，docs/bcdp.md 第 7 節）
+   */
+  initialFrom?: { initials: Set<string>; from: JunctionState }
+  /**
+   * 相對上限（可由多個通道共用）：只需要「最佳 ＋ spread」之內的結果時，上限隨目前找到的最佳結果收緊。
+   * 最後的最佳一定不大於途中的最佳，所以最佳 ＋ spread 之內的詞一個也不會少
+   */
+  cutoff?: SpreadCutoff
+  /** 每走到一個詞尾就回呼一次，附上完整的 F 列（row[i] = 查詢前 i 個字元轉成這個詞的成本） */
+  onTerminal?: (term: string, row: Float64Array, payloads: unknown[]) => void
+}
+
+/** 相對上限的共用狀態（走訪時會被改寫） */
+export interface SpreadCutoff {
+  /** 目前找到的最小距離（初始 Infinity） */
+  best: number
+  /** 只保留距離不超過「最佳 ＋ spread」的結果 */
+  spread: number
+  /** 哪些詞算進最佳（呼叫端之後會丟掉的詞不能收緊上限） */
+  eligible?: (term: string) => boolean
+  /**
+   * 呼叫端之後另加在這個詞上的非負成本（構詞的詞根音節數）：最佳以加上它的總和計算
+   * （呼叫端也以總和排名、取「最佳 ＋ spread」之內的）。剪枝比的是不含它的距離，它只會讓總和更大，所以仍然精確
+   */
+  termCost?: (term: string) => number
+}
+
+export interface NodeVisit {
+  /** 此節點代表的前綴 */
+  prefix: string
+  depth: number
+  /** 詞圖中的節點編號（共用後綴時會在不同位置重複出現） */
+  node: number
+  /** 子樹內任何詞的距離下界 */
+  lowerBound: number
+  /** 此子樹允許的絕對距離上界 */
+  bound: number
+  /** 是否在此剪枝 */
+  pruned: boolean
+  /** 此節點是否為詞尾 */
+  terminal: boolean
+  /** 若為詞尾，該詞的距離 */
+  distance: number | null
+  /** 若為詞尾，是否符合門檻 */
+  accepted: boolean
+}
 
 /**
- * @typedef {object} SearchOptions
- * @property {number} [maxDistance=1] 絕對距離上限（含）
- * @property {number} [maxNormalized=Infinity] 正規化分數上限（含）
- * @property {string | Partial<import('./score-normalization.ts').NormalizationStrategy>} [normalization='none'] 用於 score 與 maxNormalized
- * @property {number} [limit=Infinity] 最多回傳幾筆
- * @property {(event: NodeVisit) => void} [onNode] 每走訪一個節點回呼一次（視覺化用）
- * @property {ArrayLike<number>} [start] 第 0 列的起點成本（長度 = 查詢長度 + 1）：沒有跨界狀態的 from
- * @property {ArrayLike<number>} [end] 詞尾在查詢各位置結束的附加成本（長度同上）：沒有跨界狀態的 to
- * @property {JunctionState} [from] 起點：前一段留下的交界狀態（位置 0 是詞素交界）
- * @property {number} [startEdge] 位置 0 的種類（dp.js 的 EDGE_*）；預設有 from 時是交界，否則是詞首
- * @property {JunctionEnd} [to] 詞尾：與後一段的交界狀態耦合；結果的 distance 是整個詞的成本
- * @property {(term: string, state: JunctionState, payloads: unknown[]) => void} [onJunction]
- *   每走到一個詞尾就回呼一次，附上這一段結束時的交界狀態（複本）
- * @property {boolean} [lockBoundary=false] 查詢的邊界字元（空白）完全不能被消耗（詞綴不含空白）
- * @property {{initials: Set<string>, from: JunctionState}} [initialFrom] 第一個字元在 initials 中的詞改由 initialFrom.from 出發，
- *   其他詞照常由 from 出發（沒有 from 時不走）。只有第 0 列依根節點的邊切換，之後的列照常計算
- *   （構詞：要求詞根元音開頭的環綴併進後綴相同的通道，docs/bcdp.md 第 7 節）
- * @property {SpreadCutoff} [cutoff] 相對上限（可由多個通道共用）：只需要「最佳 ＋ spread」之內的結果時，
- *   上限隨目前找到的最佳結果收緊。最後的最佳一定不大於途中的最佳，所以最佳 ＋ spread 之內的詞一個也不會少
- * @property {(term: string, row: Float64Array, payloads: unknown[]) => void} [onTerminal]
- *   每走到一個詞尾就回呼一次，附上完整的 F 列（row[i] = 查詢前 i 個字元轉成這個詞的成本）
+ * 有 to 時，最小值來自哪裡：詞尾（word）、交界列（row）、跨界規則（pending，tail 是 to.pending 的序號，
+ * x 是後一段開始的位置）
  */
+export interface CoupleExit {
+  kind: 'word' | 'row' | 'pending'
+  x: number
+  tail: number
+}
 
-/**
- * @typedef {object} SpreadCutoff 相對上限的共用狀態（走訪時會被改寫）
- * @property {number} best 目前找到的最小距離（初始 Infinity）
- * @property {number} spread 只保留距離不超過「最佳 ＋ spread」的結果
- * @property {(term: string) => boolean} [eligible] 哪些詞算進最佳（呼叫端之後會丟掉的詞不能收緊上限）
- * @property {(term: string) => number} [termCost] 呼叫端之後另加在這個詞上的非負成本（構詞的詞根音節數）：最佳以加上它的總和計算
- *   （呼叫端也以總和排名、取「最佳 ＋ spread」之內的）。剪枝比的是不含它的距離，它只會讓總和更大，所以仍然精確
- */
+export interface SearchResult {
+  /** 詞庫中的詞（已正規化） */
+  term: string
+  /** 絕對距離 */
+  distance: number
+  /** 正規化分數（normalization='none' 時等於 distance） */
+  score: number
+  /** 加入詞庫時附帶的資料 */
+  payloads: unknown[]
+  /** 有 to 時，詞在查詢中結束的位置（達到最小值的 x） */
+  endAt?: number
+  exit?: CoupleExit
+}
 
-/**
- * @typedef {object} NodeVisit
- * @property {string} prefix 此節點代表的前綴
- * @property {number} depth
- * @property {number} node 詞圖中的節點編號（共用後綴時會在不同位置重複出現）
- * @property {number} lowerBound 子樹內任何詞的距離下界
- * @property {number} bound 此子樹允許的絕對距離上界
- * @property {boolean} pruned 是否在此剪枝
- * @property {boolean} terminal 此節點是否為詞尾
- * @property {number | null} distance 若為詞尾，該詞的距離
- * @property {boolean} accepted 若為詞尾，是否符合門檻
- */
+export interface SearchStats {
+  visitedNodes: number
+  prunedNodes: number
+  computedRows: number
+}
 
-/**
- * @typedef {object} SearchResult
- * @property {string} term 詞庫中的詞（已正規化）
- * @property {number} distance 絕對距離
- * @property {number} score 正規化分數（normalization='none' 時等於 distance）
- * @property {unknown[]} payloads 加入詞庫時附帶的資料
- * @property {number} [endAt] 有 to 時，詞在查詢中結束的位置（達到最小值的 x）
- * @property {{kind: 'word' | 'row' | 'pending', x: number, tail: number}} [exit] 有 to 時，最小值來自哪裡：
- *   詞尾（word）、交界列（row）、跨界規則（pending，tail 是 to.pending 的序號，x 是後一段開始的位置）
- */
+export interface SerializedIndex {
+  format: string
+  version: number
+  dawg: SerializedDawg
+  /** 依詞的字典序排列 */
+  payloads: unknown[][]
+}
 
-/**
- * @typedef {object} SearchStats
- * @property {number} visitedNodes
- * @property {number} prunedNodes
- * @property {number} computedRows
- */
+/** 一個通道：查詢可以是字串（先正規化），或已正規化的 code point 陣列（原樣使用） */
+export interface ChannelSpec {
+  query: string | string[]
+  options?: SearchOptions
+}
 
-/**
- * @typedef {object} SerializedIndex
- * @property {string} format
- * @property {number} version
- * @property {import('./dawg.ts').SerializedDawg} dawg
- * @property {unknown[][]} payloads 依詞的字典序排列
- */
+/** 以 initials 開頭的詞的第 0 列（根節點算好，走進每條邊之前換上） */
+interface InitialRow {
+  initials: Set<string>
+  plan: QueryPlan
+  cross: Crossing | null
+  rowN: Float64Array
+  rowF: Float64Array
+  useF: boolean
+  minN: number
+  minF: number
+  /** 由這一套出發的子樹下界 */
+  lowerBound: number
+}
+
+/** 原本那一套第 0 列（根節點算完時記下） */
+interface BaseRow {
+  rowN: Float64Array
+  rowF: Float64Array
+  minN: number
+  minF: number
+  cross: Crossing | null
+  lowerBound: number
+}
+
+/** 走訪中一個通道的狀態 */
+interface Channel {
+  n: number
+  from: JunctionState | null
+  to: JunctionEnd | null
+  startEdge: number
+  /** 第 j 層的跨界狀態（來自 from.pending，只在淺層） */
+  cross: Crossing[]
+  /** 詞尾耦合的位能（見建立通道處）；處處是 0 時為 null */
+  pot: Float64Array | null
+  /** 詞尾的交界列（算完立刻使用，所以每個通道一個緩衝就夠） */
+  rowJ: Float64Array | null
+  /** 跨界耦合：（這一段尾巴的 trie 節點, to.pending 的序號）→ 規則 target 編號（-1 表示沒有） */
+  coupleTarget: Map<number, number>
+  maxDistance: number
+  cutoff: SpreadCutoff | null
+  maxNormalized: number
+  norm: NormalizationStrategy
+  onNode: SearchOptions['onNode']
+  onTerminal: SearchOptions['onTerminal']
+  onJunction: SearchOptions['onJunction']
+  initial: InitialRow | null
+  base0: BaseRow | null
+  bound0: number
+  plan: QueryPlan
+  /**
+   * rowsN[j]、rowsF[j]：路徑上第 j 層的兩種列；minN[j]、minF[j] 為各列最小值。
+   * 同一深度的兄弟節點依序走訪，前一個兄弟的子樹走完才會覆寫，所以每層各配置一次即可重複使用。
+   */
+  rowsN: Float64Array[]
+  /** rowsF[j] 是 F 列；不需要 F 列時與 rowsN[j] 是同一個陣列 */
+  rowsF: Float64Array[]
+  /** F 列自己的緩衝（每層一個）：rowsF[j] 指回 rowsN[j] 之後不必重新配置 */
+  bufF: Float64Array[]
+  minN: number[]
+  minF: number[]
+  rowAt: (r: number) => Float64Array
+  /** 第 r 列的最小值（跨列剪枝 jumpBound 用；每個通道建立一次，不在每個節點配置閉包） */
+  minAt: (r: number) => number
+  results: SearchResult[]
+}
 
 export const INDEX_FORMAT = 'pazeh-fuzzy-index'
 export const INDEX_VERSION = 2
 
 export class FuzzyIndex {
+  readonly metric: WeightedEditDistance
+  /** 建構中的詞與附帶資料；凍結後釋放 */
+  private _entries: Map<string, unknown[]> | null
+  private _dawg: Dawg | null
+  /** 依詞的字典序排列 */
+  private _payloads: unknown[][]
+  /** 詞表快取（需要逐詞比對時才展開） */
+  private _terms: string[] | null = null
+  /** 邊標籤的字元編號（見 _edgeCodes） */
+  private _codes: { compiled: CompiledRules; dawg: Dawg; codes: Int32Array; boundary: Uint8Array } | null = null
+  /** 上一次走訪用過、目前沒被借走的路徑匹配器（見 _searchChannels） */
+  private _spareMatcher: PathMatcher | null = null
+
   /**
-   * @param {import('./distance.js').WeightedEditDistance} metric
-   * @param {{dawg: Dawg, payloads: unknown[][]}} [built] 已建好的詞圖（反序列化時使用）
+   * @param built 已建好的詞圖（反序列化時使用）
    */
-  constructor(metric, built) {
+  constructor(metric: WeightedEditDistance, built?: { dawg: Dawg; payloads: unknown[][] }) {
     this.metric = metric
-    /** @type {Map<string, unknown[]> | null} 建構中的詞與附帶資料；凍結後釋放 */
     this._entries = built ? null : new Map()
-    /** @type {Dawg | null} */
     this._dawg = built?.dawg ?? null
-    /** @type {unknown[][]} 依詞的字典序排列 */
     this._payloads = built?.payloads ?? []
-    /** @type {string[] | null} 詞表快取（需要逐詞比對時才展開） */
-    this._terms = null
-    /** @type {{compiled: object, dawg: Dawg, codes: Int32Array, boundary: Uint8Array} | null} 邊標籤的字元編號（見 _edgeCodes） */
-    this._codes = null
-    /** @type {PathMatcher | null} 上一次走訪用過、目前沒被借走的路徑匹配器（見 _searchChannels） */
-    this._spareMatcher = null
   }
 
   /** 詞數 */
-  get size() {
+  get size(): number {
     return this._entries ? this._entries.size : this.dawg.size
   }
 
   /** 詞圖（第一次使用時才建立） */
-  get dawg() {
+  get dawg(): Dawg {
     if (!this._dawg) this.freeze()
-    return /** @type {Dawg} */ (this._dawg)
+    return this._dawg as Dawg
   }
 
   /** 所有詞（字典序）。第一次呼叫時才展開成陣列。 */
-  get terms() {
+  get terms(): string[] {
     if (!this._terms) this._terms = this.dawg.words()
     return this._terms
   }
 
   /** 每個詞的附帶資料，順序與 `terms` 相同 */
-  get payloads() {
+  get payloads(): unknown[][] {
     this.dawg // 確保已建立
     return this._payloads
   }
 
   /**
    * 加入一個詞。詞會先經過 metric 的正規化；正規化後為空字串的詞會被忽略。
-   * @param {string} term
-   * @param {unknown} [payload] 附帶資料（例如資料庫中的記錄編號）
-   * @returns {this}
+   * @param payload 附帶資料（例如資料庫中的記錄編號）
    */
-  add(term, payload) {
+  add(term: string, payload?: unknown): this {
     requireString(term, '詞')
     const key = this.metric.normalize(term)
     if (key === '') return this
@@ -197,11 +326,8 @@ export class FuzzyIndex {
     return this
   }
 
-  /**
-   * 批次加入。
-   * @param {Iterable<[string, unknown] | string>} items
-   */
-  addAll(items) {
+  /** 批次加入。 */
+  addAll(items: Iterable<[string, unknown] | string>): this {
     for (const item of items) {
       if (Array.isArray(item)) this.add(item[0], item[1])
       else this.add(item)
@@ -209,14 +335,11 @@ export class FuzzyIndex {
     return this
   }
 
-  /**
-   * 建立詞圖。加入新詞後會在下一次使用時自動重建，一般不需要自己呼叫。
-   */
-  freeze() {
-    const entries = this._entries ?? new Map()
+  /** 建立詞圖。加入新詞後會在下一次使用時自動重建，一般不需要自己呼叫。 */
+  freeze(): this {
+    const entries = this._entries ?? new Map<string, unknown[]>()
     const dawg = Dawg.build([...entries.keys()])
-    /** @type {unknown[][]} */
-    const payloads = new Array(dawg.size)
+    const payloads: unknown[][] = new Array(dawg.size)
     for (const [term, list] of entries) payloads[dawg.lookup(term)] = list
     for (let k = 0; k < payloads.length; k++) payloads[k] ??= []
     this._dawg = dawg
@@ -226,15 +349,10 @@ export class FuzzyIndex {
     return this
   }
 
-  /**
-   * 回到可新增詞的狀態（必要時由詞圖還原）。
-   * @returns {Map<string, unknown[]>}
-   * @private
-   */
-  _unfreeze() {
+  /** 回到可新增詞的狀態（必要時由詞圖還原）。 */
+  private _unfreeze(): Map<string, unknown[]> {
     if (this._entries) return this._entries
-    /** @type {Map<string, unknown[]>} */
-    const entries = new Map()
+    const entries = new Map<string, unknown[]>()
     if (this._dawg) this.terms.forEach((term, k) => entries.set(term, this._payloads[k] ?? []))
     this._entries = entries
     this._dawg = null
@@ -242,49 +360,35 @@ export class FuzzyIndex {
     return entries
   }
 
-  /**
-   * 精確查詢（經正規化）。
-   * @param {string} term
-   * @returns {unknown[] | undefined}
-   */
-  lookup(term) {
+  /** 精確查詢（經正規化）。 */
+  lookup(term: string): unknown[] | undefined {
     const index = this.dawg.lookup(this.metric.normalize(term))
     return index === -1 ? undefined : this._payloads[index]
   }
 
-  /**
-   * 依詞的字典序名次取得詞與附帶資料。
-   * @param {number} id
-   */
-  entry(id) {
+  /** 依詞的字典序名次取得詞與附帶資料（名次超出範圍時 term 是 null、payloads 是 undefined）。 */
+  entry(id: number): { term: string | null; payloads: unknown[] | undefined } {
     return { term: this.dawg.wordAt(id), payloads: this._payloads[id] }
   }
 
   /**
    * 模糊搜尋。
-   * @param {string} query
-   * @param {SearchOptions} [options]
-   * @returns {SearchResult[]} 依 score、distance、詞排序
+   * @returns 依 score、distance、詞排序
    *
    * @example
    * index.search('bintul', { maxDistance: 0.5 })
    * // → [{ term: 'bintun', distance: 0.1, score: 0.1, payloads: [...] }, ...]
    */
-  search(query, options = {}) {
+  search(query: string, options: SearchOptions = {}): SearchResult[] {
     return this.searchWithStats(query, options).results
   }
 
-  /**
-   * 模糊搜尋，並回傳走訪統計。
-   * @param {string} query
-   * @param {SearchOptions} [options]
-   * @returns {{results: SearchResult[], stats: SearchStats}}
-   */
-  searchWithStats(query, options = {}) {
+  /** 模糊搜尋，並回傳走訪統計。 */
+  searchWithStats(query: string, options: SearchOptions = {}): { results: SearchResult[]; stats: SearchStats } {
     const { limit = Infinity } = options
     requireLimit(limit, 'limit ')
     const stats = { visitedNodes: 0, prunedNodes: 0, computedRows: 0 }
-    const results = this._searchCore(query, options, stats).sort(
+    const results = this._searchChannels([{ query, options }], stats)[0].sort(
       (a, b) => a.score - b.score || a.distance - b.distance || (a.term < b.term ? -1 : a.term > b.term ? 1 : 0),
     )
     return { results: Number.isFinite(limit) ? results.slice(0, limit) : results, stats }
@@ -301,11 +405,10 @@ export class FuzzyIndex {
    * （原樣使用、不再正規化）。構詞搜尋用後者：它的查詢片段取自已正規化的查詢，
    * 再正規化一次可能改變片段（例如截掉頭尾空白），位置就會錯開（docs/bcdp.md 第 11 節）。
    *
-   * @param {Array<{query: string | string[], options?: SearchOptions}>} channels
-   * @param {SearchStats} [stats] 累加統計（走訪節點數以實際走訪計，不按通道重複計算）
-   * @returns {SearchResult[][]} 各通道的結果（未排序）
+   * @param stats 累加統計（走訪節點數以實際走訪計，不按通道重複計算）
+   * @returns 各通道的結果（未排序）
    */
-  searchChannels(channels, stats = { visitedNodes: 0, prunedNodes: 0, computedRows: 0 }) {
+  searchChannels(channels: ChannelSpec[], stats: SearchStats = { visitedNodes: 0, prunedNodes: 0, computedRows: 0 }): SearchResult[][] {
     return this._searchChannels(
       channels.map((c) => ({ query: c.query, options: c.options ?? {} })),
       stats,
@@ -313,33 +416,18 @@ export class FuzzyIndex {
   }
 
   /**
-   * 單一查詢的搜尋主體：就是只有一個通道的 `_searchChannels`。
-   * @param {string} query
-   * @param {SearchOptions} options
-   * @param {SearchStats} stats 累加統計
-   * @returns {SearchResult[]}
-   * @private
-   */
-  _searchCore(query, options, stats) {
-    return this._searchChannels([{ query, options }], stats)[0]
-  }
-
-  /**
    * 搜尋主體：詞圖深度優先走訪 + 逐列 DP + 剪枝（可同時跑多個通道）。
-   * @param {Array<{query: string, options: SearchOptions}>} specs
-   * @param {SearchStats} stats 累加統計
-   * @returns {SearchResult[][]}
-   * @private
+   * @param stats 累加統計
    */
-  _searchChannels(specs, stats) {
+  private _searchChannels(specs: Array<{ query: string | string[]; options: SearchOptions }>, stats: SearchStats): SearchResult[][] {
     if (specs.length === 0) return []
     const { compiled, costs } = this.metric
     const dawg = this.dawg
     const payloads = this._payloads
     const { codes, boundary } = this._edgeCodes(compiled)
 
-    /** @type {string[]} 目前走訪路徑上的字元（所有通道共用；只在組出結果的詞時使用） */
-    const path = []
+    /** 目前走訪路徑上的字元（所有通道共用；只在組出結果的詞時使用） */
+    const path: string[] = []
     /**
      * 路徑上的字元編號、邊界旗標與規則 target 的 trie 狀態（所有通道共用）。
      * 重複使用上一次的（每一層都由上一層重算，不會留下舊狀態）；走訪中的回呼若又搜尋同一個索引，
@@ -349,32 +437,30 @@ export class FuzzyIndex {
     const matcher = spare && spare.compiled === compiled ? spare : new PathMatcher(compiled)
     this._spareMatcher = null
     /** 第 r 列（r < 目前深度）是否該用 F 列：看路徑上第 r 個字元是否為邊界 */
-    const useF = (/** @type {number} */ r) => matcher.boundary[r] === 1
+    const useF = (r: number) => matcher.boundary[r] === 1
 
     /**
      * 查詢端的編譯結果依（查詢、交界、鎖住空白）共用：通道之間只差在起點列。複本共用成本表的快取與
      * 暫存（ColumnContext、ruleMin）；每個節點上一個通道的列算完才換下一個通道，所以暫存不會互相覆寫
-     * @type {Map<string, import('./dp.ts').QueryPlan>}
      */
-    const plans = new Map()
-    /** @param {string[]} x @param {Float64Array | null} start @param {boolean} junctions @param {boolean} lockBoundary */
-    const planFor = (x, start, junctions, lockBoundary) => {
+    const plans = new Map<string, QueryPlan>()
+    const planFor = (x: string[], start: Float64Array | null, junctions: boolean, lockBoundary: boolean): QueryPlan => {
       const key = `${junctions ? 1 : 0}${lockBoundary ? 1 : 0}${x.join('\u0001')}`
       let base = plans.get(key)
       if (!base) plans.set(key, (base = compiled.compileQuery(x, costs, { start: null, junctions, lockBoundary })))
       return start ? { ...base, start: Float64Array.from(start) } : base
     }
 
-    const channels = specs.map(({ query, options }) => {
+    const channels = specs.map(({ query, options }): Channel => {
       const x = Array.isArray(query) ? query : this.metric.prepare(query)
       if (options.maxDistance !== undefined) requireCost(options.maxDistance, 'maxDistance ')
       const n = x.length
       // start／end 是沒有跨界狀態的 from／to；只有 initialFrom 時，其他詞沒有起點（全部是 Infinity）
       const initialFrom = options.initialFrom ?? null
-      const from =
+      const from: JunctionState | null =
         options.from ??
         (options.start ? { row: Float64Array.from(options.start), pending: [] } : initialFrom ? { row: new Float64Array(n + 1).fill(Infinity), pending: [] } : null)
-      const to = options.to ?? (options.end ? { row: Float64Array.from(options.end), pending: [], word: null } : null)
+      const to: JunctionEnd | null = options.to ?? (options.end ? { row: Float64Array.from(options.end), pending: [], word: null } : null)
       const vectors = [
         from?.row,
         ...(from?.pending ?? []).map((p) => p.row),
@@ -387,13 +473,12 @@ export class FuzzyIndex {
       for (const vec of vectors) {
         if (vec && vec.length !== n + 1) throw new RangeError(`start／end（交界狀態）的長度必須是查詢長度 + 1（${n + 1}）`)
         // 剪枝的下界依賴「交界成本不小於 0」（docs/bcdp.md 第 7 節）
-        if (vec && !Array.prototype.every.call(vec, (c) => c >= 0)) throw new RangeError('start／end（交界狀態）的值必須是非負數或 Infinity')
+        if (vec && !Array.prototype.every.call(vec, (c: number) => c >= 0)) throw new RangeError('start／end（交界狀態）的值必須是非負數或 Infinity')
       }
       // 詞尾耦合的位能：pot[x] ＝ 在查詢位置 x 或之後結束時，至少還要付的耦合成本。對齊的查詢位置只會往後走，
       // 所以子樹的下界可以用 min_x（列[x] ＋ pot[x]）取代列的最小值（docs/bcdp.md 第 7 節）。
       // 允許直接在詞尾結束（to.word[n] ＝ 0）時位能處處是 0，不必計算
-      /** @type {Float64Array | null} */
-      let pot = null
+      let pot: Float64Array | null = null
       if (to) {
         const e = new Float64Array(n + 1).fill(Infinity)
         for (const vec of [to.row, to.word, ...to.pending.map((p) => p.row)]) {
@@ -402,24 +487,13 @@ export class FuzzyIndex {
         for (let x = n - 1; x >= 0; x--) if (e[x + 1] < e[x]) e[x] = e[x + 1]
         if (e.some((v) => v > 0)) pot = e
       }
-      /** @type {import('./dp.ts').Crossing[]} 第 j 層的跨界狀態（來自 from.pending，只在淺層） */
-      const cross = []
+      const cross: Crossing[] = []
       const c0 = from ? crossingOf(from.pending) : null
       if (c0) cross[0] = c0
-      /**
-       * rowsN[j]、rowsF[j]：路徑上第 j 層的兩種列；minN[j]、minF[j] 為各列最小值。
-       * 同一深度的兄弟節點依序走訪，前一個兄弟的子樹走完才會覆寫，所以每層各配置一次即可重複使用。
-       * @type {Float64Array[]}
-       */
-      const rowsN = []
-      /** @type {Float64Array[]} rowsF[j] 是 F 列；不需要 F 列時與 rowsN[j] 是同一個陣列 */
-      const rowsF = []
-      /** @type {Float64Array[]} F 列自己的緩衝（每層一個）：rowsF[j] 指回 rowsN[j] 之後不必重新配置 */
-      const bufF = []
-      /** @type {number[]} */
-      const minN = []
-      /** @type {number[]} */
-      const minF = []
+      const rowsN: Float64Array[] = []
+      const rowsF: Float64Array[] = []
+      const minN: number[] = []
+      const minF: number[] = []
       const junctions = Boolean(from || to || options.onJunction)
       const lockBoundary = options.lockBoundary ?? false
       return {
@@ -429,9 +503,7 @@ export class FuzzyIndex {
         startEdge: options.startEdge ?? (from ? EDGE_JUNCTION : EDGE_WORD),
         cross,
         pot,
-        /** 詞尾的交界列（算完立刻使用，所以每個通道一個緩衝就夠） */
         rowJ: junctions ? new Float64Array(n + 1) : null,
-        /** 跨界耦合：（這一段尾巴的 trie 節點, to.pending 的序號）→ 規則 target 編號（-1 表示沒有） */
         coupleTarget: new Map(),
         maxDistance: options.maxDistance ?? 1,
         cutoff: options.cutoff ?? null,
@@ -440,10 +512,6 @@ export class FuzzyIndex {
         onNode: options.onNode,
         onTerminal: options.onTerminal,
         onJunction: options.onJunction,
-        /**
-         * 以 initials 開頭的詞的第 0 列（根節點算好，走進每條邊之前換上），與原本那一套（base0，根節點算完時記下）。
-         * lowerBound 是由那一套出發的子樹下界
-         */
         initial: initialFrom
           ? {
               initials: initialFrom.initials,
@@ -457,19 +525,16 @@ export class FuzzyIndex {
               lowerBound: Infinity,
             }
           : null,
-        /** @type {{rowN: Float64Array, rowF: Float64Array, minN: number, minF: number, cross: import('./dp.ts').Crossing | null, lowerBound: number} | null} */
         base0: null,
         bound0: Infinity,
         plan: planFor(x, from?.row ?? null, junctions, lockBoundary),
         rowsN,
         rowsF,
-        bufF,
+        bufF: [],
         minN,
         minF,
-        rowAt: (/** @type {number} */ r) => (useF(r) ? rowsF[r] : rowsN[r]),
-        /** 第 r 列的最小值（跨列剪枝 jumpBound 用；每個通道建立一次，不在每個節點配置閉包） */
-        minAt: (/** @type {number} */ r) => (useF(r) ? minF[r] : minN[r]),
-        /** @type {SearchResult[]} */
+        rowAt: (r) => (useF(r) ? rowsF[r] : rowsN[r]),
+        minAt: (r) => (useF(r) ? minF[r] : minN[r]),
         results: [],
       }
     })
@@ -478,19 +543,17 @@ export class FuzzyIndex {
      * 存活的通道：第 j 層的節點只計算 alive[j] 的前 aliveCount[j] 個通道（依通道編號遞增）。
      * 父節點算出下一層的清單後，所有子節點共用；前一個兄弟的子樹走完才會被覆寫，與 DP 的列相同，
      * 所以每層只需一份。以清單取代位元遮罩，通道數不再受 31 個的限制。
-     * @type {Int32Array[]}
      */
-    const alive = []
-    /** @type {number[]} */
-    const aliveCount = []
-    const aliveAt = (/** @type {number} */ j) => (alive[j] ??= new Int32Array(channels.length))
+    const alive: Int32Array[] = []
+    const aliveCount: number[] = []
+    const aliveAt = (j: number) => (alive[j] ??= new Int32Array(channels.length))
 
     /**
-     * @param {number} node 詞圖節點編號
-     * @param {number} j 深度
-     * @param {number} base 這個節點的子樹中，第一個詞的字典序名次
+     * @param node 詞圖節點編號
+     * @param j 深度
+     * @param base 這個節點的子樹中，第一個詞的字典序名次
      */
-    const visit = (node, j, base) => {
+    const visit = (node: number, j: number, base: number): void => {
       stats.visitedNodes++
       const isTerminal = dawg.isFinal(node)
       const firstEdge = dawg.firstEdge(node)
@@ -512,8 +575,7 @@ export class FuzzyIndex {
         const { n, plan, rowsN, rowsF, bufF, minN, minF } = ch
         // 跨界狀態：第 j 層由第 j − 1 層沿 Y[j-1] 往下走（只在還有狀態的淺層）。第 0 層的狀態是
         // 「在交界剛好結束」的 target，已經在前一段的交界列算過，所以只用在剪枝的下界
-        /** @type {import('./dp.ts').Crossing | null} */
-        let crossing = null
+        let crossing: Crossing | null = null
         if (ch.cross.length) {
           if (j === 0) crossing = ch.cross[0]
           else {
@@ -550,7 +612,7 @@ export class FuzzyIndex {
         if (ch.cutoff) bound = Math.min(bound, ch.cutoff.best + ch.cutoff.spread)
 
         // 詞尾：記錄結果。base 就是這個詞的字典序名次（完美雜湊）
-        let distance = null
+        let distance: number | null = null
         let accepted = false
         if (isTerminal) {
           let endAt = n
@@ -560,11 +622,10 @@ export class FuzzyIndex {
             fillRow(plan, compiled, column, EDGE_JUNCTION, rowJ)
             stats.computedRows++
           }
-          if (ch.onJunction) ch.onJunction(path.slice(0, j).join(''), this._junctionState(ch, matcher, j, /** @type {Float64Array} */ (rowJ)), payloads[base] ?? [])
-          /** @type {SearchResult['exit'] | undefined} */
-          let exit
+          if (ch.onJunction) ch.onJunction(path.slice(0, j).join(''), this._junctionState(ch, matcher, j, rowJ as Float64Array), payloads[base] ?? [])
+          let exit: CoupleExit | undefined
           if (ch.to) {
-            const coupled = this._couple(ch, matcher, j, rowF, /** @type {Float64Array} */ (rowJ))
+            const coupled = this._couple(ch, matcher, j, rowF, rowJ as Float64Array)
             distance = roundCost(coupled.cost)
             endAt = coupled.exit.x
             exit = coupled.exit
@@ -576,8 +637,7 @@ export class FuzzyIndex {
             const score = roundCost(ch.norm.score(distance, n, j))
             if (score <= ch.maxNormalized + EPSILON) {
               accepted = true
-              /** @type {SearchResult} */
-              const result = { term: path.slice(0, j).join(''), distance, score, payloads: payloads[base] ?? [] }
+              const result: SearchResult = { term: path.slice(0, j).join(''), distance, score, payloads: payloads[base] ?? [] }
               if (ch.to) {
                 result.endAt = endAt
                 result.exit = exit
@@ -595,7 +655,7 @@ export class FuzzyIndex {
         let lowerBound = Infinity
         if (hasOtherChild) lowerBound = minN[j]
         if (hasBoundaryChild) lowerBound = Math.min(lowerBound, minF[j])
-        // 跨列：第 r 列經由一條更長的規則跳過第 j 列（狀態由 PathMatcher 提供，見 dp.js）；
+        // 跨列：第 r 列經由一條更長的規則跳過第 j 列（狀態由 PathMatcher 提供，見 dp.ts）；
         // 跨界狀態同理，來源列在前一段
         lowerBound = Math.min(lowerBound, jumpBound(compiled, matcher, j, ch.minAt, crossing))
         // 以 initials 開頭的詞另有一套第 0 列：在根節點一起算好，子樹的下界取兩套中較小的
@@ -652,7 +712,7 @@ export class FuzzyIndex {
             const ch = channels[c]
             if (ch.initial) {
               const a = ch.initial
-              const base = /** @type {NonNullable<typeof ch.base0>} */ (ch.base0)
+              const base = ch.base0 as BaseRow
               const alt = a.initials.has(path[j])
               // 上限：根節點算的，再依途中收緊的相對上限（只會更緊）
               const bound = ch.cutoff ? Math.min(ch.bound0, ch.cutoff.best + ch.cutoff.spread) : ch.bound0
@@ -694,17 +754,11 @@ export class FuzzyIndex {
   /**
    * 這一段在深度 j 的詞尾結束時的交界狀態（複本）：交界列，加上路徑尾端還沒走完的規則 target。
    * 只收本段路徑上的狀態：一條規則至多跨越一個交界（docs/bcdp.md 1.3）。
-   * @param {any} ch 通道
-   * @param {PathMatcher} matcher
-   * @param {number} j
-   * @param {Float64Array} rowJ 交界列
-   * @returns {JunctionState}
-   * @private
+   * @param rowJ 交界列
    */
-  _junctionState(ch, matcher, j, rowJ) {
+  private _junctionState(ch: Channel, matcher: PathMatcher, j: number, rowJ: Float64Array): JunctionState {
     const compiled = matcher.compiled
-    /** @type {JunctionState['pending']} */
-    const pending = []
+    const pending: JunctionState['pending'] = []
     const base = j * matcher.cap
     for (let k = 0; k < matcher.counts[j]; k++) {
       const s = matcher.states[base + k]
@@ -720,21 +774,13 @@ export class FuzzyIndex {
    * - 不跨界：min over x of 交界列[x] ＋ to.row[x]
    * - 跨界：規則 target ＝ 本段尾巴（路徑上的 trie 狀態 s）· 後一段的開頭（to.pending 的 tail），
    *   X 側 source 占 [i − |source|, i)：本段第 j − depth(s) 列 ＋ 權重 ＋ 後一段從 i 開始的成本
-   * @param {any} ch 通道
-   * @param {PathMatcher} matcher
-   * @param {number} j
-   * @param {Float64Array} rowF
-   * @param {Float64Array} rowJ
-   * @returns {{cost: number, exit: {kind: 'word' | 'row' | 'pending', x: number, tail: number}}}
-   * @private
    */
-  _couple(ch, matcher, j, rowF, rowJ) {
+  private _couple(ch: Channel, matcher: PathMatcher, j: number, rowF: Float64Array, rowJ: Float64Array): { cost: number; exit: CoupleExit } {
     const { n, plan } = ch
-    const to = /** @type {JunctionEnd} */ (ch.to)
+    const to = ch.to as JunctionEnd
     const compiled = matcher.compiled
     let cost = Infinity
-    /** @type {{kind: 'word' | 'row' | 'pending', x: number, tail: number}} */
-    const exit = { kind: 'word', x: -1, tail: -1 }
+    const exit: CoupleExit = { kind: 'word', x: -1, tail: -1 }
     if (to.word) {
       for (let x = 0; x <= n; x++) {
         const v = rowF[x] + to.word[x]
@@ -791,11 +837,8 @@ export class FuzzyIndex {
   /**
    * 詞圖每條邊的字元編號與邊界旗標。字元編號屬於某一組規則（CompiledRules），
    * 所以快取時記下是哪一組；詞圖重建（freeze）或規則替換（setRules）後自動重算。
-   * @param {import('./dp.ts').CompiledRules} compiled
-   * @returns {{codes: Int32Array, boundary: Uint8Array}}
-   * @private
    */
-  _edgeCodes(compiled) {
+  private _edgeCodes(compiled: CompiledRules): { codes: Int32Array; boundary: Uint8Array } {
     const dawg = this.dawg
     const cached = this._codes
     if (cached && cached.compiled === compiled && cached.dawg === dawg) return cached
@@ -812,9 +855,9 @@ export class FuzzyIndex {
 
   /**
    * 序列化為可 JSON 化的物件（不含 metric；還原時需提供相同設定的 metric）。
-   * @returns {SerializedIndex}
+   * format 的值沿用最初的名稱，改了會讓既有的索引檔失效。
    */
-  serialize() {
+  serialize(): SerializedIndex {
     return {
       format: INDEX_FORMAT,
       version: INDEX_VERSION,
@@ -823,12 +866,8 @@ export class FuzzyIndex {
     }
   }
 
-  /**
-   * 由序列化資料還原索引。
-   * @param {SerializedIndex} data
-   * @param {import('./distance.js').WeightedEditDistance} metric
-   */
-  static deserialize(data, metric) {
+  /** 由序列化資料還原索引。 */
+  static deserialize(data: SerializedIndex, metric: WeightedEditDistance): FuzzyIndex {
     if (data?.format !== INDEX_FORMAT) {
       throw new TypeError(`不是可辨識的序列化索引（format 應為 ${INDEX_FORMAT}）`)
     }
@@ -837,12 +876,8 @@ export class FuzzyIndex {
   }
 }
 
-/**
- * 交界狀態的跨界表 → 第 0 層的跨界狀態（沒有時是 null）。
- * @param {JunctionState['pending']} pending
- * @returns {import('./dp.ts').Crossing | null}
- */
-function crossingOf(pending) {
+/** 交界狀態的跨界表 → 第 0 層的跨界狀態（沒有時是 null）。 */
+function crossingOf(pending: JunctionState['pending']): Crossing | null {
   if (!pending.length) return null
   const c0 = createCrossing(pending.length)
   pending.forEach((p, k) => {
@@ -854,12 +889,8 @@ function crossingOf(pending) {
   return c0
 }
 
-/**
- * 加上位能的列最小值：min_x（row[x] ＋ pot[x]）。
- * @param {Float64Array} row
- * @param {Float64Array} pot
- */
-function minWithPotential(row, pot) {
+/** 加上位能的列最小值：min_x（row[x] ＋ pot[x]）。 */
+function minWithPotential(row: Float64Array, pot: Float64Array): number {
   let min = Infinity
   for (let x = 0; x < row.length; x++) {
     const v = row[x] + pot[x]

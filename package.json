@@ -13,8 +13,8 @@
   },
   "exports": {
     ".": "./src/index.js",
-    "./fuzzy": "./packages/bcdp/src/index.js",
-    "./fst": "./packages/bcdp/src/fst/index.js",
+    "./fuzzy": "./packages/bcdp/src/index.ts",
+    "./fst": "./packages/bcdp/src/fst/index.ts",
     "./schema": "./src/schema/index.js",
     "./schema/constants": "./src/schema/constants.js",
     "./schema/types": "./src/schema/types.js",
@@ -30,7 +30,7 @@
     "./package.json": "./package.json"
   },
   "imports": {
-    "#bcdp": "./packages/bcdp/src/index.js",
+    "#bcdp": "./packages/bcdp/src/index.ts",
     "#bcdp/*": "./packages/bcdp/src/*"
   },
   "files": [

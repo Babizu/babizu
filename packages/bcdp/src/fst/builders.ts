@@ -16,16 +16,18 @@
  * 這是評估用的參考實作，不追求速度：狀態以字串為鍵、以雜湊表記錄。
  */
 
+import type { Dawg } from '../dawg.ts'
+import type { WeightedEditDistance } from '../distance.ts'
 import { roundCost } from '../dp.ts'
-import { compose, EPS, shortestDistance, stringAcceptor } from './wfst.js'
+import type { AnalyzerSpec } from '../morphology.ts'
+import { compose, EPS, shortestDistance, stringAcceptor, type Arc, type Wfst } from './wfst.ts'
 
 /**
- * 方言規則與編輯成本 → 加權轉錄器 E。
- * @param {import('../distance.js').WeightedEditDistance} metric
- * @param {Iterable<string>} alphabet 標準拼寫可能出現的所有字元（詞庫與詞綴的字元）
- * @returns {import('./wfst.js').Wfst}
+ * 方言規則與編輯成本 → 加權轉錄器 E。狀態是字串：'S' 起始、'M' 一般、'E' 詞尾規則之後、
+ * `R{規則}.{k}` 讀到 source 的第 k 個字元、`T{規則}.{k}` 輸出到 target 的第 k 個字元。
+ * @param alphabet 標準拼寫可能出現的所有字元（詞庫與詞綴的字元）
  */
-export function editTransducer(metric, alphabet) {
+export function editTransducer(metric: WeightedEditDistance, alphabet: Iterable<string>): Wfst<string> {
   const { compiled, costs } = metric
   const sigma = [...new Set(alphabet)]
   const rules = compiled.rules.map((r) => ({
@@ -34,10 +36,10 @@ export function editTransducer(metric, alphabet) {
     weight: r.weight,
     position: r.position,
   }))
-  /** @type {Map<string, number[]>} 規則 source 的第一個字元 → 規則編號 */
-  const bySourceHead = new Map()
-  /** @type {number[]} source 為空的規則（純插入型） */
-  const emptySource = []
+  /** 規則 source 的第一個字元 → 規則編號 */
+  const bySourceHead = new Map<string, number[]>()
+  /** source 為空的規則（純插入型） */
+  const emptySource: number[] = []
   rules.forEach((r, idx) => {
     if (r.source.length === 0) emptySource.push(idx)
     else {
@@ -47,10 +49,10 @@ export function editTransducer(metric, alphabet) {
     }
   })
 
-  /** 規則走完之後的狀態：詞尾規則進入 E（不能再有任何輸入輸出），其他回到 M @param {number} idx */
-  const done = (idx) => (rules[idx].position === 'final' ? 'E' : 'M')
-  /** source 消耗完之後：還有 target 要輸出就進入 T 狀態，否則規則結束 @param {number} idx */
-  const afterSource = (idx) => (rules[idx].target.length > 0 ? `T${idx}.0` : done(idx))
+  /** 規則走完之後的狀態：詞尾規則進入 E（不能再有任何輸入輸出），其他回到 M */
+  const done = (idx: number) => (rules[idx].position === 'final' ? 'E' : 'M')
+  /** source 消耗完之後：還有 target 要輸出就進入 T 狀態，否則規則結束 */
+  const afterSource = (idx: number) => (rules[idx].target.length > 0 ? `T${idx}.0` : done(idx))
 
   return {
     start: 'S',
@@ -60,8 +62,7 @@ export function editTransducer(metric, alphabet) {
       throw new Error('editTransducer 只支援以 arcsWithInput／epsInputArcs 組合')
     },
     arcsWithInput(s, x) {
-      /** @type {import('./wfst.js').Arc[]} */
-      const out = []
+      const out: Arc<string>[] = []
       if (s === 'S' || s === 'M') {
         for (const y of sigma) out.push({ i: x, o: y, w: costs.sub(x, y), to: 'M' })
         out.push({ i: x, o: EPS, w: costs.del(x), to: 'M' })
@@ -78,8 +79,7 @@ export function editTransducer(metric, alphabet) {
       return out
     },
     epsInputArcs(s) {
-      /** @type {import('./wfst.js').Arc[]} */
-      const out = []
+      const out: Arc<string>[] = []
       if (s === 'S' || s === 'M') {
         for (const y of sigma) out.push({ i: EPS, o: y, w: costs.ins(y), to: 'M' })
         for (const idx of emptySource) {
@@ -97,16 +97,14 @@ export function editTransducer(metric, alphabet) {
   }
 }
 
-/**
- * @typedef {object} TrieNode
- * @property {Map<string, number>} children
- * @property {Array<{form: string, cost: number}>} ends 在這裡結束的詞綴
- */
+interface TrieNode {
+  children: Map<string, number>
+  /** 在這裡結束的詞綴 */
+  ends: Array<{ form: string; cost: number }>
+}
 
-/** @param {Array<{form: string, cost: number}>} affixes */
-function buildTrie(affixes) {
-  /** @type {TrieNode[]} */
-  const nodes = [{ children: new Map(), ends: [] }]
+function buildTrie(affixes: ReadonlyArray<{ form: string; cost: number }>): TrieNode[] {
+  const nodes: TrieNode[] = [{ children: new Map(), ends: [] }]
   for (const a of affixes) {
     let node = 0
     for (const ch of Array.from(a.form)) {
@@ -124,16 +122,41 @@ function buildTrie(affixes) {
 }
 
 /**
- * 表面詞形接受器 S：前綴鏈 · 詞幹 · 後綴鏈（輸入＝輸出），權重為構詞步驟的成本。
- *
- * @param {object} options
- * @param {import('../dawg.ts').Dawg} options.dawg 詞幹的詞圖
- * @param {(base: number) => boolean} [options.accept] 詞幹（依詞圖名次）是否可用，例如只收詞條身分的詞
- * @param {import('../morphology.js').Analyzer['spec']} options.spec 已正規化的構詞規格
- * @param {boolean} [options.requireStep=true] 至少要有一個構詞步驟（沒有步驟的是普通模糊命中）
- * @returns {import('./wfst.js').Wfst}
+ * surfaceLexicon 的狀態，第一個元素是階段：
+ * - ['P', 已用槽位, trie 節點, 步驟數]                        前綴鏈
+ * - ['B', 步驟數]                                              詞幹開始
+ * - ['RA', 首輔音, 步驟數]、['RF', 首輔音, 步驟數]             Ca 重疊：已輸出首輔音、已輸出 a
+ * - ['D', 詞圖節點, 名次, 深度, 仍在首輔音, 已用中綴, 需要元音, 步驟數]   詞幹（旗標是 0／1）
+ * - ['I', 中綴 trie 節點, 詞圖節點, 名次, 深度, 步驟數]        中綴
+ * - ['S', 已用槽位, trie 節點, 名次, 步驟數, 限制的後綴]      後綴鏈
  */
-export function surfaceLexicon({ dawg, accept = () => true, spec, requireStep = true }) {
+export type SurfaceState =
+  | ['P', number, number, number]
+  | ['B', number]
+  | ['RA', string, number]
+  | ['RF', string, number]
+  | ['D', number, number, number, number, number, number, number]
+  | ['I', number, number, number, number, number]
+  | ['S', number, number, number, number, string]
+
+/**
+ * 表面詞形接受器 S：前綴鏈 · 詞幹 · 後綴鏈（輸入＝輸出），權重為構詞步驟的成本。
+ * @param options.dawg 詞幹的詞圖
+ * @param options.accept 詞幹（依詞圖名次）是否可用，例如只收詞條身分的詞
+ * @param options.spec 已正規化的構詞規格
+ * @param options.requireStep 至少要有一個構詞步驟（預設 true；沒有步驟的是普通模糊命中）
+ */
+export function surfaceLexicon({
+  dawg,
+  accept = () => true,
+  spec,
+  requireStep = true,
+}: {
+  dawg: Dawg
+  accept?: (base: number) => boolean
+  spec: AnalyzerSpec
+  requireStep?: boolean
+}): Wfst<SurfaceState> {
   const prefixTrie = buildTrie(spec.prefixes)
   const suffixTrie = buildTrie(spec.suffixes)
   const infixTrie = buildTrie(spec.infixes)
@@ -154,26 +177,14 @@ export function surfaceLexicon({ dawg, accept = () => true, spec, requireStep = 
   }
   const ca = spec.reduplication.find((r) => r.pattern === 'Ca')
   const alternations = spec.alternations
-  /** @type {Map<string, import('./wfst.js').Arc[]>} 出弧的快取（同一個狀態常被組合重複詢問） */
-  const cache = new Map()
+  /** 出弧的快取（同一個狀態常被組合重複詢問） */
+  const cache = new Map<string, Arc<SurfaceState>[]>()
+  const key = (s: SurfaceState) => s.join('|')
 
-  /**
-   * 狀態以陣列表示，第一個元素是階段：
-   * - ['P', 已用槽位, trie 節點, 步驟數]                        前綴鏈
-   * - ['B', 步驟數]                                              詞幹開始
-   * - ['RA', 首輔音, 步驟數]、['RF', 首輔音, 步驟數]             Ca 重疊：已輸出首輔音、已輸出 a
-   * - ['D', 詞圖節點, 名次, 深度, 仍在首輔音, 已用中綴, 需要元音, 步驟數]   詞幹
-   * - ['I', 中綴 trie 節點, 詞圖節點, 名次, 深度, 步驟數]        中綴
-   * - ['S', 已用槽位, trie 節點, 名次, 步驟數, 限制的後綴]      後綴鏈
-   */
-  const key = (/** @type {any[]} */ s) => s.join('|')
-
-  /** @param {any[]} s @returns {import('./wfst.js').Arc[]} */
-  function compute(s) {
-    /** @type {import('./wfst.js').Arc[]} */
-    const out = []
-    const eps = (/** @type {number} */ w, /** @type {any[]} */ to) => out.push({ i: EPS, o: EPS, w, to })
-    const sym = (/** @type {string} */ c, /** @type {number} */ w, /** @type {any[]} */ to) => out.push({ i: c, o: c, w, to })
+  function compute(s: SurfaceState): Arc<SurfaceState>[] {
+    const out: Arc<SurfaceState>[] = []
+    const eps = (w: number, to: SurfaceState) => out.push({ i: EPS, o: EPS, w, to })
+    const sym = (c: string, w: number, to: SurfaceState) => out.push({ i: c, o: c, w, to })
     switch (s[0]) {
       case 'P': {
         const [, used, t, steps] = s
@@ -190,7 +201,7 @@ export function surfaceLexicon({ dawg, accept = () => true, spec, requireStep = 
         eps(0, ['D', dawg.root, 0, 0, 1, 0, 0, steps])
         if (ca) {
           // 輸出詞幹首輔音＋a，之後詞幹必須以同一個輔音開始；元音開頭的詞幹只重疊 a
-          const firsts = new Set()
+          const firsts = new Set<string>()
           for (let e = dawg.firstEdge(dawg.root); e < dawg.endEdge(dawg.root); e++) firsts.add(dawg.label(e))
           for (const c of firsts) {
             if (vowels.has(c)) continue
@@ -255,46 +266,42 @@ export function surfaceLexicon({ dawg, accept = () => true, spec, requireStep = 
     return out
   }
 
+  const arcs = (s: SurfaceState) => {
+    const k = key(s)
+    let list = cache.get(k)
+    if (!list) cache.set(k, (list = compute(s)))
+    return list
+  }
   return {
     start: ['P', 0, 0, 0],
     key,
     final: (s) => (s[0] === 'S' && s[2] === 0 && !s[5] && (!requireStep || s[4] >= 1) ? 0 : Infinity),
-    arcs(s) {
-      const k = key(s)
-      let arcs = cache.get(k)
-      if (!arcs) cache.set(k, (arcs = compute(s)))
-      return arcs
-    },
-    arcsWithInput(s, label) {
-      return this.arcs(s).filter((a) => a.i === label)
-    },
-    epsInputArcs(s) {
-      return this.arcs(s).filter((a) => a.i === EPS)
-    },
+    arcs,
+    arcsWithInput: (s, label) => arcs(s).filter((a) => a.i === label),
+    epsInputArcs: (s) => arcs(s).filter((a) => a.i === EPS),
   }
 }
 
 /**
  * q ∘ E ∘ S 的有界最短路徑：列出所有 W*(q, t) ≤ bound 的詞幹 t。
- *
- * @param {object} deps
- * @param {import('./wfst.js').Wfst} deps.E
- * @param {import('./wfst.js').Wfst} deps.S
- * @param {(base: number) => string} deps.termAt 詞圖名次 → 詞
- * @param {string} query 已正規化的查詢
- * @param {{bound: number}} options
- * @returns {{hits: Map<string, number>, expanded: number}}
+ * @param deps.termAt 詞圖名次 → 詞
+ * @param query 已正規化的查詢
  */
-export function fstLemmaSearch({ E, S, termAt }, query, { bound }) {
+export function fstLemmaSearch(
+  { E, S, termAt }: { E: Wfst<string>; S: Wfst<SurfaceState>; termAt: (base: number) => string },
+  query: string,
+  { bound }: { bound: number },
+): { hits: Map<string, number>; expanded: number } {
   const machine = compose(stringAcceptor(Array.from(query)), compose(E, S))
-  /** @type {Map<string, number>} */
-  const hits = new Map()
+  const hits = new Map<string, number>()
   const { expanded } = shortestDistance(machine, {
     bound,
     onFinal: (state, cost) => {
-      const term = termAt(state.b.b[3])
+      // 終止狀態一定是後綴鏈階段 ['S', …]，第 3 個欄位是詞幹在詞圖中的名次
+      const term = termAt(state.b.b[3] as number)
       const c = roundCost(cost)
-      if (!(hits.get(term) <= c)) hits.set(term, c)
+      const prev = hits.get(term)
+      if (prev === undefined || !(prev <= c)) hits.set(term, c)
     },
   })
   return { hits, expanded }

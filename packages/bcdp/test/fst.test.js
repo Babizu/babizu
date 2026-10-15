@@ -5,8 +5,8 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { EPSILON, FuzzyIndex, RuleSet, WeightedEditDistance, createAnalyzer } from '../src/index.js'
-import { compose, editTransducer, fstLemmaSearch, shortestDistance, stringAcceptor, surfaceLexicon } from '../src/fst/index.js'
+import { EPSILON, FuzzyIndex, RuleSet, WeightedEditDistance, createAnalyzer } from '../src/index.ts'
+import { compose, editTransducer, fstLemmaSearch, shortestDistance, stringAcceptor, surfaceLexicon } from '../src/fst/index.ts'
 import { createRandom, pick, randomString } from './helpers.js'
 
 describe('WFST 基本運算', () => {

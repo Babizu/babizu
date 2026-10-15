@@ -82,7 +82,7 @@ const BCDP_DOC = {
 
 /**
  * 動態規劃表的步驟：依計算順序每格一步（起點格除外，它沒有候選轉移），最後一步標出最佳路徑。
- * @param {import('#bcdp/distance.js').Explanation} e
+ * @param {import('#bcdp/distance.ts').Explanation} e
  * @returns {Step[]}
  */
 export function dpSteps(e) {
@@ -122,7 +122,7 @@ export function dpSteps(e) {
 
 /**
  * 第 index 步（0 起算）時已經算好的格數；index ≥ 最後一步時整張表都算好，並顯示最佳路徑。
- * @param {import('#bcdp/distance.js').Explanation} e
+ * @param {import('#bcdp/distance.ts').Explanation} e
  * @param {Step[]} steps
  * @param {number} index
  */

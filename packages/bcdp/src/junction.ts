@@ -142,8 +142,8 @@ export function minOf(state: JunctionState): number {
   return min
 }
 
-/** 空的詞尾耦合狀態。 */
-export function emptyEnd(n: number): TaggedEnd {
+/** 空的詞尾耦合狀態（交界列一定有）。 */
+export function emptyEnd(n: number): TaggedEnd & { row: Float64Array } {
   return { row: new Float64Array(n + 1).fill(Infinity), pending: [], word: null, tags: { row: new Array(n + 1).fill(null), pending: new Map() } }
 }
 

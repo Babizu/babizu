@@ -38,7 +38,7 @@ export const PARSES_FORMAT_VERSION = 1
  * @property {number} cost 總成本：構詞步驟＋整個詞的音變＋詞根音節數的成本
  * @property {number} sound 整個詞的音變（成本扣掉各步驟的成本與詞根音節數的成本；構詞音變算在步驟裡）
  * @property {number} [rootCost] 詞根依音節數的成本（rootSyllableCost；0 時省略）
- * @property {import('#bcdp/morph-search.js').MorphStepHit[]} steps 由外而內
+ * @property {import('#bcdp/morph-search.ts').MorphStepHit[]} steps 由外而內
  */
 
 /**
@@ -75,7 +75,7 @@ export function encodeParses(parses, virtual, bests, count) {
  * @param {string} root
  * @param {boolean} virtual
  * @param {number} cost
- * @param {import('#bcdp/morph-search.js').MorphStepHit[]} steps
+ * @param {import('#bcdp/morph-search.ts').MorphStepHit[]} steps
  * @param {number} [rootCost] 詞根依音節數的成本（不是音變）
  * @returns {ParsedAnalysis}
  */
@@ -97,7 +97,7 @@ export function sortParses(list) {
 
 /**
  * 建立拆解表（單執行緒；測試與評估工具用，網站建置另有平行版本，src/site/derivations.js）。
- * @param {{lexicon: import('#bcdp/fuzzy-index.js').SerializedIndex, profile: import('#bcdp/profile.js').LanguageProfile}} input
+ * @param {{lexicon: import('#bcdp/fuzzy-index.ts').SerializedIndex, profile: import('#bcdp/profile.ts').LanguageProfile}} input
  * @returns {ParseData}
  */
 export function buildParseChart({ lexicon, profile }) {
