@@ -17,7 +17,7 @@ export default defineConfig({
   fullyParallel: true,
   reporter: [['list']],
   webServer: {
-    command: 'node bin/babizu.js preview examples/minimal --port 4180',
+    command: 'node --conditions=babizu-source bin/babizu.js preview examples/minimal --port 4180',
     port: 4180,
     reuseExistingServer: !process.env.CI,
   },

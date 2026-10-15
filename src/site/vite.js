@@ -9,6 +9,7 @@ import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 import tailwindcss from '@tailwindcss/vite'
 import vue from '@vitejs/plugin-vue'
+import { defaultClientConditions } from 'vite'
 import { APP_DIR, FRAMEWORK_ROOT } from './paths.js'
 
 /**
@@ -111,6 +112,8 @@ export function createViteConfig(site, { publicDir, port }) {
         '@babizu': join(FRAMEWORK_ROOT, 'src'),
         '@': join(APP_DIR, 'src'),
       },
+      // BCDP 套件（#bcdp）取 TypeScript 原始碼，由 Vite 編譯：開發時不必先建置 dist，也不會用到舊的 dist
+      conditions: ['babizu-source', ...defaultClientConditions],
       // 同一個套件只能有一份（Vue 的 provide／inject、reka-ui 的元件 context 都靠模組實體相同）
       dedupe: ['vue', 'vue-router', 'reka-ui'],
     },

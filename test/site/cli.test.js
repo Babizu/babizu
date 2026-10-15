@@ -12,7 +12,7 @@ const MINIMAL = fileURLToPath(new URL('../../examples/minimal/', import.meta.url
 
 /** @param {string[]} args */
 function run(...args) {
-  const r = spawnSync(process.execPath, [BIN, ...args], { encoding: 'utf8', timeout: 60_000 })
+  const r = spawnSync(process.execPath, ['--conditions=babizu-source', BIN, ...args], { encoding: 'utf8', timeout: 60_000 })
   return { status: r.status, stdout: r.stdout, stderr: r.stderr }
 }
 

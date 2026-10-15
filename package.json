@@ -13,8 +13,16 @@
   },
   "exports": {
     ".": "./src/index.js",
-    "./fuzzy": "./packages/bcdp/src/index.ts",
-    "./fst": "./packages/bcdp/src/fst/index.ts",
+    "./fuzzy": {
+      "types": "./packages/bcdp/dist/index.d.ts",
+      "babizu-source": "./packages/bcdp/src/index.ts",
+      "default": "./packages/bcdp/dist/index.js"
+    },
+    "./fst": {
+      "types": "./packages/bcdp/dist/fst/index.d.ts",
+      "babizu-source": "./packages/bcdp/src/fst/index.ts",
+      "default": "./packages/bcdp/dist/fst/index.js"
+    },
     "./schema": "./src/schema/index.js",
     "./schema/constants": "./src/schema/constants.js",
     "./schema/types": "./src/schema/types.js",
@@ -30,7 +38,11 @@
     "./package.json": "./package.json"
   },
   "imports": {
-    "#bcdp": "./packages/bcdp/src/index.ts",
+    "#bcdp": {
+      "types": "./packages/bcdp/dist/index.d.ts",
+      "babizu-source": "./packages/bcdp/src/index.ts",
+      "default": "./packages/bcdp/dist/index.js"
+    },
     "#bcdp/*": "./packages/bcdp/src/*"
   },
   "files": [
@@ -41,18 +53,22 @@
     "docs",
     "README.md",
     "packages/bcdp/src",
-    "packages/bcdp/package.json"
+    "packages/bcdp/dist",
+    "packages/bcdp/package.json",
+    "packages/bcdp/tsconfig.json"
   ],
   "engines": {
     "node": ">=20.19"
   },
   "scripts": {
+    "prepare": "tsc -b packages/bcdp",
+    "typecheck": "tsc -b packages/bcdp",
     "test": "vitest run",
     "test:e2e": "npm run example:build && playwright test",
-    "example:dev": "node bin/babizu.js dev examples/minimal",
-    "example:build": "node bin/babizu.js build examples/minimal",
-    "example:preview": "node bin/babizu.js preview examples/minimal",
-    "bench": "node packages/bcdp/test/bench.js",
+    "example:dev": "node --conditions=babizu-source bin/babizu.js dev examples/minimal",
+    "example:build": "node --conditions=babizu-source bin/babizu.js build examples/minimal",
+    "example:preview": "node --conditions=babizu-source bin/babizu.js preview examples/minimal",
+    "bench": "node --conditions=babizu-source packages/bcdp/test/bench.js",
     "format": "prettier --write \"src/**/*.{js,json}\" \"app/src/**/*.{js,vue,css}\" \"test/**/*.js\" \"docs/**/*.md\" \"locales/*.json\"",
     "zoo": "node test/zoo/run.mjs"
   },
@@ -109,6 +125,7 @@
     "prettier": "^3.6.2",
     "read-excel-file": "^9.3.10",
     "sharp": "^0.35.4",
+    "typescript": "^6.0.3",
     "vitest": "^5.0.1"
   }
 }

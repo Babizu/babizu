@@ -6,7 +6,18 @@
   "license": "MIT",
   "private": true,
   "exports": {
-    ".": "./src/index.ts",
-    "./fst": "./src/fst/index.ts"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "babizu-source": "./src/index.ts",
+      "default": "./dist/index.js"
+    },
+    "./fst": {
+      "types": "./dist/fst/index.d.ts",
+      "babizu-source": "./src/fst/index.ts",
+      "default": "./dist/fst/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b"
   }
 }
