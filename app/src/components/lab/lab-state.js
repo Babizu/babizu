@@ -11,7 +11,7 @@
  */
 
 import { DEFAULT_COSTS, RuleSet } from '#bcdp'
-import { createSearchMetric } from '@babizu/search/text.js'
+import { createSearchMetric } from '@babizu/search/text.ts'
 import site from 'virtual:babizu/site'
 import { computed, reactive } from 'vue'
 import { t } from '@/i18n.js'

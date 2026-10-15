@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { Report } from '../../src/pipeline/report.js'
+import { Report } from '../../src/pipeline/report.ts'
 
 describe('Report：轉接器的警告與錯誤', () => {
   it('分別計數，detail 只在有給時才出現', () => {

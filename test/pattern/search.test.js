@@ -9,9 +9,9 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { buildDerivationGraph, buildParseChart, FUZZINESS, SearchEngine } from '../../src/search/index.js'
-import { PARSE_SELECTION, selectParses } from '../../src/pattern/morph.js'
-import { SEARCH_METHODS } from '../../src/search/scoring.js'
+import { buildDerivationGraph, buildParseChart, FUZZINESS, SearchEngine } from '../../src/search/index.ts'
+import { PARSE_SELECTION, selectParses } from '../../src/pattern/morph.ts'
+import { SEARCH_METHODS } from '../../src/search/scoring.ts'
 import { buildPatternData, buildPatternEngine, PATTERN_GRAMMAR, rec, RECORDS } from './fixture.js'
 
 const engine = buildPatternEngine()
@@ -21,7 +21,7 @@ const FUZZY_LEVELS = /** @type {const} */ (['exact', 'normal', 'loose'])
 
 /**
  * 一種拆法的詞素寫成構詞樣式：前綴（由外而內）、中綴、詞根、後綴（由內而外）、重疊。沒有任何詞綴時是 null。
- * @param {import('../../src/pattern/morph.js').MorphReading} reading
+ * @param {import('../../src/pattern/morph.ts').MorphReading} reading
  * @param {string} root `…` 或引號中的詞根
  */
 function patternOf(reading, root) {

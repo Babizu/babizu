@@ -12,8 +12,8 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { FUZZINESS } from '../../src/search/index.js'
-import { isLexicalRoot, SIBLING_MAX_SOUND, soundOf } from '../../src/search/derivations.js'
+import { FUZZINESS } from '../../src/search/index.ts'
+import { isLexicalRoot, SIBLING_MAX_SOUND, soundOf } from '../../src/search/derivations.ts'
 import { buildMorphEngine, morphCorpus } from './morph-corpus.js'
 
 const EPS = 1e-9

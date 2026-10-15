@@ -1,0 +1,72 @@
+/**
+ * @file babizu/site：建置、預覽、檢查辭典網站。CLI（bin/babizu.js）就是呼叫這些函式。
+ */
+
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
+import { loadSiteConfig, missingMessages, unusedMessages, type ResolvedSite } from './config.ts'
+import { prepareSiteData } from './prepare.ts'
+import { createViteConfig } from './vite.ts'
+
+export { defineSite, loadSiteConfig, localize, missingMessages, unusedMessages, varietyColors, type Localized, type ResolvedSite, type SiteConfigInput, type VarietyConfig } from './config.ts'
+export { extractMessages } from './extract-messages.ts'
+export { prepareSiteData, SITE_DATA_VERSION } from './prepare.ts'
+export { createViteConfig, varietyCss } from './vite.ts'
+export { APP_DIR, BUILTIN_LOCALES, FRAMEWORK_ROOT, SOURCE_LOCALE } from './paths.ts'
+
+type Log = (m: string) => void
+
+/** 建置網站到 `<站台>/dist/`。 */
+export async function buildSite(siteDir: string, { log = console.log }: { log?: Log } = {}): Promise<ResolvedSite> {
+  const site = await loadSiteConfig(siteDir)
+  const { publicDir } = await prepareSiteData(site, { log })
+  const { build } = await import('vite')
+  await build({ ...createViteConfig(site, { publicDir }), logLevel: 'warn' })
+  log(`✓ 網站建置完成 → ${join(site.root, 'dist')}`)
+  return site
+}
+
+/** 開發伺服器（改前端程式會即時更新；改資料或設定請重新啟動）。 */
+export async function devSite(siteDir: string, { port, log = console.log }: { port?: number; log?: Log } = {}) {
+  const site = await loadSiteConfig(siteDir)
+  const { publicDir } = await prepareSiteData(site, { log })
+  const { createServer } = await import('vite')
+  // 埠號交給 createViteConfig：另外覆寫整個 server 會丟掉 fs.allow，開發伺服器就讀不到框架依賴的檔案（字型等）
+  const server = await createServer(createViteConfig(site, { publicDir, port }))
+  await server.listen()
+  server.printUrls()
+  return server
+}
+
+/** 預覽建置結果（端對端測試也用它）。 */
+export async function previewSite(siteDir: string, { port = 4173 }: { port?: number } = {}) {
+  const site = await loadSiteConfig(siteDir)
+  if (!existsSync(join(site.root, 'dist', 'index.html'))) throw new Error('還沒有建置結果，請先執行 babizu build')
+  const { preview } = await import('vite')
+  const server = await preview({
+    ...createViteConfig(site, { publicDir: join(site.root, '.babizu', 'public') }),
+    preview: { port, strictPort: true },
+  })
+  server.printUrls()
+  return server
+}
+
+/** 檢查站台設定、語言設定檔與資料集，但不建置。 */
+export async function checkSite(siteDir: string, { log = console.log }: { log?: Log } = {}): Promise<boolean> {
+  const site = await loadSiteConfig(siteDir)
+  log(`✓ 站台設定：${site.client.id}（語系 ${site.client.locales.join('、')}；變體 ${site.client.varieties.length} 種）`)
+  const { readDataset, validateDataset } = await import('../dataset.ts')
+  const loaded = await readDataset(site.dataDir)
+  const issues = validateDataset(loaded, { dialects: site.client.varieties.map((v) => v.code) })
+  const errors = issues.filter((i) => i.level === 'error')
+  const records = loaded.reduce((n, l) => n + l.shards.reduce((m, s) => m + s.records.length, 0), 0)
+  log(`${errors.length ? '✗' : '✓'} 資料集：${loaded.length} 個來源、${records} 筆記錄；${errors.length} 個錯誤、${issues.length - errors.length} 個警告`)
+  for (const e of errors.slice(0, 20)) log(`  ${e.source}：${e.message}`)
+  for (const [locale, keys] of Object.entries(missingMessages(site))) {
+    if (keys.length) log(`· 語系 ${locale} 缺 ${keys.length} 個譯文（顯示時回退到 ${site.client.defaultLocale}，再回退到中文）`)
+  }
+  for (const [locale, keys] of Object.entries(unusedMessages(site))) {
+    if (keys.length) log(`· 站台譯文檔 ${locale}.json 有 ${keys.length} 個程式沒有用到的字串（中文原文可能改過了）：${keys.join('、')}`)
+  }
+  return errors.length === 0
+}

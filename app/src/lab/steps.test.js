@@ -8,7 +8,7 @@ import en from '../../../locales/en.json' with { type: 'json' }
 import { createAnalyzer, createMorphSearch, FuzzyIndex, REDUPLICATION_PATTERNS, RuleSet, WeightedEditDistance } from '#bcdp'
 import { alternationRules } from '#bcdp'
 import { bcdpStateAt, bcdpSteps, dawgStateAt, dawgSteps, DISTANCE_PARAMS, dpStateAt, dpSteps } from './steps.js'
-import { sourceText } from '@babizu/site/messages.js'
+import { sourceText } from '@babizu/site/messages.ts'
 import { createRandom, pick, randomString } from '../../../packages/bcdp/test/helpers.js'
 
 /** 說明（中文原文）有英文譯文，文字中的 {參數} 都由步驟提供 @param {import('./steps.js').Step} step */

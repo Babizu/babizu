@@ -5,9 +5,9 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { widthOf } from '../../src/pattern/ast.js'
-import { findMatches, matchesAnywhere } from '../../src/pattern/match.js'
-import { parsePattern } from '../../src/pattern/parser.js'
+import { widthOf } from '../../src/pattern/ast.ts'
+import { findMatches, matchesAnywhere } from '../../src/pattern/match.ts'
+import { parsePattern } from '../../src/pattern/parser.ts'
 
 /** 亂數產生器（固定種子） @param {number} seed */
 function createRandom(seed) {
@@ -22,7 +22,7 @@ const LETTERS = ['a', 'b', 'c', 'd', 'e', 'f']
 
 /**
  * 測試用的 atom：一組字母（null 表示任一個詞 _）。
- * @typedef {import('../../src/pattern/ast.js').PatternNode} Node
+ * @typedef {import('../../src/pattern/ast.ts').PatternNode} Node
  */
 
 /** @param {() => number} random @param {number} depth @returns {Node} */

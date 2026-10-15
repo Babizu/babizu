@@ -8,7 +8,7 @@ import {
   formatErrors,
   parseRecordId,
   recordId,
-} from '../../src/schema/index.js'
+} from '../../src/schema/index.ts'
 
 const validators = createValidators()
 

@@ -3,10 +3,10 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { alternativesOf, compareOccurrences, DERIVATIVE_PENALTY, mergeMorphMatch, methodOf, rankScore, recordScore, termScore } from '../../src/search/scoring.js'
+import { alternativesOf, compareOccurrences, DERIVATIVE_PENALTY, mergeMorphMatch, methodOf, rankScore, recordScore, termScore } from '../../src/search/scoring.ts'
 
-/** @param {Partial<import('../../src/search/scoring.js').Scored>} o */
-const m = (o) => /** @type {import('../../src/search/scoring.js').Scored} */ ({ term: 'x', distance: 0, matchType: 'fuzzy', ...o })
+/** @param {Partial<import('../../src/search/scoring.ts').Scored>} o */
+const m = (o) => /** @type {import('../../src/search/scoring.ts').Scored} */ ({ term: 'x', distance: 0, matchType: 'fuzzy', ...o })
 
 describe('詞的分數與記錄的分數', () => {
   it('命中方式換算成等效距離；已經定下的分數優先', () => {

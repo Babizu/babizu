@@ -4,16 +4,16 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { PatternError } from '../../src/pattern/errors.js'
-import { createPatternMorphology, PARSE_SELECTION, readingOfSteps, satisfies, selectParses, stepMorphs } from '../../src/pattern/morph.js'
-import { parsePattern } from '../../src/pattern/parser.js'
-import { createTextTools } from '../../src/search/text.js'
+import { PatternError } from '../../src/pattern/errors.ts'
+import { createPatternMorphology, PARSE_SELECTION, readingOfSteps, satisfies, selectParses, stepMorphs } from '../../src/pattern/morph.ts'
+import { parsePattern } from '../../src/pattern/parser.ts'
+import { createTextTools } from '../../src/search/text.ts'
 import { PAZEH_PROFILE } from '../../packages/bcdp/test/fixtures/pazeh.js'
 import { PATTERN_GRAMMAR } from './fixture.js'
 
-/** @param {string} label @param {string[]} forms @returns {import('../../src/pattern/morph.js').AffixGroup} */
+/** @param {string} label @param {string[]} forms @returns {import('../../src/pattern/morph.ts').AffixGroup} */
 const group = (label, forms, type = /** @type {const} */ ('prefix')) => ({ type, forms: new Set(forms), label })
-/** @param {Partial<import('../../src/pattern/morph.js').MorphRequirement>} r */
+/** @param {Partial<import('../../src/pattern/morph.ts').MorphRequirement>} r */
 const req = (r) => ({ root: null, rootExact: false, prefixes: [], suffixes: [], prefixesAnywhere: false, suffixesAnywhere: false, infixes: [], red: false, ...r })
 /** @param {string[]} left @param {string[]} [right] @param {string[]} [infixes] */
 const reading = (left, right = [], infixes = []) => ({

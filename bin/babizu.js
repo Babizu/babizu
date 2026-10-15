@@ -15,12 +15,14 @@ import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-// BCDP 套件在安裝時由 prepare（tsc -b packages/bcdp）編譯到 packages/bcdp/dist；缺少時給清楚的錯誤，而不是「找不到模組」。
+// 框架與 BCDP 套件在安裝時由 prepare（tsc -b）編譯到 dist；缺少時給清楚的錯誤，而不是「找不到模組」。
 // 在框架目錄開發時以 node --conditions=babizu-source 執行原始碼（npm run example:*），不需要 dist
-const bcdp = fileURLToPath(import.meta.resolve('#bcdp'))
-if (!existsSync(bcdp)) {
-  console.error(`找不到編譯好的 BCDP 套件：${bcdp}\n在 babizu 目錄執行 npm run prepare（tsc -b packages/bcdp），或重新安裝 babizu。`)
-  process.exit(1)
+for (const entry of ['babizu/site', '#bcdp']) {
+  const file = fileURLToPath(import.meta.resolve(entry))
+  if (!existsSync(file)) {
+    console.error(`找不到編譯好的框架：${file}\n在 babizu 目錄執行 npm run prepare（tsc -b），或重新安裝 babizu。`)
+    process.exit(1)
+  }
 }
 
 const HELP = `用法：babizu <指令> [站台目錄] [選項]
@@ -45,7 +47,7 @@ const siteDir = resolve(positional[0] ?? '.')
 const port = flags.has('port') ? Number(flags.get('port')) : undefined
 
 try {
-  const site = await import('../src/site/index.js')
+  const site = await import('babizu/site')
   switch (command) {
     case 'dev':
       await site.devSite(siteDir, { port })

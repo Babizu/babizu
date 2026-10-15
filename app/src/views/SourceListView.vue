@@ -14,7 +14,7 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useSearchIndex } from '@/composables/useSearchIndex.js'
 import { useSources } from '@/composables/useSources.js'
-import { UNIT_CODES } from '@babizu/schema/constants.js'
+import { UNIT_CODES } from '@babizu/schema/constants.ts'
 import { t } from '@/i18n.js'
 import { formatCount, unitLabel } from '@/lib/labels.js'
 

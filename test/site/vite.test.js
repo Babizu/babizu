@@ -6,9 +6,9 @@ import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { loadSiteConfig } from '../../src/site/config.js'
-import { FRAMEWORK_ROOT } from '../../src/site/paths.js'
-import { createViteConfig, FRONTEND_DEPS } from '../../src/site/vite.js'
+import { loadSiteConfig } from '../../src/site/config.ts'
+import { FRAMEWORK_ROOT } from '../../src/site/paths.ts'
+import { createViteConfig, FRONTEND_DEPS } from '../../src/site/vite.ts'
 
 const site = await loadSiteConfig(join(FRAMEWORK_ROOT, 'examples/minimal'))
 const vueDir = dirname(createRequire(join(FRAMEWORK_ROOT, 'package.json')).resolve('vue/package.json'))

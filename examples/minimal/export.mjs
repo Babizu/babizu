@@ -9,8 +9,8 @@
 
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { defineAdapter, exportDataset } from '../../src/pipeline/index.js'
-import { createCitation, createGroup, createRecord, createSense } from '../../src/schema/index.js'
+import { defineAdapter, exportDataset } from 'babizu/pipeline'
+import { createCitation, createGroup, createRecord, createSense } from 'babizu/schema'
 
 const HERE = fileURLToPath(new URL('.', import.meta.url))
 

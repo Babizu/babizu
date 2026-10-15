@@ -5,10 +5,10 @@
 import { absoluteDataBase, loadManifest } from './data.js'
 
 /**
- * @typedef {import('@babizu/search/index.js').SearchEngine} SearchEngine
+ * @typedef {import('@babizu/search/index.ts').SearchEngine} SearchEngine
  * @typedef {ReturnType<SearchEngine['search']>} SearchResponse
  * @typedef {ReturnType<SearchEngine['neighbors']>} NeighborHits
- * @typedef {import('@babizu/search/index.js').DocSummary} DocSummary
+ * @typedef {import('@babizu/search/index.ts').DocSummary} DocSummary
  */
 
 export class SearchClient {

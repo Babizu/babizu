@@ -5,8 +5,8 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { DerivationGraph, encodeDerivations, soundOf } from '../../src/search/derivations.js'
-import { encodeParses, ParseChart, PARSES_FORMAT_VERSION, parsedAnalysis } from '../../src/search/parses.js'
+import { DerivationGraph, encodeDerivations, soundOf } from '../../src/search/derivations.ts'
+import { encodeParses, ParseChart, PARSES_FORMAT_VERSION, parsedAnalysis } from '../../src/search/parses.ts'
 
 const TERMS = ['abak', 'barak', 'rak', 'mausay', 'usa']
 /** @param {number} cost @param {Array<{type: string, form: string, cost: number}>} steps */

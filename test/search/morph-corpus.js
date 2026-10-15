@@ -8,8 +8,8 @@
  * 中綴加重疊）不要求找得到詞根，只用來檢查對稱性與一致性。
  */
 
-import { createCitation, createRecord, createSense } from '../../src/schema/index.js'
-import { buildDerivationGraph, buildParseChart, buildSearchIndex, SearchEngine } from '../../src/search/index.js'
+import { createCitation, createRecord, createSense } from '../../src/schema/index.ts'
+import { buildDerivationGraph, buildParseChart, buildSearchIndex, SearchEngine } from '../../src/search/index.ts'
 import { PAZEH_PROFILE } from '../../packages/bcdp/test/fixtures/pazeh.js'
 
 /** 構詞文法：常見的前綴、後綴、中綴、重疊與組合規則，加上交界的構詞音變 */

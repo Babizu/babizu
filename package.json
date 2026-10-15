@@ -12,7 +12,11 @@
     "babizu": "./bin/babizu.js"
   },
   "exports": {
-    ".": "./src/index.js",
+    ".": {
+      "types": "./dist/index.d.ts",
+      "babizu-source": "./src/index.ts",
+      "default": "./dist/index.js"
+    },
     "./fuzzy": {
       "types": "./packages/bcdp/dist/index.d.ts",
       "babizu-source": "./packages/bcdp/src/index.ts",
@@ -23,18 +27,62 @@
       "babizu-source": "./packages/bcdp/src/fst/index.ts",
       "default": "./packages/bcdp/dist/fst/index.js"
     },
-    "./schema": "./src/schema/index.js",
-    "./schema/constants": "./src/schema/constants.js",
-    "./schema/types": "./src/schema/types.js",
+    "./schema": {
+      "types": "./dist/schema/index.d.ts",
+      "babizu-source": "./src/schema/index.ts",
+      "default": "./dist/schema/index.js"
+    },
+    "./schema/constants": {
+      "types": "./dist/schema/constants.d.ts",
+      "babizu-source": "./src/schema/constants.ts",
+      "default": "./dist/schema/constants.js"
+    },
+    "./schema/types": {
+      "types": "./dist/schema/types.d.ts",
+      "babizu-source": "./src/schema/types.ts",
+      "default": "./dist/schema/types.js"
+    },
     "./schema/json/*": "./src/schema/json/*",
-    "./search": "./src/search/index.js",
-    "./search/text": "./src/search/text.js",
-    "./pattern": "./src/pattern/index.js",
-    "./pipeline": "./src/pipeline/index.js",
-    "./pipeline/spreadsheet": "./src/pipeline/spreadsheet.js",
-    "./pipeline/docx": "./src/pipeline/docx.js",
-    "./dataset": "./src/dataset.js",
-    "./site": "./src/site/index.js",
+    "./search": {
+      "types": "./dist/search/index.d.ts",
+      "babizu-source": "./src/search/index.ts",
+      "default": "./dist/search/index.js"
+    },
+    "./search/text": {
+      "types": "./dist/search/text.d.ts",
+      "babizu-source": "./src/search/text.ts",
+      "default": "./dist/search/text.js"
+    },
+    "./pattern": {
+      "types": "./dist/pattern/index.d.ts",
+      "babizu-source": "./src/pattern/index.ts",
+      "default": "./dist/pattern/index.js"
+    },
+    "./pipeline": {
+      "types": "./dist/pipeline/index.d.ts",
+      "babizu-source": "./src/pipeline/index.ts",
+      "default": "./dist/pipeline/index.js"
+    },
+    "./pipeline/spreadsheet": {
+      "types": "./dist/pipeline/spreadsheet.d.ts",
+      "babizu-source": "./src/pipeline/spreadsheet.ts",
+      "default": "./dist/pipeline/spreadsheet.js"
+    },
+    "./pipeline/docx": {
+      "types": "./dist/pipeline/docx.d.ts",
+      "babizu-source": "./src/pipeline/docx.ts",
+      "default": "./dist/pipeline/docx.js"
+    },
+    "./dataset": {
+      "types": "./dist/dataset.d.ts",
+      "babizu-source": "./src/dataset.ts",
+      "default": "./dist/dataset.js"
+    },
+    "./site": {
+      "types": "./dist/site/index.d.ts",
+      "babizu-source": "./src/site/index.ts",
+      "default": "./dist/site/index.js"
+    },
     "./package.json": "./package.json"
   },
   "imports": {
@@ -48,10 +96,12 @@
   "files": [
     "bin",
     "src",
+    "dist",
     "app",
     "locales",
     "docs",
     "README.md",
+    "tsconfig.json",
     "packages/bcdp/src",
     "packages/bcdp/dist",
     "packages/bcdp/package.json",
@@ -61,8 +111,8 @@
     "node": ">=20.19"
   },
   "scripts": {
-    "prepare": "tsc -b packages/bcdp",
-    "typecheck": "tsc -b packages/bcdp",
+    "prepare": "tsc -b",
+    "typecheck": "tsc -b",
     "test": "vitest run",
     "test:e2e": "npm run example:build && playwright test",
     "example:dev": "node --conditions=babizu-source bin/babizu.js dev examples/minimal",
@@ -117,6 +167,7 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",
+    "@types/node": "^22.20.5",
     "@vue/test-utils": "^2.5.1",
     "@xmldom/xmldom": "^0.9.12",
     "csv-parse": "^7.0.2",

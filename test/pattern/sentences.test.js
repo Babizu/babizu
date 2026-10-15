@@ -3,8 +3,8 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { MAX_READINGS, segmentText } from '../../src/pattern/sentences.js'
-import { createTextTools } from '../../src/search/text.js'
+import { MAX_READINGS, segmentText } from '../../src/pattern/sentences.ts'
+import { createTextTools } from '../../src/search/text.ts'
 import { PAZEH_PROFILE } from '../../packages/bcdp/test/fixtures/pazeh.js'
 
 const { searchKey, splitWords } = createTextTools(PAZEH_PROFILE)

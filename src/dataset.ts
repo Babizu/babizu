@@ -1,0 +1,195 @@
+/**
+ * @file 標準資料集（dataset）的讀寫與驗證。
+ *
+ * 資料集是框架的「交換格式」：資料生產端（轉接器，見 babizu/pipeline）把各種原始資料轉成它，
+ * 網站端（babizu build）只讀它。兩端可以放在不同的儲存庫——原始資料可以是私有的，
+ * 資料集與網站則公開。
+ *
+ * ```
+ * data/
+ * ├── dataset.json                 格式、版本、來源與分片的清單（順序即網站上的順序）
+ * ├── sources.json                 來源後設資料（CorpusSource[]，含統計）
+ * ├── records/<來源>/<分片>.json    { source, shard, label, groups, records }
+ * ├── media/…                      音檔等媒體
+ * └── scans/…                      原書掃描圖（WebP）
+ * ```
+ *
+ * JSON 一律以兩格縮排、固定鍵序寫出，放進版本管理時 diff 才看得懂。
+ * 完整規格見 docs/data-format.md。
+ */
+
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
+import { createValidators, formatErrors } from './schema/index.ts'
+import type { CorpusGroup, CorpusRecord, CorpusSource } from './schema/types.ts'
+
+export const DATASET_FORMAT = 'babizu-dataset'
+export const DATASET_VERSION = 1
+
+export interface DatasetShard {
+  /** 分片鍵（檔名） */
+  key: string
+  /** 顯示名稱 */
+  label: string
+  groups: CorpusGroup[]
+  records: CorpusRecord[]
+}
+
+export interface LoadedSource {
+  source: CorpusSource
+  shards: DatasetShard[]
+}
+
+export interface Issue {
+  level: 'warn' | 'error'
+  source: string
+  message: string
+}
+
+/** 分片檔的路徑（相對資料集根目錄）。 */
+export function shardPath(sourceId: string, shardKey: string): string {
+  return `records/${sourceId}/${shardKey}.json`
+}
+
+/** 各來源的統計（寫進 sources.json，網站的「資料來源」頁顯示）。 */
+export function computeStats(shards: DatasetShard[]): Record<string, number> {
+  const stats: Record<string, number> = { records: 0, groups: 0, shards: shards.length, audio: 0, affix: 0, word: 0, phrase: 0, sentence: 0 }
+  for (const shard of shards) {
+    stats.groups += shard.groups.length
+    for (const r of shard.records) {
+      stats.records++
+      stats[r.unit]++
+      if (r.media.some((m) => m.type === 'audio' && m.available)) stats.audio++
+    }
+  }
+  return stats
+}
+
+/**
+ * 以 schema 驗證來源與分片，並做全域一致性檢查
+ * （記錄 id 唯一、群組存在、parent 存在、related 目標存在）。
+ * @param options.dialects 允許的語言變體代碼（來自站台設定）
+ */
+export function validateDataset(loaded: LoadedSource[], { dialects }: { dialects?: string[] } = {}): Issue[] {
+  const validators = createValidators({ dialects })
+  const issues: Issue[] = []
+  const error = (source: string, message: string) => issues.push({ level: 'error', source, message })
+  const warn = (source: string, message: string) => issues.push({ level: 'warn', source, message })
+
+  for (const { source, shards } of loaded) {
+    if (!validators.source(source)) {
+      for (const msg of formatErrors(validators.source.errors, `來源 ${source.id}`)) error(source.id, msg)
+    }
+    for (const shard of shards) {
+      const data = { source: source.id, shard: shard.key, label: shard.label, groups: shard.groups, records: shard.records }
+      if (!validators.shard(data)) {
+        // 同一個錯誤常會在上千筆記錄重複出現，每個分片只列前 20 則
+        for (const msg of formatErrors(validators.shard.errors, `${source.id}/${shard.key}`).slice(0, 20)) {
+          error(source.id, msg)
+        }
+      }
+    }
+  }
+
+  const ids = new Set<string>()
+  const groupIds = new Set<string>()
+  for (const { source, shards } of loaded) {
+    for (const shard of shards) {
+      for (const g of shard.groups) {
+        if (groupIds.has(g.id)) error(source.id, `群組 id 重複：${g.id}`)
+        groupIds.add(g.id)
+      }
+      for (const r of shard.records) {
+        if (ids.has(r.id)) error(source.id, `記錄 id 重複：${r.id}`)
+        ids.add(r.id)
+      }
+    }
+  }
+  for (const { source, shards } of loaded) {
+    for (const shard of shards) {
+      for (const r of shard.records) {
+        if (r.group && !groupIds.has(r.group.id)) error(source.id, `${r.id}：所屬群組 ${r.group.id} 不存在`)
+        if (r.group?.parent && !ids.has(r.group.parent)) error(source.id, `${r.id}：parent ${r.group.parent} 不存在`)
+        for (const link of r.related) {
+          if (!ids.has(link.target)) warn(source.id, `${r.id}：related 目標 ${link.target} 不存在`)
+        }
+      }
+    }
+  }
+  return issues
+}
+
+const pretty = (data: unknown) => `${JSON.stringify(data, null, 2)}\n`
+
+/**
+ * 寫出資料集的 JSON 部分（dataset.json、sources.json、records/）。媒體與掃描圖由 syncAssets 處理。
+ * 會先清空 records/，所以移除的來源或分片不會殘留。
+ * @param dir 資料集根目錄
+ */
+export async function writeDataset(dir: string, loaded: LoadedSource[]): Promise<void> {
+  await rm(join(dir, 'records'), { recursive: true, force: true })
+  for (const { source, shards } of loaded) {
+    for (const shard of shards) {
+      const path = join(dir, shardPath(source.id, shard.key))
+      await mkdir(dirname(path), { recursive: true })
+      await writeFile(
+        path,
+        pretty({ source: source.id, shard: shard.key, label: shard.label, groups: shard.groups, records: shard.records }),
+      )
+    }
+  }
+  const sources = loaded.map(({ source, shards }) => ({ ...source, stats: computeStats(shards) }))
+  await writeFile(join(dir, 'sources.json'), pretty(sources))
+  await writeFile(
+    join(dir, 'dataset.json'),
+    pretty({
+      format: DATASET_FORMAT,
+      version: DATASET_VERSION,
+      sources: loaded.map(({ source, shards }) => ({
+        id: source.id,
+        shards: shards.map((s) => ({ key: s.key, label: s.label, records: s.records.length, groups: s.groups.length })),
+      })),
+    }),
+  )
+}
+
+/** dataset.json 的內容 */
+interface DatasetManifest {
+  format: string
+  version: number
+  sources: Array<{ id: string; shards: Array<{ key: string; label: string; records: number; groups: number }> }>
+}
+
+/**
+ * 讀取資料集。
+ * @param dir 資料集根目錄
+ */
+export async function readDataset(dir: string): Promise<LoadedSource[]> {
+  const read = async (name: string) => JSON.parse(await readFile(join(dir, name), 'utf8'))
+  let manifest: DatasetManifest
+  try {
+    manifest = await read('dataset.json')
+  } catch (e) {
+    throw new Error(`找不到資料集 ${join(dir, 'dataset.json')}。資料集由資料生產端匯出（見 docs/data-format.md）`, {
+      cause: e,
+    })
+  }
+  if (manifest.format !== DATASET_FORMAT) throw new Error(`${dir} 不是 babizu 資料集（format 應為 ${DATASET_FORMAT}）`)
+  if (manifest.version !== DATASET_VERSION) {
+    throw new Error(`資料集版本 ${manifest.version} 與框架支援的版本 ${DATASET_VERSION} 不符`)
+  }
+  const sources: CorpusSource[] = await read('sources.json')
+  const byId = new Map(sources.map((s) => [s.id, s]))
+  const loaded: LoadedSource[] = []
+  for (const entry of manifest.sources) {
+    const source = byId.get(entry.id)
+    if (!source) throw new Error(`dataset.json 列出的來源 ${entry.id} 不在 sources.json 中`)
+    const shards = []
+    for (const { key } of entry.shards) {
+      const data = await read(shardPath(entry.id, key))
+      shards.push({ key: data.shard, label: data.label, groups: data.groups, records: data.records })
+    }
+    loaded.push({ source, shards })
+  }
+  return loaded
+}

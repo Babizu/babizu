@@ -8,7 +8,7 @@ import MatchExplanation from '@/components/common/MatchExplanation.vue'
 import MatchTypeTag from '@/components/common/MatchTypeTag.vue'
 import MetaTag from '@/components/common/MetaTag.vue'
 import MorphologyExplanation from '@/components/common/MorphologyExplanation.vue'
-import { DICTIONARY_KINDS } from '@babizu/search/scoring.js'
+import { DICTIONARY_KINDS } from '@babizu/search/scoring.ts'
 import { matchKindHint, matchKindLabel } from '@/lib/labels.js'
 
 defineProps({

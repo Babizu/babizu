@@ -20,7 +20,7 @@
  * 不用 vue-i18n：需要的只是「查字串＋代入參數＋回退」，自己寫不到一百行，也少一個相依套件。
  */
 
-import { msg, sourceText } from '@babizu/site/messages.js'
+import { msg, sourceText } from '@babizu/site/messages.ts'
 import { computed, ref, watch } from 'vue'
 import site from 'virtual:babizu/site'
 

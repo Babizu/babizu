@@ -4,8 +4,8 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { createCitation, createRecord, createSense } from '../../src/schema/index.js'
-import { buildSearchIndex, SearchEngine } from '../../src/search/index.js'
+import { createCitation, createRecord, createSense } from '../../src/schema/index.ts'
+import { buildSearchIndex, SearchEngine } from '../../src/search/index.ts'
 import { PAZEH_PROFILE } from '../../packages/bcdp/test/fixtures/pazeh.js'
 
 describe('搜尋引擎：選項來自介面，不認得的值回退到預設值', () => {

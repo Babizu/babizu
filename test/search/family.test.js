@@ -5,10 +5,10 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { createCitation, createGroup, createRecord, createSense } from '../../src/schema/index.js'
-import { buildEntryGroups, collectHits, computeParents, derivationCandidates } from '../../src/search/family.js'
-import { SearchEngine, buildSearchIndex } from '../../src/search/index.js'
-import { createTextTools } from '../../src/search/text.js'
+import { createCitation, createGroup, createRecord, createSense } from '../../src/schema/index.ts'
+import { buildEntryGroups, collectHits, computeParents, derivationCandidates } from '../../src/search/family.ts'
+import { SearchEngine, buildSearchIndex } from '../../src/search/index.ts'
+import { createTextTools } from '../../src/search/text.ts'
 import { PAZEH_PROFILE } from '../../packages/bcdp/test/fixtures/pazeh.js'
 
 const { searchKey } = createTextTools(PAZEH_PROFILE)

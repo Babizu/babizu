@@ -2,8 +2,8 @@ import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { defineAdapter, exportDataset, readDataset, validateDataset, writeDataset } from '../../src/pipeline/index.js'
-import { createCitation, createGroup, createRecord, createSense } from '../../src/schema/index.js'
+import { defineAdapter, exportDataset, readDataset, validateDataset, writeDataset } from '../../src/pipeline/index.ts'
+import { createCitation, createGroup, createRecord, createSense } from '../../src/schema/index.ts'
 
 /** 一個最小的合成來源 */
 function makeSource(id, { reviewTracked = false } = {}) {
@@ -149,7 +149,7 @@ describe('pruneAssets', () => {
 
   it('刪除沒有被引用的媒體檔與空目錄，保留引用中的檔案與其他目錄', async () => {
     const { mkdir, writeFile } = await import('node:fs/promises')
-    const { pruneAssets } = await import('../../src/pipeline/index.js')
+    const { pruneAssets } = await import('../../src/pipeline/index.ts')
     for (const rel of ['media/a/keep.mp3', 'media/a/stale.mp3', 'media/gone/old.mp3', 'scans/p1.webp', 'records/x/y.json']) {
       await mkdir(join(dir, rel, '..'), { recursive: true })
       await writeFile(join(dir, rel), 'x')

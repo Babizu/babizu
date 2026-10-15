@@ -34,7 +34,7 @@ import { useRecentSearches } from '@/composables/useRecentSearches.js'
 import { useSearchIndex } from '@/composables/useSearchIndex.js'
 import { useI18n } from '@/i18n.js'
 import { formatCount, formatDistance, site } from '@/lib/labels.js'
-import { isPatternQuery, looksLikePattern } from '@babizu/pattern/detect.js'
+import { isPatternQuery, looksLikePattern } from '@babizu/pattern/detect.ts'
 
 const route = useRoute()
 const router = useRouter()

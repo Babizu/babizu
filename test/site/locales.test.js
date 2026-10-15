@@ -10,9 +10,9 @@ import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { extractFromSource, extractMessages } from '../../src/site/extract-messages.js'
-import { sourceText } from '../../src/site/messages.js'
-import { BUILTIN_LOCALES, SOURCE_LOCALE } from '../../src/site/paths.js'
+import { extractFromSource, extractMessages } from '../../src/site/extract-messages.ts'
+import { sourceText } from '../../src/site/messages.ts'
+import { BUILTIN_LOCALES, SOURCE_LOCALE } from '../../src/site/paths.ts'
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url))
 const TRANSLATIONS = readdirSync(join(ROOT, 'locales')).filter((f) => f.endsWith('.json'))

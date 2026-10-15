@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useSources } from '@/composables/useSources.js'
-import { UNIT_CODES } from '@babizu/schema/constants.js'
+import { UNIT_CODES } from '@babizu/schema/constants.ts'
 import { t } from '@/i18n.js'
 import { formatCount, shardUnitLabel, sourceTypeLabel, unitLabel } from '@/lib/labels.js'
 

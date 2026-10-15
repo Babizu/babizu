@@ -3,8 +3,8 @@
  * 詞與句子都是測試用的合成資料（寫法仿照巴宰語，但不是取自任何來源）。
  */
 
-import { createCitation, createRecord, createSense } from '../../src/schema/index.js'
-import { buildDerivationGraph, buildParseChart, buildSearchIndex, SearchEngine } from '../../src/search/index.js'
+import { createCitation, createRecord, createSense } from '../../src/schema/index.ts'
+import { buildDerivationGraph, buildParseChart, buildSearchIndex, SearchEngine } from '../../src/search/index.ts'
 import { PAZEH_PROFILE } from '../../packages/bcdp/test/fixtures/pazeh.js'
 
 /** 構詞文法：主事焦點的同位詞素組 {m, mu, mi, me}、中綴 <in> <a>、組合規則（docs/morph-grammar.md） */

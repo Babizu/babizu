@@ -4,12 +4,12 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { createCitation, createGroup, createRecord, createSense } from '../../src/schema/index.js'
-import { buildDerivationGraph, buildSearchIndex, createDerivationAnalyzer, DerivationGraph, isVirtualRootShape, SearchEngine, virtualRootCost } from '../../src/search/index.js'
+import { createCitation, createGroup, createRecord, createSense } from '../../src/schema/index.ts'
+import { buildDerivationGraph, buildSearchIndex, createDerivationAnalyzer, DerivationGraph, isVirtualRootShape, SearchEngine, virtualRootCost } from '../../src/search/index.ts'
 import { createAnalyzer } from '#bcdp'
-import { entryTest } from '../../src/search/derivations.js'
-import { mergeEdges } from '../../src/search/derivations.js'
-import { compareHits, compareOccurrences, mergeMorphMatch, replacesRecordHit, siblingTier } from '../../src/search/scoring.js'
+import { entryTest } from '../../src/search/derivations.ts'
+import { mergeEdges } from '../../src/search/derivations.ts'
+import { compareHits, compareOccurrences, mergeMorphMatch, replacesRecordHit, siblingTier } from '../../src/search/scoring.ts'
 import { PAZEH_PROFILE } from '../../packages/bcdp/test/fixtures/pazeh.js'
 
 const MORPHOLOGY = {

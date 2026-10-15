@@ -25,7 +25,7 @@ const shards = computed(() => source.value?.shards ?? [])
 const shardKey = computed(() => String(route.params.shard || shards.value[0]?.key || ''))
 const shardIndex = computed(() => shards.value.findIndex((s) => s.key === shardKey.value))
 
-/** @type {import('vue').ShallowRef<import('@babizu/schema/types.js').CorpusShard | null>} */
+/** @type {import('vue').ShallowRef<import('@babizu/schema/types.ts').CorpusShard | null>} */
 const shard = shallowRef(null)
 const loading = ref(false)
 const loadError = ref('')

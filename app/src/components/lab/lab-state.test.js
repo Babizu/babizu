@@ -2,7 +2,7 @@
  * 演算法實驗室的距離函式必須與搜尋一致：沒有修改時逐一相同，改了之後只差在改過的地方。
  */
 
-import { createSearchMetric, createTextTools } from '@babizu/search/text.js'
+import { createSearchMetric, createTextTools } from '@babizu/search/text.ts'
 import site from 'virtual:babizu/site'
 import { describe, expect, it } from 'vitest'
 import { createLabState } from './lab-state.js'

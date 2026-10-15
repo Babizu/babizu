@@ -14,7 +14,7 @@
  * 錯誤訊息是給開發者看的技術細節，介面會另外加上翻譯過的說明。
  */
 
-import { Checklist, SearchEngine } from '@babizu/search/index.js'
+import { Checklist, SearchEngine } from '@babizu/search/index.ts'
 import { fetchWithRetry } from '../services/fetch-retry.js'
 
 /** @type {SearchEngine | null} */

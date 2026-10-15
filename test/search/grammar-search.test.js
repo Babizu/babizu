@@ -4,8 +4,8 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { createCitation, createRecord, createSense } from '../../src/schema/index.js'
-import { SearchEngine, buildDerivationGraph, buildSearchIndex } from '../../src/search/index.js'
+import { createCitation, createRecord, createSense } from '../../src/schema/index.ts'
+import { SearchEngine, buildDerivationGraph, buildSearchIndex } from '../../src/search/index.ts'
 import { PAZEH_PROFILE } from '../../packages/bcdp/test/fixtures/pazeh.js'
 import { GRAMMAR } from '../../packages/bcdp/test/fixtures/grammar.js'
 

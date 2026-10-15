@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { extractInterlinearBlocks, parseDocumentXml } from '../../src/pipeline/docx.js'
-import { isBlank, orNull } from '../../src/pipeline/spreadsheet.js'
-import { formatTimecode, parseSsa, parseTimecode } from '../../src/pipeline/ssa.js'
-import { classifyUnit } from '../../src/pipeline/unit.js'
+import { extractInterlinearBlocks, parseDocumentXml } from '../../src/pipeline/docx.ts'
+import { isBlank, orNull } from '../../src/pipeline/spreadsheet.ts'
+import { formatTimecode, parseSsa, parseTimecode } from '../../src/pipeline/ssa.ts'
+import { classifyUnit } from '../../src/pipeline/unit.ts'
 
 describe('classifyUnit', () => {
   it('黏著形式與體例符號判為詞綴', () => {

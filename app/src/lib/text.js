@@ -4,7 +4,7 @@
  * 用於畫面上的高亮等顯示用途；搜尋本身在 Worker 中進行，用的是和索引一起載入的同一份設定檔。
  */
 
-import { createTextTools } from '@babizu/search/text.js'
+import { createTextTools } from '@babizu/search/text.ts'
 import site from 'virtual:babizu/site'
 
 export const { searchKey, tokenize, splitWords } = createTextTools(/** @type {any} */ (site.profile))

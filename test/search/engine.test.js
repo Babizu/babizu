@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createCitation, createRecord, createSense } from '../../src/schema/index.js'
+import { createCitation, createRecord, createSense } from '../../src/schema/index.ts'
 import {
   FUZZINESS,
   SearchEngine,
@@ -9,7 +9,7 @@ import {
   decodePosting,
   encodePosting,
   glossTokens,
-} from '../../src/search/index.js'
+} from '../../src/search/index.ts'
 import { PAZEH_PROFILE } from '../../packages/bcdp/test/fixtures/pazeh.js'
 
 /** 測試用的語言變體：愛蘭是巴宰的地方變體 */

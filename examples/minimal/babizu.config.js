@@ -3,7 +3,7 @@
  * 建置：npm run example:build（在框架根目錄）
  */
 
-import { defineSite } from '../../src/index.js'
+import { defineSite } from 'babizu'
 
 export default defineSite({
   id: 'babizu-demo',

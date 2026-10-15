@@ -1,0 +1,25 @@
+{
+  // babizu 的 Node 端（src）：安裝時編譯到 dist（node_modules 中的 .ts 不能由 Node 直接執行）。
+  // 與 BCDP 套件相同，只用可以直接抹掉的 TypeScript 語法：在框架目錄開發時 Node（≥ 22.18）直接執行原始碼。
+  // 前端（app/）由 Vite 編譯，有自己的 tsconfig。
+  "compilerOptions": {
+    "composite": true,
+    "rootDir": "src",
+    "outDir": "dist",
+    "tsBuildInfoFile": "dist/.tsbuildinfo",
+    "target": "es2022",
+    "lib": ["es2023"],
+    "types": ["node"],
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "strict": true,
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true,
+    "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": true,
+    "declaration": true,
+    "skipLibCheck": true
+  },
+  "include": ["src"],
+  "references": [{ "path": "packages/bcdp" }]
+}

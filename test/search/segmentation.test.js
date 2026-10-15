@@ -8,7 +8,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { Checklist, collectSegmentations, compareSegmentations, parseSegmentation, SEGMENTATIONS_FORMAT_VERSION } from '../../src/search/index.js'
+import { Checklist, collectSegmentations, compareSegmentations, parseSegmentation, SEGMENTATIONS_FORMAT_VERSION } from '../../src/search/index.ts'
 import { buildPatternData, buildPatternEngine, rec, RECORDS } from '../pattern/fixture.js'
 
 /** 詞 → 人工拆解 */

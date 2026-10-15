@@ -3,9 +3,9 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { isPatternQuery, looksLikePattern } from '../../src/pattern/detect.js'
-import { PatternError } from '../../src/pattern/errors.js'
-import { parsePattern } from '../../src/pattern/parser.js'
+import { isPatternQuery, looksLikePattern } from '../../src/pattern/detect.ts'
+import { PatternError } from '../../src/pattern/errors.ts'
+import { parsePattern } from '../../src/pattern/parser.ts'
 
 /** 語法樹的精簡寫法（不含位置），方便比對 @param {any} n @returns {string} */
 function show(n) {

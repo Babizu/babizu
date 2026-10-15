@@ -18,7 +18,7 @@ import { t } from '@/i18n.js'
 import { displayHit } from '@/lib/entry-groups.js'
 import { recordRoute, unitLabel } from '@/lib/labels.js'
 import { vCardLink } from '@/lib/card-link.js'
-import { DICTIONARY_KINDS } from '@babizu/search/scoring.js'
+import { DICTIONARY_KINDS } from '@babizu/search/scoring.ts'
 import HitTags from './HitTags.vue'
 
 const props = defineProps({

@@ -14,7 +14,7 @@
  */
 
 // 相對路徑而不是 @babizu 別名：golden 快照與研究工具在 Vite 之外（純 Node）也載入這個模組
-import { msg } from '../../../src/site/messages.js'
+import { msg } from '../../../src/site/messages.ts'
 
 /** 動態規劃表：每一格的值由哪一種操作得到 */
 export const CELL_NOTES = {
