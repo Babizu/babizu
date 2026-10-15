@@ -36,10 +36,10 @@ node --conditions=babizu-source bin/babizu.js build ../pazeh-kaxabu   # 用本�
 | `src/pipeline/` | 轉接器工具、`exportDataset`（驗證→寫資料集→同步並清除媒體） |
 | `src/site/` | `config.ts`（讀站台設定；送進瀏覽器的部分見 `client.ts`）、`prepare.ts`（資料集→網站資料＋索引）、`vite.ts`（虛擬模組 `virtual:babizu/site`） |
 | `app/` | Vue 3（`<script setup lang="ts">`）＋Tailwind v4＋手動移植的 shadcn-vue；`i18n.ts` 自製語系；搜尋在 Web Worker（`workers/search.worker.ts`，用戶端的型別由它的方法表推出） |
-| `locales/` | 譯文檔：`en.json`（中文原文 → 英文）。中文是原文語系，直接寫在程式裡，沒有語系檔；`test/site/locales.test.js` 從程式抽出字串檢查譯文齊全 |
+| `locales/` | 譯文檔：`en.json`（中文原文 → 英文）。中文是原文語系，直接寫在程式裡，沒有語系檔；`test/site/locales.test.ts` 從程式抽出字串檢查譯文齊全 |
 | `examples/minimal/` | 虛構語言的示範站台，也是端對端測試對象 |
 | `test/fixtures/` | 巴宰–噶哈巫語的語言設定檔與測試用站台設定（有從屬變體與真實規則表） |
-| `test/zoo/` | 突變清單（`mutants.js`）與執行器；改了程式後突變的 `find` 要仍然只出現一次 |
+| `test/zoo/` | 突變清單（`mutants.ts`）與執行器；改了程式後突變的 `find` 要仍然只出現一次 |
 
 ## 慣例
 
@@ -47,7 +47,7 @@ node --conditions=babizu-source bin/babizu.js build ../pazeh-kaxabu   # 用本�
   註解與測試可以用巴宰–噶哈巫語當例子，但執行路徑不能依賴它。
 - **介面文字一律 `t('中文原文')`**（對照表等不在呼叫處的字串用 `msg('…')`，不用樣板字串組鍵），英文加進 `locales/en.json`；代碼的顯示名稱用 `app/src/lib/labels.ts`。見 `docs/i18n.md`。
 - **元件的 props** 用執行期宣告加 `Object as PropType<T>`；`defineProps<T>()` 這類型別參數只能用本檔定義的型別
-  （網站沒有安裝 typescript，compiler-sfc 解析不了引用的型別；`test/site/sfc-types.test.js` 檢查）。
+  （網站沒有安裝 typescript，compiler-sfc 解析不了引用的型別；`test/site/sfc-types.test.ts` 檢查）。
 - **搜尋索引格式**（`INDEX_FORMAT_VERSION`）改了要升版；`SearchEngine` 會拒絕版本不符的索引。
 - **UI 設計語言**見 `docs/ui-guidelines.md`：小圓角（3px 基準）、髮絲線不用陰影、不用漸層、目標語言用 Gentium Book Plus。
 - **前端非同步**：切換頁面時舊請求可能晚回來，用 `useLatestRequest` 確認「這還是目前的請求」再寫入狀態。

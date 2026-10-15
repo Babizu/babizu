@@ -243,7 +243,7 @@ m-、mu-、mi-、me- 則各自是獨立的前綴，看不出它們是同一個�
 只有最後一種情形與 r 的內容有關，而它正是把中綴交給 op、在詞根上決定位置的情形。∎
 </details>
 
-測試以隨機的詞素序列 × 元音開頭、輔音開頭的詞根檢查這個引理，直接套用的定義只有十幾行，寫在測試裡（`test/fuzzy/grammar.test.js`）。
+測試以隨機的詞素序列 × 元音開頭、輔音開頭的詞根檢查這個引理，直接套用的定義只有十幾行，寫在測試裡（`packages/bcdp/test/grammar.test.ts`）。
 
 ### 4.4 展開、順序與上限
 
@@ -366,7 +366,7 @@ console.table(flat.circumfixes.map((c) => ({ ...c, parts: c.parts.map((p) => `${
 
 - 仲裁者存在的理由，是前一版的 BCDP 改動很大（條件分類、多目標），需要一個獨立的實作來驗證。
 - 這一版的 BCDP 只多了 5.1–5.3 節的改動，每一處都是原版既有的量或只改 tag。
-- 驗證由原版就有的窮舉參考實作負責（`test/fuzzy/reference/ref-morph.js`，只在測試中使用），它已擴充到新的形狀（第 7 節）。
+- 驗證由原版就有的窮舉參考實作負責（`packages/bcdp/test/reference/ref-morph.js`，只在測試中使用），它已擴充到新的形狀（第 7 節）。
 
 **保留的**：
 
@@ -379,12 +379,12 @@ console.table(flat.circumfixes.map((c) => ({ ...c, parts: c.parts.map((p) => `${
 
 **單元測試**：25 個檔案、366 個測試，約 31 秒（前一版約 200 秒）。
 
-- `test/fuzzy/grammar.test.js`：
+- `packages/bcdp/test/grammar.test.ts`：
   - 巴宰語式的文法逐項比對展開結果；
   - 4.3 節引理的性質測試；
   - 每一種規格錯誤的訊息；
   - 搜尋的固定案例（見下表）。
-- `test/fuzzy/bcdp-reference.test.js`：
+- `packages/bcdp/test/bcdp-reference.test.ts`：
   - 窮舉參考實作擴充到 (L, op, R?)、沒有後綴的包覆單位、`stemInitial`；
   - 隨機規格也產生這些形狀（種子 1–9）；
   - reaching check 要求 `wrap:outer`、`wrap:no-suffix`、`wrap:vowel-stem` 都真的出現在命中裡；
@@ -392,7 +392,7 @@ console.table(flat.circumfixes.map((c) => ({ ...c, parts: c.parts.map((p) => `${
     - 「環綴一定要接它的後綴」：詞庫同時有 kita、kitaaw 時，kakitaaw 的詞根是 kita；
     - 元音開頭的環綴併進同後綴的通道，有自由前綴與沒有自由前綴兩種情形；
     - 併進來的起點只有跨界表時，元音開頭的詞只由原本的起點到得了（mxiku）。
-- `test/fuzzy/junction.test.js`：`initialFrom` ＝ 分成兩個通道各自走訪（含跨界表、剪枝、沒有原本的起點）。
+- `packages/bcdp/test/junction.test.ts`：`initialFrom` ＝ 分成兩個通道各自走訪（含跨界表、剪枝、沒有原本的起點）。
 
 **動物園**：35 個具名突變全部被殺掉。這一版新增的有：
 

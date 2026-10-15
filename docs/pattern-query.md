@@ -75,7 +75,7 @@ chunk   = "_" | 詞 | "詞" | 拼寫樣式 | "@" 詞 | 構詞樣式 ;
 3. **不重疊**：下一次從上一次的終點接著找。
 
 所以 `yaku ka _* isiw` 在「yaku ka mausay mikita isiw a mamai … ezaw isiw」中比到最後一個 isiw。
-單元測試以兩萬組隨機句型對照 RegExp 檢查這一點（`test/pattern/match.test.js`）。
+單元測試以兩萬組隨機句型對照 RegExp 檢查這一點（`test/pattern/match.test.ts`）。
 
 ### 2.2 句、讀法
 
@@ -181,7 +181,7 @@ BCDP 的分析保留每個詞素實際用的寫法（構詞文法展開後的 `p
 | `…-mu-…` | 前綴中有主事組（不必在最外層） |
 | `b-…` | 錯誤：b 不是詞綴（最接近的：pa-、pi-、pu-） |
 
-這張表的每一列都有單元測試（`test/pattern/search.test.js`，用合成的構詞文法）。
+這張表的每一列都有單元測試（`test/pattern/search.test.ts`，用合成的構詞文法）。
 
 ### 3.4 比對規則（`morph.js` 的 `satisfies`）
 
@@ -294,12 +294,12 @@ v0.9.2 拆解表收下同分的其他讀法，召回每一級都提高，新增�
 
 - **詞根集合**：寫在引號中時只有它本身；否則是它與依模糊程度的相近拼寫，與一般搜尋自動派生的起點相同（`SearchEngine.derivationSeeds`）。
 - **測試**：
-  - 合成資料：`test/pattern/search.test.js`「拆解表」逐一檢查每個詞的拆解表對自動派生圖、對一般搜尋的自動拆解，
+  - 合成資料：`test/pattern/search.test.ts`「拆解表」逐一檢查每個詞的拆解表對自動派生圖、對一般搜尋的自動拆解，
     以及六種樣式在三種模糊程度下的對稱；
   - 真實資料：minubizu 的 `tools/eval-pattern.mjs`；
   - 動物園：拆解表漏掉虛擬詞根、只收最好的詞根、收下含空白的詞根，都會被殺掉。
 
-**與一般搜尋一致**（同一個函式，`test/pattern/search.test.js`「與一般搜尋一致」）：
+**與一般搜尋一致**（同一個函式，`test/pattern/search.test.ts`「與一般搜尋一致」）：
 
 | 句型 | 等於一般搜尋的 |
 |---|---|
@@ -330,7 +330,7 @@ v0.9.2 拆解表收下同分的其他讀法，召回每一級都提高，新增�
 - `@詞`
 
 量詞 `? * +`、連字號、`=`、括號單獨出現時都**不算**，因為讀者常照辭典或語法書的寫法輸入：
-`pa-kita`、`sikis-`、`ha=ka`、`kita?`、`yaku (ka) mupuza lia.`、`bunang ka lalan!` 都照舊走一般搜尋（回歸測試 `test/pattern/parser.test.js`）。
+`pa-kita`、`sikis-`、`ha=ka`、`kita?`、`yaku (ka) mupuza lia.`、`bunang ka lalan!` 都照舊走一般搜尋（回歸測試 `test/pattern/parser.test.ts`）。
 
 網址參數 `m`：
 
@@ -427,14 +427,14 @@ v0.9.2 拆解表收下同分的其他讀法，召回每一級都提高，新增�
 
 | 測試 | 內容 |
 |---|---|
-| `test/pattern/match.test.js` | 兩萬組隨機句型對照 RegExp（區間），檢查每一格由符合它的條件比到 |
-| `test/pattern/parser.test.js` | 優先序、每個錯誤代碼與位置、自動判斷（一般搜尋的回歸清單） |
-| `test/pattern/sentences.test.js` | 分句、原文位置、語法書的體例；與索引的斷詞一致 |
-| `test/pattern/morph.test.js` | 錨定與相連、外側的 …（… 優先當詞根）、依模糊程度取拆法（先求最好的再扣音變、虛擬詞根另外取）、構式的 parts、哪一段是詞根 |
-| `test/pattern/search.test.js` | 構詞樣式對照表的每一列、拆解表對自動派生圖與一般搜尋、精確模式＝自動派生圖的邊、虛擬詞根不擠掉詞庫拆法、每個詞都找得到自己、詞庫外的讀法、三種模糊程度的對稱與取捨、提示、延後載入、與一般搜尋一致（與刻意的差別）、篩選、頻率、語詞索引 |
-| `test/search/parses.test.js` | 拆解表的編碼、依成本排序、BCDP 最好的命中（best）、虛擬詞根 |
-| `test/zoo/mutants.js` | 句型的突變（量詞、優先序、分句、錨定、相連、外側的 …、取拆法、拆解表、同位詞素組…）都要被殺掉 |
-| `e2e/pattern.spec.js`（示範站台） | 自動判斷、三個分頁、記錄的分區、語法錯誤、強制模式、關於頁、結果的文字可以拖曳反白 |
+| `test/pattern/match.test.ts` | 兩萬組隨機句型對照 RegExp（區間），檢查每一格由符合它的條件比到 |
+| `test/pattern/parser.test.ts` | 優先序、每個錯誤代碼與位置、自動判斷（一般搜尋的回歸清單） |
+| `test/pattern/sentences.test.ts` | 分句、原文位置、語法書的體例；與索引的斷詞一致 |
+| `test/pattern/morph.test.ts` | 錨定與相連、外側的 …（… 優先當詞根）、依模糊程度取拆法（先求最好的再扣音變、虛擬詞根另外取）、構式的 parts、哪一段是詞根 |
+| `test/pattern/search.test.ts` | 構詞樣式對照表的每一列、拆解表對自動派生圖與一般搜尋、精確模式＝自動派生圖的邊、虛擬詞根不擠掉詞庫拆法、每個詞都找得到自己、詞庫外的讀法、三種模糊程度的對稱與取捨、提示、延後載入、與一般搜尋一致（與刻意的差別）、篩選、頻率、語詞索引 |
+| `test/search/parses.test.ts` | 拆解表的編碼、依成本排序、BCDP 最好的命中（best）、虛擬詞根 |
+| `test/zoo/mutants.ts` | 句型的突變（量詞、優先序、分句、錨定、相連、外側的 …、取拆法、拆解表、同位詞素組…）都要被殺掉 |
+| `e2e/pattern.spec.ts`（示範站台） | 自動判斷、三個分頁、記錄的分區、語法錯誤、強制模式、關於頁、結果的文字可以拖曳反白 |
 | 網站 repo 的 `e2e/pattern.spec.js` | 維護者的例子、構詞樣式的等價、詞綴從最外層算起（imini）、次佳的標籤、改寫提示的連結、分區、詞族、頻率與對照 |
 
 ## 10. 已知限制

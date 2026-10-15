@@ -112,15 +112,15 @@
   },
   "scripts": {
     "prepare": "tsc -b",
-    "typecheck": "tsc -b && vue-tsc -p app --noEmit",
+    "typecheck": "tsc -b && vue-tsc -p app --noEmit && vue-tsc -p tsconfig.test.json",
     "test": "vitest run",
     "test:e2e": "npm run example:build && playwright test",
     "example:dev": "node --conditions=babizu-source bin/babizu.js dev examples/minimal",
     "example:build": "node --conditions=babizu-source bin/babizu.js build examples/minimal",
     "example:preview": "node --conditions=babizu-source bin/babizu.js preview examples/minimal",
-    "bench": "node --conditions=babizu-source packages/bcdp/test/bench.js",
+    "bench": "node --conditions=babizu-source packages/bcdp/test/bench.ts",
     "format": "prettier --write \"src/**/*.{js,json}\" \"app/src/**/*.{js,vue,css}\" \"test/**/*.js\" \"docs/**/*.md\" \"locales/*.json\"",
-    "zoo": "node test/zoo/run.mjs"
+    "zoo": "node test/zoo/run.ts"
   },
   "dependencies": {
     "@fontsource/gentium-book-plus": "^5.3.0",

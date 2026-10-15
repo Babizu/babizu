@@ -36,7 +36,7 @@ function ensureAudio() {
 
 /**
  * 播放。若同一個 key 正在播放則改為停止（切換行為）。
- * 
+ *
  * @param src 相對資料根目錄的路徑
  */
 async function toggle(key: string, src: string, segment: {start?: number | null, end?: number | null} = {}) {

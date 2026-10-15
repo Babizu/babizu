@@ -10,7 +10,6 @@
 const TRANSIENT = new Set([408, 425, 429, 500, 502, 503, 504])
 
 /**
- * 
  * @param options retries：另外再試幾次；delay：第一次重試前等幾毫秒（之後加倍）
  */
 export async function fetchWithRetry(url: string, init?: RequestInit, { retries = 2, delay = 500 }: {retries?: number, delay?: number} = {}): Promise<Response> {

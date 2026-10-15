@@ -1,0 +1,23 @@
+{
+  // 測試、端對端測試與設定檔的型別檢查（只檢查，不編譯：Vitest、Playwright、Node 直接執行）。
+  // 測試吃原始碼（babizu-source），與 Vitest 的解析相同。
+  "compilerOptions": {
+    "target": "es2022",
+    "lib": ["es2023", "dom", "dom.iterable"],
+    "types": ["node", "vite/client"],
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "customConditions": ["babizu-source"],
+    "strict": true,
+    "noEmit": true,
+    "verbatimModuleSyntax": true,
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "paths": {
+      "@/*": ["./app/src/*"],
+      "@babizu/*": ["./src/*"]
+    }
+  },
+  "include": ["test", "e2e", "packages/bcdp/test", "app/src/**/*.test.ts", "app/src/env.d.ts", "vitest.config.ts", "playwright.config.ts"]
+}
