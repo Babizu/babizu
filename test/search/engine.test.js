@@ -318,11 +318,10 @@ describe('搜尋統計', () => {
     const q = 'yaku dalum yaku'
     const res = engine.search(q)
     // 逐次計算：整個查詢一次，每個詞各一次（重複的詞也各算一次）
-    const internal = /** @type {any} */ (engine)
     const expected = [searchKey(q), ...splitWords(q)].reduce((sum, word) => {
-      const response = { stats: { visitedNodes: 0 } }
-      internal._matchTerms(word, FUZZINESS.normal, response, true)
-      return sum + response.stats.visitedNodes
+      const stats = { visitedNodes: 0 }
+      engine.terms.match(word, FUZZINESS.normal, stats)
+      return sum + stats.visitedNodes
     }, 0)
     expect(res.occurrences.length).toBeGreaterThan(0) // 三個詞都有對到同一句，逐詞迴圈沒有提早結束
     expect(res.stats.visitedNodes).toBe(expected)

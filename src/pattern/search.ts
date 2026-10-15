@@ -22,6 +22,7 @@
 import { EPSILON, FuzzyIndex, roundCost } from '#bcdp'
 import { analyzeWord, DERIVATION_MAX_COST } from '../search/derivations.ts'
 import type { SearchEngine } from '../search/engine.ts'
+import { levelOf } from '../search/fuzziness.ts'
 import type { DocSummary } from '../search/format.ts'
 import { parsedAnalysis, sortParses, type ParsedAnalysis } from '../search/parses.ts'
 import { alternativesOf, rankScore, recordScore, termScore, type MatchType } from '../search/scoring.ts'
@@ -183,7 +184,7 @@ export class PatternSearch {
 
   /**
    * 語料中不在詞庫的詞（例句體例展開的讀法，ma(ki)kiahan 的 makiahan）組成的小詞圖（第一次用到時建立）。
-   * 不加引號的詞在詞庫的詞圖之外也查這裡，用同一個距離函式、同樣的門檻（SearchEngine._fuzzyTerms 的選項），
+   * 不加引號的詞在詞庫的詞圖之外也查這裡，用同一個距離函式、同樣的門檻（TermMatcher.fuzzy 的選項），
    * 拼寫完全相同或相近的讀法才比得到。沒有這種詞時為 null。
    */
   get unlistedIndex(): FuzzyIndex | null {
@@ -276,7 +277,7 @@ export class PatternSearch {
 
     // 候選記錄：每個正面條件必經的 atom，都要有詞出現在記錄中
     const { texts, docsOf } = this.corpus
-    const accept = this.engine._createFilter(filters)
+    const accept = this.engine.createFilter(filters)
     let candidates = null as Set<number> | null
     for (const c of prefilter ? conditions : []) {
       if (c.negated) continue
@@ -385,8 +386,8 @@ export class PatternSearch {
       const next: PatternEvidence = { kind: 'token', alignment: null, ...e, token }
       if (!prev || next.score < prev.score - EPSILON) out.set(token, next)
     }
-    const level = engine._level(fuzziness)
-    const scratch = { stats: { visitedNodes: 0, elapsedMs: 0 } }
+    const level = levelOf(fuzziness)
+    const scratch = { visitedNodes: 0 }
 
     if (atom.kind === 'exact') {
       const key = keyOf(engine, atom.text, node)
@@ -395,7 +396,7 @@ export class PatternSearch {
     }
     if (atom.kind === 'word') {
       const key = keyOf(engine, atom.text, node)
-      for (const r of engine._fuzzyTerms(key, level, scratch).results) {
+      for (const r of engine.terms.fuzzy(key, level, scratch).results) {
         put(r.term, { word: key, term: r.term, matchType: 'fuzzy', distance: r.distance, analysis: null, score: r.distance })
       }
       // 詞庫外的讀法：同樣的選項查它們的小詞圖
@@ -425,12 +426,12 @@ export class PatternSearch {
       // 一般搜尋 kita 的完全相符、相近拼寫、自動派生（每個詞取第一個是這幾種的命中，與一般搜尋排除其他方法時相同）
       // 與確定派生（只從寫法就是 kita 的詞條展開，與一般搜尋相同）
       const key = keyOf(engine, atom.text, node)
-      for (const t of engine._matchTerms(key, level, scratch, true)) {
+      for (const t of engine.terms.match(key, level, scratch)) {
         const c = alternativesOf(t).find((x) => x.matchType === 'fuzzy' || x.matchType === 'derived')
         if (c) put(c.term, { word: key, term: c.term, matchType: c.matchType, distance: c.distance, analysis: c.analysis ?? null, score: recordScore(termScore(c, key)) })
         if (t.matchType !== 'fuzzy' || t.distance > 0) continue
         const score = termScore(t, key)
-        for (const d of engine._dictionaryTokens(t)) {
+        for (const d of engine.relations.tokens(t)) {
           if (d.kind !== 'root') continue
           put(d.term, { word: key, term: t.term, kind: 'root', matchType: 'fuzzy', distance: 0, analysis: null, score: recordScore(score, d.depth) })
         }
@@ -474,7 +475,7 @@ export class PatternSearch {
   private _rootsOf(req: MorphRequirement, fuzziness: Fuzziness): Map<string, number> | null {
     if (req.root === null) return null
     const roots = new Map<string, number>([[req.root, 0]])
-    if (!req.rootExact) for (const seed of this.engine.derivationSeeds(req.root, fuzziness)) if (!roots.has(seed.term)) roots.set(seed.term, seed.distance)
+    if (!req.rootExact) for (const seed of this.engine.terms.derivationSeeds(req.root, levelOf(fuzziness))) if (!roots.has(seed.term)) roots.set(seed.term, seed.distance)
     return roots
   }
 

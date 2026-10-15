@@ -38,7 +38,7 @@ for (const [seed, variant] of SEEDS.flatMap((s) => VARIANTS.map((v) => /** @type
     /** 詞層級的命中：詞 → 分數（標準模式） @param {string} q */
     const hits = (q) => {
       let m = memo.get(q)
-      if (!m) memo.set(q, (m = new Map(e._matchTerms(q, FUZZINESS.normal, { stats: { visitedNodes: 0 } }).map((/** @type {any} */ h) => [h.term, h]))))
+      if (!m) memo.set(q, (m = new Map(e.terms.match(q, FUZZINESS.normal, { visitedNodes: 0 }).map((/** @type {any} */ h) => [h.term, h]))))
       return m
     }
     const words = derivations.map((d) => d.word).filter((w) => index.dawg.lookup(w) !== -1)
@@ -87,7 +87,7 @@ for (const [seed, variant] of SEEDS.flatMap((s) => VARIANTS.map((v) => /** @type
       // 假想的查詢拆到這個詞根：步驟 0.1、音變 0.15（上限 0.2 之內），成本含詞根成本；不扣詞根成本時音變超過上限
       const step = { type: 'prefix', form: 'x', cost: 0.1, gloss: null }
       const m = { term: terms[root], payloads: [], distance: 0.25 + rc, matchType: 'lemma', analysis: { stem: terms[root], steps: [step], cost: 0.25 + rc, rootCost: rc } }
-      const got = e._derivedTerms('z'.repeat(terms[root].length + 3), [], 2, [m])
+      const got = e.terms.derived.find('z'.repeat(terms[root].length + 3), [], 2, [m])
       expect(got.some((/** @type {any} */ t) => t.matchType === 'sibling')).toBe(true)
     })
 
@@ -127,17 +127,15 @@ for (const [seed, variant] of SEEDS.flatMap((s) => VARIANTS.map((v) => /** @type
     })
 
     it('一致：查詢端拆出的虛擬詞根與建置時相同', () => {
-      const ms = e.morphSearch
-      const level = e._level('normal')
+      const level = FUZZINESS.normal
       const bad = []
       for (const w of words) {
         const id = index.dawg.lookup(w)
         if (isLexicalRoot(index, id, (/** @type {number} */ x) => graph.hasChildren(x))) continue
         const built = chart.of(id).filter((/** @type {any} */ p) => p.virtual).map((/** @type {any} */ p) => p.root).sort()
-        // 與 _derivedTerms 相同的計算：查詢的自動拆解 → 詞庫中最好的詞根的成本 → virtualRoots
-        const prepared = ms.seed(ms.prepare(w, e._lemmaMax(w, level)), index)
-        const lemma = prepared ? e._lemmaTerms(w, level, prepared, index.searchChannels(prepared.channels)) : []
-        const atQuery = e._queryVirtualRoots(w, lemma)
+        // 與自動同根相同的計算：查詢的自動拆解 → 詞庫中最好的詞根的成本 → virtualRoots
+        const atQuery = e.terms.derived
+          .queryVirtualRoots(w, e.terms.lemmaHits(w, level))
           .map((/** @type {any} */ v) => v.stem)
           .sort()
         if (built.join() !== atQuery.join()) bad.push(`${w}：建置 ${built.join(',') || '—'}，查詢 ${atQuery.join(',') || '—'}`)
@@ -162,12 +160,10 @@ for (const [seed, variant] of SEEDS.flatMap((s) => VARIANTS.map((v) => /** @type
     })
 
     it('一致：拆解表與一般搜尋的自動拆解相同（詞根比詞短、單一個詞）', () => {
-      const ms = e.morphSearch
-      const level = e._level('normal')
+      const level = FUZZINESS.normal
       const bad = []
       for (const w of words) {
-        const prepared = ms.seed(ms.prepare(w, e._lemmaMax(w, level)), index)
-        const lemma = prepared ? e._lemmaTerms(w, level, prepared, index.searchChannels(prepared.channels)) : []
+        const lemma = e.terms.lemmaHits(w, level)
         const fromSearch = lemma
           .filter((/** @type {any} */ m) => m.term.length < w.length && !m.term.includes(' '))
           .map((/** @type {any} */ m) => `${m.term}:${m.distance}`)

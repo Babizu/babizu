@@ -42,6 +42,8 @@ export type HitKind = keyof typeof KIND_RANK
 export const DICTIONARY_KINDS = new Set<string>(['root', 'parent', 'sibling'])
 /** 記錄在群組中的角色 */
 export const ROLE_RANK: Record<string, number> = { head: 0, item: 0, form: 1, segment: 2, example: 3, '': 4 }
+/** 不認得的角色排在所有已知角色之後 */
+export const UNKNOWN_ROLE_RANK = 9
 
 /**
  * 構詞相關命中的基本等效距離：一層詞綴（成本 0.2–0.3）約 0.6–0.7，
@@ -51,6 +53,15 @@ export const MORPHOLOGY_BASE_SCORE = 0.4
 
 /** 辭典標註的派生關係每一層的差距：派生詞排在詞本身之後 */
 export const DERIVATIVE_PENALTY = 0.1
+
+/** 開頭相符的基本等效距離：排在跨方言變體（0.1–0.3）之後、構詞命中（0.4 起）之前 */
+export const PREFIX_BASE_SCORE = 0.35
+/** 結尾相符與包含的基本等效距離：排在所有其他命中方式之後 */
+export const SUBSTRING_BASE_SCORE = 0.9
+/** 部分符合的詞每多一個字元加的分數 */
+export const EXTRA_CHAR_SCORE = 0.05
+/** 多出來的字元最多算幾個（再長的詞也不會無限往後排） */
+export const EXTRA_CHAR_CAP = 12
 
 /**
  * 命中方式換算成等效距離。
@@ -66,8 +77,8 @@ export function rankScore(matchType: MatchType, distance: number, extraLength: n
   if (matchType === 'fuzzy') return distance
   if (matchType === 'lemma' || matchType === 'derived' || matchType === 'sibling') return MORPHOLOGY_BASE_SCORE + distance
   // 結尾相符與包含同分，只是分開標示
-  const base = matchType === 'prefix' ? 0.35 : 0.9
-  return base + Math.min(extraLength, 12) * 0.05
+  const base = matchType === 'prefix' ? PREFIX_BASE_SCORE : SUBSTRING_BASE_SCORE
+  return base + Math.min(extraLength, EXTRA_CHAR_CAP) * EXTRA_CHAR_SCORE
 }
 
 /**
@@ -208,7 +219,7 @@ export function compareHits(a: RankedHit, b: RankedHit): number {
     MATCH_TYPE_RANK[a.matchType] - MATCH_TYPE_RANK[b.matchType] ||
     a.term.length - b.term.length ||
     KIND_RANK[a.kind] - KIND_RANK[b.kind] ||
-    (ROLE_RANK[a.doc.role] ?? 9) - (ROLE_RANK[b.doc.role] ?? 9) ||
+    (ROLE_RANK[a.doc.role] ?? UNKNOWN_ROLE_RANK) - (ROLE_RANK[b.doc.role] ?? UNKNOWN_ROLE_RANK) ||
     a.doc.text.length - b.doc.text.length ||
     a.doc.index - b.doc.index
   )

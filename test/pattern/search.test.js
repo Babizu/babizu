@@ -181,7 +181,7 @@ describe('拆解表：與自動派生圖、一般搜尋的自動拆解是同一�
       }
     }
     engine.searchPattern('_')
-    const pattern = /** @type {any} */ (engine)._pattern
+    const pattern = /** @type {any} */ (engine.pattern)
     let words = 0
     engine.index.terms.forEach((w, id) => {
       const exact = [...new Set(pattern._parsesOf(w, 'exact').map((/** @type {any} */ p) => `${p.root}:${round(p.cost)}`))]
@@ -193,7 +193,7 @@ describe('拆解表：與自動派生圖、一般搜尋的自動拆解是同一�
 
   it('虛擬詞根不把詞庫詞根的拆法擠掉：每個詞、每種模糊程度，取到的詞庫拆法與沒有虛擬詞根時相同', () => {
     engine.searchPattern('_')
-    const pattern = /** @type {any} */ (engine)._pattern
+    const pattern = /** @type {any} */ (engine.pattern)
     let checked = 0
     engine.index.terms.forEach((w, id) => {
       const all = chart.of(id)
@@ -210,7 +210,7 @@ describe('拆解表：與自動派生圖、一般搜尋的自動拆解是同一�
 
   it('每個詞都找得到自己：依模糊程度取到的每一種拆法寫成構詞樣式（詞根寫 … 或引號中的詞根），這個詞在原文中的每一處都比到', () => {
     engine.searchPattern('_')
-    const pattern = /** @type {any} */ (engine)._pattern
+    const pattern = /** @type {any} */ (engine.pattern)
     const { texts, docsOf } = pattern.corpus
     /**
      * 詞在原文中的每一處（記錄、位置）。比位置不比詞形：同一個位置由好幾種讀法比到時只算一次，
@@ -244,12 +244,10 @@ describe('拆解表：與自動派生圖、一般搜尋的自動拆解是同一�
   })
 
   it('拆解表中詞庫詞根的拆法，就是一般搜尋查這個詞時自動拆解列出的那些（詞根比詞短、單一個詞）', () => {
-    const ms = /** @type {NonNullable<typeof engine.morphSearch>} */ (engine.morphSearch)
     const level = FUZZINESS.normal
     let checked = 0
     engine.index.terms.forEach((w, id) => {
-      const prepared = ms.seed(ms.prepare(w, engine._lemmaMax(w, level)), engine.index)
-      const lemma = prepared ? engine._lemmaTerms(w, level, prepared, engine.index.searchChannels(prepared.channels)) : []
+      const lemma = engine.terms.lemmaHits(w, level)
       const plain = lemma.filter((t) => Array.from(t.term).length < Array.from(w).length && !t.term.includes(' ')).map((t) => `${t.term}:${round(t.distance)}`)
       const fromChart = [...new Set(chart.of(id).filter((p) => !p.virtual).map((p) => `${p.root}:${round(p.cost)}`))]
       expect(fromChart.sort(), w).toEqual(plain.sort())
@@ -291,7 +289,7 @@ describe('拆解表：與自動派生圖、一般搜尋的自動拆解是同一�
 
   it('詞庫外的詞（例句體例展開的讀法 pakakita）：查詢時用建置時同一個函式現算拆法，與把它加進詞庫建置時相同', () => {
     engine.searchPattern('_')
-    const pattern = /** @type {any} */ (engine)._pattern
+    const pattern = /** @type {any} */ (engine.pattern)
     const unlisted = [...pattern.corpus.docsOf.keys()].filter((k) => engine.index.dawg.lookup(k) === -1)
     expect(unlisted).toEqual(expect.arrayContaining(['pakakita', 'masay']))
     // masay 只有虛擬詞根 asay 的拆法
@@ -398,7 +396,7 @@ describe('構詞樣式：取哪些拆法跟著模糊程度，詞綴從最外層�
   it('詞根是 … 的結果，等於每一個詞根各自寫出來的結果合起來（三種模糊程度；同一個條件，所以一定成立）', () => {
     // 語料中每個詞的所有拆法的詞根（含詞庫外的詞現算的，例如 masay 的虛擬詞根 asay）
     engine.searchPattern('_')
-    const pattern = /** @type {any} */ (engine)._pattern
+    const pattern = /** @type {any} */ (engine.pattern)
     const roots = [
       ...new Set(
         [...pattern.corpus.docsOf.keys()].flatMap((w) => {

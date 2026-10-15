@@ -358,3 +358,24 @@ export function collectHits(node: EntryNode): EntryHit[] {
   const own = [node.hit, ...node.also.map((a) => a.hit)].filter((h) => h !== null)
   return [...own, ...node.children.flatMap(collectHits)]
 }
+
+/**
+ * 上層記錄的反向對照：記錄 → 它的下層記錄（依記錄編號遞增）。第一次查詢時才建立。
+ * @param parent docs.parent（-1 表示沒有上層）
+ */
+export function childrenLookup(parent: readonly number[]): (k: number) => readonly number[] {
+  let children: Map<number, number[]> | null = null
+  return (k) => {
+    if (!children) {
+      const map = new Map<number, number[]>()
+      parent.forEach((p, c) => {
+        if (p === -1) return
+        const list = map.get(p)
+        if (list) list.push(c)
+        else map.set(p, [c])
+      })
+      children = map
+    }
+    return children.get(k) ?? []
+  }
+}

@@ -11,7 +11,7 @@
  *   隨機測試幾乎碰不到；由 finish 與 SpreadCutoff.eligible 共用同一個條件的程式審查守著。
  * - 普通搜尋（沒有交界）編譯時略過構詞音變的 continue 拿掉：admissible 在沒有交界的位置本來就不收構詞音變，
  *   只是變慢，是等價突變；junction.test.js「構詞音變只在詞素交界適用」守著結果。
- * - 確定同根不扣掉自己這一支（_dictionaryRelations 的 !down.has(k)、!up.has(k)）：自己的下層經上層繞回來，
+ * - 確定同根不扣掉自己這一支（DictionaryRelations.of 的 !down.has(k)、!up.has(k)）：自己的下層經上層繞回來，
  *   層數是往上 u ＋ u ＋ 原本的層數，一定比直接往下深，put 取最淺的一種，結果不變，是等價突變；留著只為寫明意圖。
  * - 實驗室元件（app/）的突變：動物園只跑 node 端的測試；實驗室與搜尋的一致性由 app 端的 lab-state 測試守著。
  */
@@ -159,8 +159,8 @@ export const MUTANTS = [
   },
   {
     name: '重複的查詢詞不累加走訪統計',
-    file: 'src/search/engine.ts',
-    find: 'response.stats.visitedNodes += prev.visited',
+    file: 'src/search/occurrence-search.ts',
+    find: 'stats.visitedNodes += prev.visited',
     replace: 'void prev.visited',
     why: '回應的統計與逐次計算不同；engine 測試「重複的查詢詞只算一次，統計照樣累加」',
   },
@@ -271,7 +271,7 @@ export const MUTANTS = [
   },
   {
     name: '寬鬆時仍只用方言變體當自動派生的起點',
-    file: 'src/search/engine.ts',
+    file: 'src/search/term-matcher.ts',
     find: '    return level.derivedFromAll || (m.distance',
     replace: '    return false || (m.distance',
     why: '查 sugut 找不到 pausunguday；derivations 測試「寬鬆：查詢的相近寫法也當起點」',
@@ -292,9 +292,9 @@ export const MUTANTS = [
   },
   {
     name: '例句的辭典派生詞也從寫法相近的詞條展開',
-    file: 'src/search/engine.ts',
-    find: "        if (t.matchType !== 'fuzzy' || t.distance > 0) continue",
-    replace: "        if (t.matchType !== 'fuzzy') continue",
+    file: 'src/search/occurrence-search.ts',
+    find: "    if (t.matchType !== 'fuzzy' || t.distance > 0) continue\n    const score = termScore(t, word)",
+    replace: "    if (t.matchType !== 'fuzzy') continue\n    const score = termScore(t, word)",
     why: '查 sungut 時 zenget 的派生詞 kizenget 排到 pausunguday 之前；derivations 測試「只從寫法與查詢相同的詞條展開」',
   },
   {
@@ -355,28 +355,28 @@ export const MUTANTS = [
   },
   {
     name: '自動同根：查詢本身是別的詞的詞根時也拆虛擬詞根',
-    file: 'src/search/engine.ts',
+    file: 'src/search/derived-terms.ts',
     find: '    if (!isLexicalRoot(this.index, self, (id) => graph.hasChildren(id))) {\n      const open',
     replace: '    if (true) {\n      const open',
     why: '查 samian 找到 mumian（samian 拆成 sa- ＋ 虛擬詞根 mian）；derivations 測試「虛擬詞根的對稱」',
   },
   {
     name: '自動同根：經過虛擬詞根不加詞庫外詞根的代價',
-    file: 'src/search/engine.ts',
+    file: 'src/search/derived-terms.ts',
     find: '          virtualSeeds.push({ id, distance: roundCost(v.cost + penalty), term: v.stem, split: { cost: v.cost, steps: v.steps, penalty, lexical: false, rootCost } })',
     replace: '          virtualSeeds.push({ id, distance: roundCost(v.cost), term: v.stem, split: { cost: v.cost, steps: v.steps, penalty, lexical: false, rootCost } })',
     why: '查 binubuer 時 mabubuer 的分數少了 0.18；derivations 測試的分數',
   },
   {
     name: '自動同根：詞庫詞根往下走整棵子樹（不只直接的子詞）',
-    file: 'src/search/engine.ts',
+    file: 'src/search/derived-terms.ts',
     find: '      .childrenOf(lexicalSeeds, { maxPath, maxSound: SIBLING_MAX_SOUND })',
     replace: '      .descendants(lexicalSeeds, maxPath)',
     why: '查 masamian 經 samian 走到孫輩 musamianan；derivations 測試「自動同根：詞根在詞庫中」',
   },
   {
     name: '自動同根：查詢拆到詞庫詞根的音變不設上限',
-    file: 'src/search/engine.ts',
+    file: 'src/search/derived-terms.ts',
     find: '      if (soundOf({ cost: m.distance, steps: m.analysis.steps }, m.analysis.rootCost ?? 0) > SIBLING_MAX_SOUND + EPSILON) continue',
     replace: '',
     why: '查 makétéko（三個方言音變才拆到 kitiku）也往上找到 mukitiku；derivations 測試「兩條邊都要是可靠的拆法」',
@@ -411,7 +411,7 @@ export const MUTANTS = [
   },
   {
     name: '自動同根：只走虛擬詞根（沒有詞庫中的詞根）',
-    file: 'src/search/engine.ts',
+    file: 'src/search/derived-terms.ts',
     find: '      if (id !== -1) lexicalSeeds.push({ id, distance: m.distance, rootCost, term: m.term, split: { cost: m.distance, steps: m.analysis.steps, penalty: 0, lexical: true, rootCost } })',
     replace: '',
     why: '查 masamian 找不到 musamian（共同的詞根 samian 在詞庫中）；derivations 測試「自動同根：詞根在詞庫中」',
@@ -432,7 +432,7 @@ export const MUTANTS = [
   },
   {
     name: '辭典的構詞關係沒有上層（確定拆解）',
-    file: 'src/search/engine.ts',
+    file: 'src/search/dictionary-relations.ts',
     find: "    for (const [k, d] of up) put(k, 'parent', d)",
     replace: '    void up',
     why: '查 pinakita 時 kita-、pakita 不是確定拆解；family 測試',
@@ -446,8 +446,8 @@ export const MUTANTS = [
   },
   {
     name: '詞綴的條目也當成同根的依據',
-    file: 'src/search/engine.ts',
-    find: '      if (this._isAffixEntry(a)) continue\n',
+    file: 'src/search/dictionary-relations.ts',
+    find: '      if (this.isAffixEntry(a)) continue\n',
     replace: '\n',
     why: '<in> 條下的例子（binaket）成了 kinawas 的確定同根；derivations 測試「詞綴的條目不算同根」',
   },
@@ -739,14 +739,14 @@ export const MUTANTS = [
   },
   {
     name: '自動同根：查詢本身是別的詞的詞根時連詞庫詞根的同根也不找',
-    file: 'src/search/engine.ts',
+    file: 'src/search/derived-terms.ts',
     find: '    for (const m of lemma) {',
     replace: '    for (const m of isLexicalRoot(this.index, self, (id) => graph.hasChildren(id)) ? [] : lemma) {',
     why: 'musamian（musamianan 的詞根）找不到 masamian，反方向找得到；derivations 的對稱測試與 symmetry 的同根對稱',
   },
   {
     name: '虛擬詞根：查詢端的詞庫最好成本取所有命中的最低（含詞根不比查詢短的）',
-    file: 'src/search/engine.ts',
+    file: 'src/search/derived-terms.ts',
     find: '    return open ? virtualRoots(key, open, this.index, lexicalEdgeCost(key, lemma)) : []',
     replace: '    return open ? virtualRoots(key, open, this.index, Math.min(Infinity, ...lemma.map((m) => m.distance))) : []',
     why: '同樣長的相近詞把虛擬詞根擋掉，查詢與建置不一致；symmetry 的一致性測試',
@@ -844,7 +844,7 @@ export const MUTANTS = [
   },
   {
     name: '查詢端的自動同根不扣詞根成本',
-    file: 'src/search/engine.ts',
+    file: 'src/search/derived-terms.ts',
     find: 'soundOf({ cost: m.distance, steps: m.analysis.steps }, m.analysis.rootCost ?? 0)',
     replace: 'soundOf({ cost: m.distance, steps: m.analysis.steps })',
     why: '查詢端的上限比建置端嚴，同根不對稱；symmetry 的「查詢端的自動同根」測試',

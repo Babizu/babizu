@@ -303,8 +303,8 @@ v0.9.2 拆解表收下同分的其他讀法，召回每一級都提高，新增�
 
 | 句型 | 等於一般搜尋的 |
 |---|---|
-| `kita` | 完全相符＋相近拼寫（`_fuzzyTerms`） |
-| `@kita` | 完全相符、相近拼寫、自動派生、確定派生（`_matchTerms`、`_dictionaryTokens`；其他方法排除時的結果） |
+| `kita` | 完全相符＋相近拼寫（`TermMatcher.fuzzy`） |
+| `@kita` | 完全相符、相近拼寫、自動派生、確定派生（`TermMatcher.match`、`DictionaryRelations.tokens`；其他方法排除時的結果） |
 | `pa…` | 「開頭相符」的意思，但 `…` 可以是零個字元，所以 pa 本身也算 |
 
 **刻意的差別**：詞中有括號的記錄（例句體例 `pa(ka)kita`）。一般搜尋在括號處斷開成 pa、ka、kita，查 kita 會找到它；

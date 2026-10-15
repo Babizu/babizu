@@ -3,7 +3,8 @@
  *
  * - 建置端：`buildSearchIndex` 由標準記錄產生 docs.json、lexicon.json，並附上語言設定檔；
  *   `buildDerivationGraph` 由詞圖產生自動派生圖 derivations.json，`buildParseChart` 產生拆解表 parses.json
- * - 網站端：`SearchEngine` 載入上述檔案並提供搜尋
+ * - 網站端：`SearchEngine` 載入上述檔案並提供搜尋；`engine.terms`（TermMatcher）是一個查詢詞的所有命中，
+ *   評估工具與句型搜尋也用它
  * - 共用：`createTextTools(profile)` 產生搜尋鍵、斷詞等文字處理，保證兩端一致
  */
 
@@ -22,8 +23,11 @@ export {
   virtualRoots,
 } from './derivations.ts'
 export { buildParseChart, encodeParses, ParseChart, PARSES_FORMAT_VERSION, parsedAnalysis, sortParses, type ParsedAnalysis } from './parses.ts'
-export { SearchEngine, FUZZINESS } from './engine.ts'
-export type { SearchEngineData } from './engine.ts'
+export { SearchEngine, type SearchEngineData } from './engine.ts'
+export { FUZZINESS, fuzzyOptions, LEMMA_EXTRA_DISTANCE, LEMMA_MAX_DISTANCE, lemmaMax, levelOf } from './fuzziness.ts'
+export type { DerivationStart, TermMatcher, WalkStats } from './term-matcher.ts'
+export type { DerivedTerms } from './derived-terms.ts'
+export type { DictionaryRelation, DictionaryRelations, DictionaryToken } from './dictionary-relations.ts'
 export type * from './types.ts'
 export { buildEntryGroups, collectHits, computeParents, mergeSpellings, spellingOf } from './family.ts'
 export { Checklist, classify, SEGMENTATION_FILTERS } from './checklist.ts'
