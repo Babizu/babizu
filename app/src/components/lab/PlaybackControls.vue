@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 /**
  * 播放控制（三個分頁共用，docs/lab-design.md 第 4 節）：重來、上一步、播放／暫停、下一步、結尾、進度拖曳、速度。
  * 狀態來自 usePlayback；鍵盤操作由頁面把 playback.onKeydown 掛在分頁容器上。
@@ -6,12 +6,13 @@
 import { ChevronFirstIcon, ChevronLastIcon, PauseIcon, PlayIcon, StepBackIcon, StepForwardIcon } from '@lucide/vue'
 import { Button } from '@/components/ui/button'
 import { Slider } from '@/components/ui/slider'
-import { SPEEDS } from '@/composables/usePlayback.js'
-import { t } from '@/i18n.js'
+import { SPEEDS, type Playback } from '@/composables/usePlayback.ts'
+import type { PropType } from 'vue'
+import { t } from '@/i18n.ts'
 
 const props = defineProps({
   /** usePlayback() 的回傳值 */
-  playback: { type: Object, required: true },
+  playback: { type: Object as PropType<Playback>, required: true },
   /** 步數 */
   total: { type: Number, required: true },
 })

@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 /**
  * 原書掃描頁檢視器：可縮放、可捲動；觸控裝置可用兩指縮放按鈕或直接捲動。
  */
@@ -6,8 +6,8 @@ import { ExternalLinkIcon, MinusIcon, PlusIcon, ScanIcon } from '@lucide/vue'
 import { computed, ref, watch } from 'vue'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { dataUrl } from '@/services/data.js'
-import { t } from '@/i18n.js'
+import { dataUrl } from '@/services/data.ts'
+import { t } from '@/i18n.ts'
 
 const props = defineProps({
   /** 相對資料根目錄的掃描圖路徑 */
@@ -30,8 +30,7 @@ watch(open, (isOpen) => {
   }
 })
 
-/** @param {1 | -1} direction */
-function step(direction) {
+function step(direction: 1 | -1) {
   const k = ZOOM_STEPS.indexOf(zoom.value)
   zoom.value = ZOOM_STEPS[Math.min(ZOOM_STEPS.length - 1, Math.max(0, k + direction))]
 }

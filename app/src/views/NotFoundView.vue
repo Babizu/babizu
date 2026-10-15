@@ -1,7 +1,7 @@
-<script setup>
+<script setup lang="ts">
 import StateMessage from '@/components/common/StateMessage.vue'
 import { Button } from '@/components/ui/button'
-import { t } from '@/i18n.js'
+import { t } from '@/i18n.ts'
 </script>
 
 <template>

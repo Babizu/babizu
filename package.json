@@ -13,82 +13,82 @@
   },
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
       "babizu-source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
     "./fuzzy": {
-      "types": "./packages/bcdp/dist/index.d.ts",
       "babizu-source": "./packages/bcdp/src/index.ts",
+      "types": "./packages/bcdp/dist/index.d.ts",
       "default": "./packages/bcdp/dist/index.js"
     },
     "./fst": {
-      "types": "./packages/bcdp/dist/fst/index.d.ts",
       "babizu-source": "./packages/bcdp/src/fst/index.ts",
+      "types": "./packages/bcdp/dist/fst/index.d.ts",
       "default": "./packages/bcdp/dist/fst/index.js"
     },
     "./schema": {
-      "types": "./dist/schema/index.d.ts",
       "babizu-source": "./src/schema/index.ts",
+      "types": "./dist/schema/index.d.ts",
       "default": "./dist/schema/index.js"
     },
     "./schema/constants": {
-      "types": "./dist/schema/constants.d.ts",
       "babizu-source": "./src/schema/constants.ts",
+      "types": "./dist/schema/constants.d.ts",
       "default": "./dist/schema/constants.js"
     },
     "./schema/types": {
-      "types": "./dist/schema/types.d.ts",
       "babizu-source": "./src/schema/types.ts",
+      "types": "./dist/schema/types.d.ts",
       "default": "./dist/schema/types.js"
     },
     "./schema/json/*": "./src/schema/json/*",
     "./search": {
-      "types": "./dist/search/index.d.ts",
       "babizu-source": "./src/search/index.ts",
+      "types": "./dist/search/index.d.ts",
       "default": "./dist/search/index.js"
     },
     "./search/text": {
-      "types": "./dist/search/text.d.ts",
       "babizu-source": "./src/search/text.ts",
+      "types": "./dist/search/text.d.ts",
       "default": "./dist/search/text.js"
     },
     "./pattern": {
-      "types": "./dist/pattern/index.d.ts",
       "babizu-source": "./src/pattern/index.ts",
+      "types": "./dist/pattern/index.d.ts",
       "default": "./dist/pattern/index.js"
     },
     "./pipeline": {
-      "types": "./dist/pipeline/index.d.ts",
       "babizu-source": "./src/pipeline/index.ts",
+      "types": "./dist/pipeline/index.d.ts",
       "default": "./dist/pipeline/index.js"
     },
     "./pipeline/spreadsheet": {
-      "types": "./dist/pipeline/spreadsheet.d.ts",
       "babizu-source": "./src/pipeline/spreadsheet.ts",
+      "types": "./dist/pipeline/spreadsheet.d.ts",
       "default": "./dist/pipeline/spreadsheet.js"
     },
     "./pipeline/docx": {
-      "types": "./dist/pipeline/docx.d.ts",
       "babizu-source": "./src/pipeline/docx.ts",
+      "types": "./dist/pipeline/docx.d.ts",
       "default": "./dist/pipeline/docx.js"
     },
     "./dataset": {
-      "types": "./dist/dataset.d.ts",
       "babizu-source": "./src/dataset.ts",
+      "types": "./dist/dataset.d.ts",
       "default": "./dist/dataset.js"
     },
     "./site": {
-      "types": "./dist/site/index.d.ts",
       "babizu-source": "./src/site/index.ts",
+      "types": "./dist/site/index.d.ts",
       "default": "./dist/site/index.js"
     },
     "./package.json": "./package.json"
   },
   "imports": {
     "#bcdp": {
-      "types": "./packages/bcdp/dist/index.d.ts",
       "babizu-source": "./packages/bcdp/src/index.ts",
+      "types": "./packages/bcdp/dist/index.d.ts",
       "default": "./packages/bcdp/dist/index.js"
     },
     "#bcdp/*": "./packages/bcdp/src/*"
@@ -112,7 +112,7 @@
   },
   "scripts": {
     "prepare": "tsc -b",
-    "typecheck": "tsc -b",
+    "typecheck": "tsc -b && vue-tsc -p app --noEmit",
     "test": "vitest run",
     "test:e2e": "npm run example:build && playwright test",
     "example:dev": "node --conditions=babizu-source bin/babizu.js dev examples/minimal",
@@ -177,6 +177,7 @@
     "read-excel-file": "^9.3.10",
     "sharp": "^0.35.4",
     "typescript": "^6.0.3",
-    "vitest": "^5.0.1"
+    "vitest": "^5.0.1",
+    "vue-tsc": "~3.3.12"
   }
 }

@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 /**
  * 搜尋篩選：搜尋範圍、模糊程度、搜尋方法、來源、語言變體（方言）、語言單位。
  * 桌面放在側欄（窄），行動裝置放在底部抽屜（寬）——同一個元件。
@@ -7,42 +7,43 @@
  * 所以同一份標記在 15rem 的側欄裡是一欄、在抽屜裡自動變成兩三欄，
  * 不必為兩個位置各寫一套。
  */
-import { computed, ref } from 'vue'
+import { computed, ref, type PropType } from 'vue'
 import { ChevronDownIcon } from '@lucide/vue'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Slider } from '@/components/ui/slider'
 import { UNIT_CODES } from '@babizu/schema/constants.ts'
-import { useSources } from '@/composables/useSources.js'
-import { t } from '@/i18n.js'
-import { dialectLabel, FIELD_LABELS, formatCount, fuzzinessLabel, orderedVarieties, SEARCH_METHOD_GROUPS, site, unitLabel } from '@/lib/labels.js'
+import { useSources } from '@/composables/useSources.ts'
+import { t } from '@/i18n.ts'
+import { dialectLabel, FIELD_LABELS, formatCount, fuzzinessLabel, orderedVarieties, SEARCH_METHOD_GROUPS, site, unitLabel } from '@/lib/labels.ts'
 
-/**
- * @typedef {object} FilterState
- * @property {string[]} fields 搜尋範圍：native 族語、gloss 釋義（可複選）
- * @property {'exact' | 'normal' | 'loose'} fuzziness
- * @property {string[]} sources
- * @property {string[]} dialects
- * @property {string[]} units
- * @property {string[]} exclude 不要的搜尋方法（babizu/search 的 SEARCH_METHODS）
- */
+export interface FilterState {
+  /** 搜尋範圍：native 族語、gloss 釋義（可複選） */
+  fields: string[]
+  fuzziness: 'exact' | 'normal' | 'loose'
+  sources: string[]
+  dialects: string[]
+  units: string[]
+  /** 不要的搜尋方法（babizu/search 的 SEARCH_METHODS） */
+  exclude: string[]
+}
 
-const model = defineModel({ type: Object, required: true })
+const model = defineModel<FilterState>({ required: true })
 const props = defineProps({
   /** 每種搜尋方法找得到幾筆（搜尋回應的 methods；還沒有結果時為 null） */
-  counts: { type: Object, default: null },
+  counts: { type: Object as PropType<Record<string, number> | null>, default: null },
   /** 每一組搜尋方法找得到幾筆（搜尋回應的 methodGroups，組內各方法的聯集） */
-  groupCounts: { type: Object, default: null },
+  groupCounts: { type: Object as PropType<Record<string, number> | null>, default: null },
   /** 句型搜尋：沒有「搜尋範圍」與「搜尋方法」（句型只比對族語，詞的條件由寫法決定） */
   pattern: { type: Boolean, default: false },
 })
 const { sources } = useSources()
 
 /** 顯示名稱在模板裡用 t() 查，切換語系時才會即時更新 */
-const FIELD_OPTIONS = ['native', 'gloss']
+const FIELD_OPTIONS = ['native', 'gloss'] as const
 
 /** 模糊程度由鬆到緊排成一條強度軸，索引即滑桿位置 */
-const FUZZINESS_STEPS = ['exact', 'normal', 'loose']
+const FUZZINESS_STEPS = ['exact', 'normal', 'loose'] as const
 
 /**
  * 語言變體選項：下層變體緊接在上層之後（例如 巴宰 → 巴宰（愛蘭）），相鄰才看得出從屬關係。
@@ -66,41 +67,33 @@ const fuzzinessIndex = computed({
 })
 const currentFuzziness = computed(() => fuzzinessLabel(model.value.fuzziness ?? 'normal'))
 
-/** @param {string} code */
-const varietyOptionLabel = (code) => (code === 'none' ? t('未標方言') : dialectLabel(code))
+const varietyOptionLabel = (code: string) => (code === 'none' ? t('未標方言') : dialectLabel(code))
 
 const hasFilters = computed(
   () => model.value.sources.length > 0 || model.value.dialects.length > 0 || model.value.units.length > 0 || model.value.exclude.length > 0,
 )
 
-/** @param {string} id */
-const included = (id) => !model.value.exclude.includes(id)
-/** 一組的勾選狀態：全選、全不選或部分 @param {{methods: Array<{id: string}>}} g */
-const groupState = (g) => {
+const included = (id: string) => !model.value.exclude.includes(id)
+/** 一組的勾選狀態：全選、全不選或部分 */
+const groupState = (g: {methods: Array<{id: string}>}) => {
   const n = g.methods.filter((m) => included(m.id)).length
   return n === g.methods.length ? true : n === 0 ? false : 'indeterminate'
 }
-/** 組名（含來源說明），供整組勾選框的無障礙名稱 @param {{label: string, note?: string}} g */
-const groupName = (g) => (g.note ? t('{label}（{note}）', { label: t(g.label), note: t(g.note) }) : t(g.label))
-/** 組內被排除的方法名稱（收合時寫在組名下面） @param {{methods: Array<{id: string, label: string}>}} g */
-const excludedIn = (g) => g.methods.filter((m) => !included(m.id)).map((m) => t(m.label))
-/**
- * 展開的組：預設收合，只顯示整組的勾選與筆數。一開始就有部分排除的組（例如網址帶 x=）展開，讀者看得到排除了哪幾個。
- * @type {import('vue').Ref<Set<string>>}
- */
-const expanded = ref(new Set(SEARCH_METHOD_GROUPS.filter((g) => groupState(g) === 'indeterminate').map((g) => g.key)))
-/** @param {string} key */
-const toggleExpanded = (key) => {
+/** 組名（含來源說明），供整組勾選框的無障礙名稱 */
+const groupName = (g: {label: string, note?: string}) => (g.note ? t('{label}（{note}）', { label: t(g.label), note: t(g.note) }) : t(g.label))
+/** 組內被排除的方法名稱（收合時寫在組名下面） */
+const excludedIn = (g: {methods: Array<{id: string, label: string}>}) => g.methods.filter((m) => !included(m.id)).map((m) => t(m.label))
+/** 展開的組：預設收合，只顯示整組的勾選與筆數。一開始就有部分排除的組（例如網址帶 x=）展開，讀者看得到排除了哪幾個。 */
+const expanded = ref<Set<string>>(new Set(SEARCH_METHOD_GROUPS.filter((g) => groupState(g) === 'indeterminate').map((g) => g.key)))
+const toggleExpanded = (key: string) => {
   const next = new Set(expanded.value)
   if (!next.delete(key)) next.add(key)
   expanded.value = next
 }
-/** @param {string[]} exclude */
-const setExclude = (exclude) => (model.value = { ...model.value, exclude })
-/** @param {string} id @param {boolean | 'indeterminate'} checked */
-const toggleMethod = (id, checked) => setExclude(checked === true ? model.value.exclude.filter((x) => x !== id) : [...model.value.exclude, id])
-/** 整組切換：全選時全部排除，否則全部顯示 @param {{methods: Array<{id: string}>}} g */
-const toggleGroup = (g) => {
+const setExclude = (exclude: string[]) => (model.value = { ...model.value, exclude })
+const toggleMethod = (id: string, checked: boolean | 'indeterminate') => setExclude(checked === true ? model.value.exclude.filter((x) => x !== id) : [...model.value.exclude, id])
+/** 整組切換：全選時全部排除，否則全部顯示 */
+const toggleGroup = (g: {methods: Array<{id: string}>}) => {
   const ids = g.methods.map((m) => m.id)
   const rest = model.value.exclude.filter((x) => !ids.includes(x))
   setExclude(groupState(g) === true ? [...rest, ...ids] : rest)
@@ -108,12 +101,9 @@ const toggleGroup = (g) => {
 
 /**
  * 切換清單中的一個值。
- * @param {'sources' | 'dialects' | 'units' | 'fields'} field
- * @param {string} value
- * @param {boolean | 'indeterminate'} checked
  */
-function toggle(field, value, checked) {
-  const list = model.value[field].filter((/** @type {string} */ v) => v !== value)
+function toggle(field: 'sources' | 'dialects' | 'units' | 'fields', value: string, checked: boolean | 'indeterminate') {
+  const list = model.value[field].filter((v) => v !== value)
   if (checked === true) list.push(value)
   model.value = { ...model.value, [field]: list }
 }

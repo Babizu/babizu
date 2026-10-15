@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 /**
  * 構詞命中的說明：自動拆解（查 mudaux → daux）或自動派生（查 baket → binaket）。兩者都是演算法（BCDP）推定的，
  * 說明的末尾一律寫明，並連到演算法實驗室重現同一個計算。
@@ -14,11 +14,13 @@
  * - 句型搜尋的構詞樣式比對的是依模糊程度取到的拆法（babizu/pattern 的 PARSE_SELECTION），
  *   不是這個詞最好的拆法時（analysis.bestCost 比 cost 小）標「次佳」並說明；詞根是虛擬詞根時（analysis.virtual）說明它不在詞庫中
  */
-import { computed } from 'vue'
+import type { MorphStepHit } from '#bcdp'
+import type { LemmaAnalysis } from '@babizu/search/index.ts'
+import { computed, type PropType } from 'vue'
 import { InfoIcon } from '@lucide/vue'
 import { Badge } from '@/components/ui/badge'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { t } from '@/i18n.js'
+import { t } from '@/i18n.ts'
 import {
   categoryLabel,
   matchTypeLabel,
@@ -30,11 +32,10 @@ import {
   morphStepLabel,
   morphSummary,
   opLabel,
-} from '@/lib/labels.js'
+} from '@/lib/labels.ts'
 
 const props = defineProps({
-  /** search 引擎的 LemmaAnalysis：{ stem, steps, cost, notes?, chain?, variantOf?, variantDistance?, variantNotes? } */
-  analysis: { type: Object, required: true },
+  analysis: { type: Object as PropType<LemmaAnalysis>, required: true },
   /** lemma（查詢去詞綴 → 這個詞）或 derived（這個詞去詞綴 → 查詢） */
   matchType: { type: String, required: true },
   query: { type: String, default: '' },
@@ -45,7 +46,7 @@ const props = defineProps({
 /** 句型搜尋：比到的是次佳的拆法（這個詞最好的拆法成本較低） */
 const alternative = computed(() => props.analysis.bestCost !== undefined && props.analysis.cost > props.analysis.bestCost + 1e-9)
 /** 自動同根：查詢拆出的虛擬詞根與拆法（見 babizu/search 的 LemmaAnalysis.sibling） */
-const sibling = computed(() => /** @type {{root: string, steps: any[], cost: number, penalty: number, lexical?: boolean, rootCost?: number} | null} */ (props.analysis.sibling ?? null))
+const sibling = computed(() => props.analysis.sibling ?? null)
 /** 自動同根的詞根依音節數的成本：詞庫中的詞根含在拆解（cost）裡，虛擬詞根含在詞庫外的代價（penalty）裡，分開列出 */
 const siblingRootCost = computed(() => sibling.value?.rootCost ?? 0)
 const summary = computed(() => (sibling.value ? sibling.value.root : morphSummary(props.analysis)))
@@ -57,12 +58,11 @@ const intro = computed(() =>
       : t('{term} → {stem}', { term: props.term, stem: props.analysis.stem }),
 )
 /** 整個詞的音變（只為前幾筆結果計算，其餘為 null） */
-const notes = computed(() => /** @type {Array<{op: string, source: string, target: string, cost: number, category: string | null, where: string}>} */ (props.analysis.notes ?? []))
+const notes = computed(() => props.analysis.notes ?? [])
 const soundCost = computed(() => notes.value.reduce((sum, n) => sum + n.cost, 0))
-/** @param {Array<{cost: number}>} steps */
-const stepCost = (steps) => steps.reduce((sum, s) => sum + s.cost, 0)
+const stepCost = (steps: ReadonlyArray<{ cost: number }>) => steps.reduce((sum, s) => sum + s.cost, 0)
 /** 自動派生經過的上層（由起點往下；不含最後一層，那一層就是 stem、steps） */
-const chain = computed(() => /** @type {Array<{term: string, stem: string, steps: any[], cost: number, rootCost?: number}>} */ (props.analysis.chain ?? []))
+const chain = computed(() => props.analysis.chain ?? [])
 /** 詞根依音節數的成本（語言設定檔 rootSyllableCost）：不是音變 */
 const rootCost = computed(() => props.analysis.rootCost ?? 0)
 /** 這一層本身的成本：總成本扣掉起點的距離（相近寫法、自動同根的拆解與代價）與上面幾層 */
@@ -96,10 +96,10 @@ const lab = computed(() => {
   return props.query && props.term ? { q: props.query, t: props.term } : null
 })
 const title = computed(() => (sibling.value ? t('自動同根的說明') : derived.value ? t('自動派生的說明') : t('自動拆解的說明')))
-/** 步驟的名稱：由幾個詞素構成的（構詞文法的組合規則）顯示「組合規則」，其他依類型 @param {any} step */
-const stepLabel = (step) => morphStepLabel(step.parts?.length > 1 ? 'construction' : step.type)
-/** 詞素的寫法（組合規則展開的每一個詞素） @param {{type: string, form: string}} part @param {number} k */
-const partLabel = (part, k) => (part.type === 'prefix' ? `${part.form}-` : part.type === 'suffix' ? `-${part.form}` : part.type === 'infix' ? `<${part.form}>` : k === 0 ? `${part.form}~` : part.form)
+/** 步驟的名稱：由幾個詞素構成的（構詞文法的組合規則）顯示「組合規則」，其他依類型 */
+const stepLabel = (step: MorphStepHit) => morphStepLabel(step.parts && step.parts.length > 1 ? 'construction' : step.type)
+/** 詞素的寫法（組合規則展開的每一個詞素） */
+const partLabel = (part: { type: string; form: string }, k: number) => (part.type === 'prefix' ? `${part.form}-` : part.type === 'suffix' ? `-${part.form}` : part.type === 'infix' ? `<${part.form}>` : k === 0 ? `${part.form}~` : part.form)
 </script>
 
 <template>
@@ -127,7 +127,7 @@ const partLabel = (part, k) => (part.type === 'prefix' ? `${part.form}-` : part.
       <!-- 查詢 → 詞根，接著說明這是演算法推定的結果，不是分析標註 -->
       <p class="native-text mt-1.5 text-base leading-tight">{{ intro }}</p>
       <p v-if="alternative" class="text-muted-foreground mt-1 text-xs">
-        {{ t('這不是這個詞最好的拆法（最好的成本 {best}，這一種 {cost}）。句型搜尋依模糊程度也比對次佳的拆法。', { best: formatDistance(analysis.bestCost), cost: formatDistance(analysis.cost) }) }}
+        {{ t('這不是這個詞最好的拆法（最好的成本 {best}，這一種 {cost}）。句型搜尋依模糊程度也比對次佳的拆法。', { best: formatDistance(analysis.bestCost ?? 0), cost: formatDistance(analysis.cost) }) }}
       </p>
       <p v-if="analysis.virtual" class="text-muted-foreground mt-1 text-xs">
         {{ t('詞根「{root}」不在詞庫中，是演算法由詞形拆出來的。', { root: analysis.stem }) }}
@@ -136,7 +136,7 @@ const partLabel = (part, k) => (part.type === 'prefix' ? `${part.form}-` : part.
         <p>{{ t('查詢「{query}」與詞庫中的「{root}」寫法相近，由「{root}」自動派生。', { query: analysis.variantOf, root }) }}</p>
         <p v-if="analysis.variantNotes?.length" class="mt-0.5 flex flex-wrap items-baseline gap-x-2">
           <code v-for="(n, k) in analysis.variantNotes" :key="k" class="bg-muted native-text rounded px-1">{{ formatStep(n) }}</code>
-          <span class="font-mono tabular-nums">+{{ formatDistance(analysis.variantDistance) }}</span>
+          <span class="font-mono tabular-nums">+{{ formatDistance(analysis.variantDistance ?? 0) }}</span>
         </p>
       </div>
       <!-- 自動同根：詞根不在詞庫中；先列出查詢怎麼拆到它，下面是這個詞怎麼由它衍生 -->

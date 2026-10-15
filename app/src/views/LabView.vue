@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 /**
  * 演算法實驗室（docs/lab-design.md）：
  *
@@ -15,12 +15,12 @@ import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import DawgExplorer from '@/components/lab/DawgExplorer.vue'
 import DpLab from '@/components/lab/DpLab.vue'
-import { createLabState } from '@/components/lab/lab-state.js'
+import { createLabState } from '@/components/lab/lab-state.ts'
 import MorphLab from '@/components/lab/MorphLab.vue'
 import RuleEditor from '@/components/lab/RuleEditor.vue'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { t } from '@/i18n.js'
-import { COSTS, site, specLabel } from '@/lib/labels.js'
+import { t } from '@/i18n.ts'
+import { COSTS, site, specLabel } from '@/lib/labels.ts'
 
 const route = useRoute()
 const router = useRouter()
@@ -28,20 +28,20 @@ const { state, metric, activeRuleCount, reset } = createLabState()
 /** 桌面把設定放在側欄；行動裝置收合在內容下方（只渲染一份） */
 const isDesktop = useMediaQuery('(min-width: 1024px)')
 
-const MORPHOLOGY = /** @type {any} */ (site.profile).morphology ?? null
+const MORPHOLOGY = site.profile.morphology ?? null
 const TABS = ['dp', 'dawg', ...(MORPHOLOGY ? ['bcdp'] : [])]
 const tab = ref(TABS.includes(String(route.query.tab)) ? String(route.query.tab) : 'dp')
 
-/** @param {unknown} v */
-const stepParam = (v) => (v === undefined || v === null || v === '' || !Number.isFinite(Number(v)) ? undefined : Number(v))
+const stepParam = (v: unknown) => (v === undefined || v === null || v === '' || !Number.isFinite(Number(v)) ? undefined : Number(v))
 /** 各分頁的初始值（只在進入時讀一次；之後由分頁自己管理，再回寫到網址） */
-const initialDp = { a: route.query.a, b: route.query.b, step: tab.value === 'dp' ? stepParam(route.query.step) : undefined }
-const initialMorph = { q: route.query.q, t: route.query.t, step: tab.value === 'bcdp' ? stepParam(route.query.step) : undefined }
+/** 網址參數的字串值（重複或沒有時是 undefined） */
+const str = (v: unknown) => (typeof v === 'string' ? v : undefined)
+const initialDp = { a: str(route.query.a), b: str(route.query.b), step: tab.value === 'dp' ? stepParam(route.query.step) : undefined }
+const initialMorph = { q: str(route.query.q), t: str(route.query.t), step: tab.value === 'bcdp' ? stepParam(route.query.step) : undefined }
 
-/** 目前分頁回報的網址參數 @type {import('vue').Ref<Record<string, unknown>>} */
-const tabQuery = ref({})
-/** @param {Record<string, unknown>} q */
-const updateQuery = (q) => (tabQuery.value = q)
+/** 目前分頁回報的網址參數 */
+const tabQuery = ref<Record<string, unknown>>({})
+const updateQuery = (q: Record<string, unknown>) => (tabQuery.value = q)
 watch(tab, () => (tabQuery.value = {}))
 watch([tab, tabQuery], () => {
   const entries = Object.entries({ tab: tab.value === 'dp' ? undefined : tab.value, ...tabQuery.value })
@@ -50,17 +50,15 @@ watch([tab, tabQuery], () => {
 })
 
 /** 構詞規格的摘要（構詞分頁的設定欄） */
-const morphSummary = computed(() =>
-  MORPHOLOGY
-    ? /** @type {Array<[string, number]>} */ ([
-        ['prefixes', MORPHOLOGY.prefixes?.length ?? 0],
-        ['suffixes', MORPHOLOGY.suffixes?.length ?? 0],
-        ['infixes', MORPHOLOGY.infixes?.length ?? 0],
-        ['reduplication', MORPHOLOGY.reduplication?.length ?? 0],
-        ['alternations', MORPHOLOGY.alternations?.length ?? 0],
-      ])
-    : [],
-)
+const morphSummary = computed((): Array<[string, number]> => {
+  if (!MORPHOLOGY) return []
+  // 構詞文法的寫法沒有這幾個清單（是 0）
+  const count = (key: string) => {
+    const list = (MORPHOLOGY as unknown as Record<string, unknown>)[key]
+    return Array.isArray(list) ? list.length : 0
+  }
+  return ['prefixes', 'suffixes', 'infixes', 'reduplication', 'alternations'].map((key) => [key, count(key)])
+})
 </script>
 
 <template>

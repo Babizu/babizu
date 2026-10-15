@@ -1,19 +1,19 @@
-<script setup>
+<script setup lang="ts">
 /**
  * 句型查詢的語法錯誤：以等寬字顯示查詢，在出錯的範圍下畫波浪線，下面是說明與建議。
  * 查詢可能本來就不是句型（自動判斷誤判），所以一定附上「改用一般搜尋」。
  */
-import { computed } from 'vue'
+import type { PatternIssue } from '@babizu/pattern/index.ts'
+import { computed, type PropType } from 'vue'
 import { Button } from '@/components/ui/button'
-import { t } from '@/i18n.js'
-import { patternIssueText } from '@/lib/pattern.js'
+import { t } from '@/i18n.ts'
+import { patternIssueText } from '@/lib/pattern.ts'
 
 const props = defineProps({
   query: { type: String, required: true },
-  /** PatternIssue */
-  error: { type: Object, required: true },
+  error: { type: Object as PropType<PatternIssue>, required: true },
 })
-const emit = defineEmits(['plain'])
+const emit = defineEmits<{ plain: [] }>()
 
 const parts = computed(() => {
   const { start, end } = props.error
@@ -21,7 +21,7 @@ const parts = computed(() => {
   // 範圍是空的（查詢結尾缺東西）時，在結尾標一個空格
   return { before: q.slice(0, start), at: q.slice(start, end) || ' ', after: q.slice(Math.max(end, start)) }
 })
-const message = computed(() => patternIssueText(/** @type {any} */ (props.error)))
+const message = computed(() => patternIssueText(props.error))
 </script>
 
 <template>

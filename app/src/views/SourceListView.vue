@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 /**
  * 來源詞彙清單：列出某個來源中某一類（詞、詞綴、片語、句子）的所有記錄。
  *
@@ -12,11 +12,13 @@ import StateMessage from '@/components/common/StateMessage.vue'
 import EntryHitItem from '@/components/search/EntryHitItem.vue'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { useSearchIndex } from '@/composables/useSearchIndex.js'
-import { useSources } from '@/composables/useSources.js'
+import { useSearchIndex } from '@/composables/useSearchIndex.ts'
+import { useLatestRequest } from '@/composables/useLatestRequest.ts'
+import { useSources } from '@/composables/useSources.ts'
 import { UNIT_CODES } from '@babizu/schema/constants.ts'
-import { t } from '@/i18n.js'
-import { formatCount, unitLabel } from '@/lib/labels.js'
+import { t } from '@/i18n.ts'
+import { formatCount, unitLabel } from '@/lib/labels.ts'
+import type { DocSummary, EntryHit } from '@babizu/search/index.ts'
 
 const route = useRoute()
 const router = useRouter()
@@ -29,8 +31,7 @@ const sourceId = computed(() => String(route.params.source))
 const source = computed(() => byId.value.get(sourceId.value) ?? null)
 const unit = computed(() => (typeof route.query.unit === 'string' ? route.query.unit : ''))
 
-/** @type {import('vue').ShallowRef<import('@/services/search-client.js').DocSummary[]>} */
-const items = shallowRef([])
+const items = shallowRef<DocSummary[]>([])
 const total = ref(0)
 const loading = ref(true)
 const errorMessage = ref('')
@@ -45,13 +46,13 @@ const unitOptions = computed(() => {
 })
 
 /**
- * 請求序號。按「顯示更多」之後馬上切換類別時，舊的那一頁可能比新清單晚回來，
+ * 按「顯示更多」之後馬上切換類別時，舊的那一頁可能比新清單晚回來，
  * 若照樣接在後面，就會把別的類別的詞混進清單。只接受最新一次請求的結果。
  */
-let requestSeq = 0
+const latest = useLatestRequest()
 
 async function fetchPage(offset = 0) {
-  const seq = ++requestSeq
+  const isCurrent = latest.start()
   loading.value = true
   errorMessage.value = ''
   try {
@@ -62,30 +63,30 @@ async function fetchPage(offset = 0) {
       offset,
       limit: PAGE_SIZE,
     })
-    if (seq !== requestSeq) return
+    if (!isCurrent()) return
     total.value = result.total
     items.value = offset === 0 ? result.items : [...items.value, ...result.items]
   } catch (e) {
-    if (seq === requestSeq) errorMessage.value = e instanceof Error ? e.message : String(e)
+    if (isCurrent()) errorMessage.value = e instanceof Error ? e.message : String(e)
   } finally {
-    if (seq === requestSeq) loading.value = false
+    if (isCurrent()) loading.value = false
   }
 }
 
 watch([sourceId, unit], () => fetchPage(0), { immediate: true })
 
 /** 讓 EntryHitItem 可以直接用：清單不是搜尋結果，沒有距離與命中方式 */
-const asHit = (/** @type {any} */ doc) => ({
+const asHit = (doc: DocSummary): EntryHit => ({
   doc,
   term: doc.text,
   distance: 0,
+  score: 0,
   matchType: 'fuzzy',
   kind: 'head',
   alignment: null,
 })
 
-/** @param {string} value */
-function selectUnit(value) {
+function selectUnit(value: string) {
   router.replace({ name: 'source-list', params: { source: sourceId.value }, query: value ? { unit: value } : {} })
 }
 </script>

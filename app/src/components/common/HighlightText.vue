@@ -1,35 +1,35 @@
-<script setup>
+<script setup lang="ts">
 /**
  * 文字高亮。
  * - mode="native"：逐詞比對族語搜尋鍵（含構詞部分），命中的詞整個標記
  * - mode="plain"：比對子字串（中文、英文釋義），不分大小寫
  */
-import { computed } from 'vue'
-import { searchKey, tokenize } from '@/lib/text.js'
+import { computed, type PropType } from 'vue'
+import { searchKey, tokenize } from '@/lib/text.ts'
 
 const props = defineProps({
   text: { type: String, default: '' },
   /** native 模式：要高亮的搜尋鍵 */
-  terms: { type: Array, default: () => [] },
+  terms: { type: Array as PropType<string[]>, default: () => [] },
   /** plain 模式：要高亮的子字串 */
   needle: { type: String, default: '' },
-  mode: { type: String, default: 'native' },
+  mode: { type: String as PropType<'native' | 'plain'>, default: 'native' },
 })
 
-/** @typedef {{text: string, hit: boolean}} Piece */
+interface Piece {
+  text: string
+  hit: boolean
+}
 
 const pieces = computed(() => {
   if (props.mode === 'plain') return splitPlain(props.text, props.needle.trim())
-  return splitNative(props.text, new Set(/** @type {string[]} */ (props.terms)))
+  return splitNative(props.text, new Set(props.terms))
 })
 
 /**
  * 以空白與標點切詞（保留分隔字元），逐詞判斷是否命中。
- * @param {string} text
- * @param {Set<string>} terms
- * @returns {Piece[]}
  */
-function splitNative(text, terms) {
+function splitNative(text: string, terms: Set<string>): Piece[] {
   if (terms.size === 0) return [{ text, hit: false }]
   return text
     .split(/([\s,.;:!?"“”()[\]。，、；：！？「」]+)/u)
@@ -41,14 +41,9 @@ function splitNative(text, terms) {
     })
 }
 
-/**
- * @param {string} text
- * @param {string} needle
- * @returns {Piece[]}
- */
-function splitPlain(text, needle) {
+function splitPlain(text: string, needle: string): Piece[] {
   if (!needle) return [{ text, hit: false }]
-  const out = []
+  const out: Piece[] = []
   const lower = text.toLowerCase()
   const n = needle.toLowerCase().replace(/\s+/gu, '')
   // 中文查詢忽略原文中的空白：逐字尋找

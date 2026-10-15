@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 /**
  * 檢查清單（/checklist）：給校對者的資料檢查。不在主選單，由「資料來源」頁的說明連入。
  *
@@ -19,15 +19,16 @@ import { useRoute, useRouter } from 'vue-router'
 import DuplicateGroup from '@/components/checklist/DuplicateGroup.vue'
 import SegmentationRow from '@/components/checklist/SegmentationRow.vue'
 import TokenRow from '@/components/checklist/TokenRow.vue'
-import { DUPLICATE_FILTERS, SEGMENTATION_FILTERS, TOKEN_KINDS } from '@/components/checklist/kinds.js'
+import { DUPLICATE_FILTERS, SEGMENTATION_FILTERS, TOKEN_KINDS } from '@/components/checklist/kinds.ts'
 import StateMessage from '@/components/common/StateMessage.vue'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { useInfiniteList } from '@/composables/useInfiniteList.js'
-import { useSearchIndex } from '@/composables/useSearchIndex.js'
-import { useSources } from '@/composables/useSources.js'
-import { t } from '@/i18n.js'
-import { FUZZINESS_LABELS, formatCount } from '@/lib/labels.js'
+import { useInfiniteList } from '@/composables/useInfiniteList.ts'
+import { useLatestRequest } from '@/composables/useLatestRequest.ts'
+import { useSearchIndex } from '@/composables/useSearchIndex.ts'
+import { useSources } from '@/composables/useSources.ts'
+import { t } from '@/i18n.ts'
+import { FUZZINESS_LABELS, formatCount } from '@/lib/labels.ts'
 import { cn } from '@/lib/utils'
 
 const PAGE_SIZE = 20
@@ -41,17 +42,25 @@ const { sources, loaded: sourcesLoaded, error: sourcesError } = useSources()
 const lexicalSources = computed(() => sources.value.filter((s) => s.type !== 'corpus').map((s) => s.id))
 
 // ── 網址上的狀態 ──
-const query = (/** @type {string} */ key) => (typeof route.query[key] === 'string' ? /** @type {string} */ (route.query[key]) : '')
-const tab = computed(() => (['duplicates', 'sentences', 'segmentations'].includes(query('tab')) ? query('tab') : 'tokens'))
-const kind = computed(() => (TOKEN_KINDS.some((k) => k.value === query('kind')) ? query('kind') : 'all'))
-const sort = computed(() => (query('sort') === 'text' ? 'text' : 'count'))
-const filter = computed(() => (DUPLICATE_FILTERS.some((f) => f.value === query('filter')) ? query('filter') : 'all'))
+const query = (key: string) => {
+  const value = route.query[key]
+  return typeof value === 'string' ? value : ''
+}
+/** 網址參數是 allowed 之一時取它，否則是 fallback */
+const pick = <T extends string>(key: string, allowed: readonly T[], fallback: T): T => {
+  const value = query(key)
+  return (allowed as readonly string[]).includes(value) ? (value as T) : fallback
+}
+const tab = computed(() => pick('tab', ['tokens', 'duplicates', 'sentences', 'segmentations'] as const, 'tokens'))
+const kind = computed(() => pick('kind', TOKEN_KINDS.map((k) => k.value), 'all'))
+const sort = computed(() => pick('sort', ['count', 'text'] as const, 'count'))
+const filter = computed(() => pick('filter', DUPLICATE_FILTERS.map((f) => f.value), 'all'))
 /** 人工拆解對照：比對用的模糊程度（與搜尋相同的 fz）與篩選 */
-const fuzziness = computed(() => (['exact', 'loose'].includes(query('fz')) ? query('fz') : 'normal'))
-const issue = computed(() => (SEGMENTATION_FILTERS.some((f) => f.value === query('issue')) ? query('issue') : 'all'))
+const fuzziness = computed(() => pick('fz', ['exact', 'normal', 'loose'] as const, 'normal'))
+const issue = computed(() => pick('issue', SEGMENTATION_FILTERS.map((f) => f.value), 'all'))
 
-/** 改網址上的狀態（預設值不寫進網址） @param {Record<string, string>} patch */
-function setQuery(patch) {
+/** 改網址上的狀態（預設值不寫進網址） */
+function setQuery(patch: Record<string, string>) {
   const next = { ...route.query, ...patch }
   for (const [key, value] of Object.entries(patch)) {
     if (!value || value === 'all' || (key === 'tab' && value === 'tokens') || (key === 'sort' && value === 'count') || (key === 'fz' && value === 'normal')) delete next[key]
@@ -60,8 +69,7 @@ function setQuery(patch) {
 }
 
 // ── 資料 ──
-/** @type {import('vue').ShallowRef<{entries: number, sentences: number, tokens: number, untreated: number, duplicates: number, duplicateSentences: number} | null>} */
-const summary = shallowRef(null)
+const summary = shallowRef<{ entries: number; sentences: number; tokens: number; untreated: number; duplicates: number; duplicateSentences: number } | null>(null)
 const summaryError = shallowRef('')
 
 const tokens = useInfiniteList(async (offset) => {
@@ -104,36 +112,32 @@ watch([sourcesLoaded, tab, kind, sort], ([ready]) => ready && tab.value === 'tok
 watch([sourcesLoaded, tab, filter], ([ready]) => ready && (tab.value === 'duplicates' || tab.value === 'sentences') && duplicates.reset(), { immediate: true })
 watch([sourcesLoaded, tab, fuzziness, issue], ([ready]) => ready && tab.value === 'segmentations' && segmentations.reset(), { immediate: true })
 
-/**
- * 人工拆解對照中有不一致的記錄數（目前的模糊程度）：undefined 是還不知道，null 是沒有這份清單（資料中沒有人工拆解、
- * 沒有構詞規格，或拆解表載入失敗）。要先載入拆解表，所以不放在統計中，另外在背景算，不擋統計。
- * @type {import('vue').ShallowRef<number | null | undefined>}
- */
-const segmentationIssues = shallowRef(undefined)
-let segmentationRequest = 0
+/** 人工拆解對照中有不一致的記錄數（目前的模糊程度）：undefined 是還不知道，null 是沒有這份清單（資料中沒有人工拆解、 沒有構詞規格，或拆解表載入失敗）。要先載入拆解表，所以不放在統計中，另外在背景算，不擋統計。 */
+const segmentationIssues = shallowRef<number | null | undefined>(undefined)
+const latestIssues = useLatestRequest()
 watch(
   [sourcesLoaded, fuzziness],
   async ([ready]) => {
     if (!ready) return
-    const request = ++segmentationRequest
-    let count = null
+    const isCurrent = latestIssues.start()
+    let count: number | null = null
     try {
       const page = await client.checklist('checklistSegmentations', { lexicalSources: lexicalSources.value, fuzziness: fuzziness.value, limit: 0 })
       count = page ? page.counts.all : null
     } catch {
       // 拆解表載入失敗：不顯示分頁；正在看這一頁時，清單本身會顯示錯誤與重試
     }
-    if (request === segmentationRequest) segmentationIssues.value = count
+    if (isCurrent()) segmentationIssues.value = count
   },
   { immediate: true },
 )
 
 // ── 顯示 ──
-const tokenMeta = computed(() => /** @type {any} */ (tokens.meta.value))
-const duplicateMeta = computed(() => /** @type {any} */ (duplicates.meta.value))
-const segmentationMeta = computed(() => /** @type {any} */ (segmentations.meta.value))
-/** 百分比（沒有分母時是 —） @param {number | null | undefined} x */
-const percent = (x) => (x === null || x === undefined ? '—' : `${(x * 100).toFixed(1)}%`)
+const tokenMeta = computed(() => tokens.meta.value)
+const duplicateMeta = computed(() => duplicates.meta.value)
+const segmentationMeta = computed(() => segmentations.meta.value)
+/** 百分比（沒有分母時是 —） */
+const percent = (x: number | null | undefined) => (x === null || x === undefined ? '—' : `${(x * 100).toFixed(1)}%`)
 const untreatedShare = computed(() => (summary.value?.tokens ? Math.round((summary.value.untreated / summary.value.tokens) * 100) : 0))
 /** 類別的數量只算已經比對過的詞：還沒比對完時數字會繼續長 */
 const analyzedAll = computed(() => tokenMeta.value && tokenMeta.value.analyzed >= tokenMeta.value.total)
@@ -155,10 +159,10 @@ const groupNote = computed(() =>
 )
 
 const CHIP = 'inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-sm border px-3 text-sm transition-colors sm:min-h-9 active:translate-y-px motion-reduce:active:translate-y-0'
-/** 篩選晶片：與來源詞彙清單相同的外觀（選中的是主色實底） @param {boolean} active */
-const chip = (active) => cn(CHIP, active ? 'bg-primary text-primary-foreground border-primary' : 'bg-card hover:bg-muted')
-/** 排序：次要的設定，選中的只用淡底與深字，不與篩選搶主色 @param {boolean} active */
-const sortChip = (active) => cn(CHIP, active ? 'bg-accent text-accent-foreground border-primary/30 font-medium' : 'bg-card text-muted-foreground hover:bg-muted')
+/** 篩選晶片：與來源詞彙清單相同的外觀（選中的是主色實底） */
+const chip = (active: boolean) => cn(CHIP, active ? 'bg-primary text-primary-foreground border-primary' : 'bg-card hover:bg-muted')
+/** 排序：次要的設定，選中的只用淡底與深字，不與篩選搶主色 */
+const sortChip = (active: boolean) => cn(CHIP, active ? 'bg-accent text-accent-foreground border-primary/30 font-medium' : 'bg-card text-muted-foreground hover:bg-muted')
 </script>
 
 <template>
@@ -315,7 +319,7 @@ const sortChip = (active) => cn(CHIP, active ? 'bg-accent text-accent-foreground
           :description="t('換一個類別看看。')"
         />
 
-        <div :ref="(el) => (tokens.sentinel.value = /** @type {HTMLElement | null} */ (el))" class="h-px" aria-hidden="true" />
+        <div :ref="(el) => (tokens.sentinel.value = el as HTMLElement | null)" class="h-px" aria-hidden="true" />
         <div class="mt-6 flex justify-center">
           <Button v-if="tokens.hasMore.value && !tokens.loading.value && !tokens.error.value" variant="outline" @click="tokens.loadMore()">
             {{ t('載入更多') }}
@@ -363,7 +367,7 @@ const sortChip = (active) => cn(CHIP, active ? 'bg-accent text-accent-foreground
           :description="t('換一個篩選看看。')"
         />
 
-        <div :ref="(el) => (duplicates.sentinel.value = /** @type {HTMLElement | null} */ (el))" class="h-px" aria-hidden="true" />
+        <div :ref="(el) => (duplicates.sentinel.value = el as HTMLElement | null)" class="h-px" aria-hidden="true" />
         <div class="mt-6 flex justify-center">
           <Button v-if="duplicates.hasMore.value && !duplicates.loading.value && !duplicates.error.value" variant="outline" @click="duplicates.loadMore()">
             {{ t('載入更多') }}
@@ -400,7 +404,7 @@ const sortChip = (active) => cn(CHIP, active ? 'bg-accent text-accent-foreground
               :aria-pressed="fuzziness === level"
               @click="setQuery({ fz: level })"
             >
-              {{ t(FUZZINESS_LABELS[/** @type {'exact' | 'normal' | 'loose'} */ (level)]) }}
+              {{ t(FUZZINESS_LABELS[level as 'exact' | 'normal' | 'loose']) }}
             </button>
           </div>
         </div>
@@ -446,7 +450,7 @@ const sortChip = (active) => cn(CHIP, active ? 'bg-accent text-accent-foreground
           :description="t('換一個篩選或模糊程度看看。')"
         />
 
-        <div :ref="(el) => (segmentations.sentinel.value = /** @type {HTMLElement | null} */ (el))" class="h-px" aria-hidden="true" />
+        <div :ref="(el) => (segmentations.sentinel.value = el as HTMLElement | null)" class="h-px" aria-hidden="true" />
         <div class="mt-6 flex justify-center">
           <Button v-if="segmentations.hasMore.value && !segmentations.loading.value && !segmentations.error.value" variant="outline" @click="segmentations.loadMore()">
             {{ t('載入更多') }}

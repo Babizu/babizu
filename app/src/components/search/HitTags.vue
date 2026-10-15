@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 /**
  * 命中的說明標籤：比對身分（變體、其他寫法…）、命中方式或構詞分析、模糊命中的距離。
  * 詞條結果列（EntryHitItem）、家族中的子項目（EntryRow）與例句（OccurrenceHitItem）共用，標籤才會一致。
@@ -8,12 +8,14 @@ import MatchExplanation from '@/components/common/MatchExplanation.vue'
 import MatchTypeTag from '@/components/common/MatchTypeTag.vue'
 import MetaTag from '@/components/common/MetaTag.vue'
 import MorphologyExplanation from '@/components/common/MorphologyExplanation.vue'
+import type { EntryHit, OccurrenceMatch } from '@babizu/search/index.ts'
 import { DICTIONARY_KINDS } from '@babizu/search/scoring.ts'
-import { matchKindHint, matchKindLabel } from '@/lib/labels.js'
+import type { PropType } from 'vue'
+import { matchKindHint, matchKindLabel } from '@/lib/labels.ts'
 
 defineProps({
-  /** search-core 的 EntryHit，或例句的 OccurrenceMatch（kind 為 token 時不標身分） */
-  hit: { type: Object, required: true },
+  /** 詞條的命中，或例句中一個查詢詞的命中（kind 為 token 時不標身分） */
+  hit: { type: Object as PropType<EntryHit | OccurrenceMatch>, required: true },
   query: { type: String, default: '' },
   /**
    * 是否標出辭典的構詞關係（確定派生、拆解、同根）：家族中的子項目不需要，樹狀排列已經看得出關係

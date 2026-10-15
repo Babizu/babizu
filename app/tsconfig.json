@@ -1,0 +1,26 @@
+{
+  // 前端（Vue 3＋Vite）：只做型別檢查（vue-tsc -p app），由 Vite 編譯。
+  // 不 extends 任何套件的設定：網站只安裝框架的 dependencies，Vite 讀這個檔時找不到 devDependency 會失敗。
+  "compilerOptions": {
+    "target": "es2022",
+    "lib": ["es2023", "dom", "dom.iterable"],
+    "types": ["vite/client"],
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "customConditions": ["babizu-source"],
+    "strict": true,
+    "noEmit": true,
+    "verbatimModuleSyntax": true,
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "skipLibCheck": true,
+    "jsx": "preserve",
+    "paths": {
+      "@/*": ["./src/*"],
+      "@babizu/*": ["../src/*"]
+    }
+  },
+  "include": ["src/**/*.ts", "src/**/*.vue"],
+  "exclude": ["src/**/*.test.*"]
+}

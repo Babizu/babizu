@@ -6,7 +6,7 @@
  * 供 `babizu locales` 列出譯文檔缺哪些、單元測試檢查內建譯文是否齊全。
  *
  * 只認得單引號的字面字串：用變數或樣板字串呼叫 t() 的地方掃不到，
- * 所以代碼 → 名稱的對照要寫成 msg() 表（見 app/src/lib/labels.js）。
+ * 所以代碼 → 名稱的對照要寫成 msg() 表（見 app/src/lib/labels.ts）。
  */
 
 import { readdirSync, readFileSync, statSync } from 'node:fs'

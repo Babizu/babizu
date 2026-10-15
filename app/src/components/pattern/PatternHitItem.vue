@@ -1,21 +1,21 @@
-<script setup>
+<script setup lang="ts">
 /**
  * 句型搜尋的一筆結果：原文中命中的詞依引擎回傳的位置高亮（不在介面重新切詞，位置一定對得上），
  * 下面每個有說明的詞一組標籤（與一般搜尋的例句同一套 HitTags：自動是虛線框、確定是實心底）。
  * `_` 與 `!x` 比到的詞用較淡的底色（只是填在空位上的詞），也不附標籤。
  * 整列可以點（v-card-link），文字可以拖曳反白、複製。
  */
-import { computed } from 'vue'
+import type { PatternEvidence, PatternHit } from '@babizu/pattern/index.ts'
+import { computed, type PropType } from 'vue'
 import AudioButton from '@/components/common/AudioButton.vue'
 import DialectBadge from '@/components/common/DialectBadge.vue'
 import HitTags from '@/components/search/HitTags.vue'
 import ResultCitation from '@/components/search/ResultCitation.vue'
-import { recordRoute } from '@/lib/labels.js'
-import { vCardLink } from '@/lib/card-link.js'
+import { recordRoute } from '@/lib/labels.ts'
+import { vCardLink } from '@/lib/card-link.ts'
 
 const props = defineProps({
-  /** babizu/pattern 的 PatternHit */
-  hit: { type: Object, required: true },
+  hit: { type: Object as PropType<PatternHit>, required: true },
 })
 
 const doc = computed(() => props.hit.doc)
@@ -25,12 +25,11 @@ const doc = computed(() => props.hit.doc)
  * hit：'word' 是句型中寫出條件的詞，'slot' 是 `_` 或 `!x` 比到的詞，null 是沒有命中
  */
 const pieces = computed(() => {
-  const text = /** @type {string} */ (doc.value.text)
+  const text = doc.value.text
   const ranges = props.hit.matches
-    .flatMap((/** @type {any} */ m) => m.cells.map((/** @type {any} */ c) => ({ s: c.start, e: c.end, word: c.evidence !== null })))
-    .sort((/** @type {any} */ a, /** @type {any} */ b) => a.s - b.s || a.e - b.e)
-  /** @type {Array<{text: string, hit: 'word' | 'slot' | null}>} */
-  const out = []
+    .flatMap((m) => m.cells.map((c) => ({ s: c.start, e: c.end, word: c.evidence !== null })))
+    .sort((a, b) => a.s - b.s || a.e - b.e)
+  const out: Array<{ text: string; hit: 'word' | 'slot' | null }> = []
   let at = 0
   for (const r of ranges) {
     if (r.e <= at) continue
@@ -45,8 +44,7 @@ const pieces = computed(() => {
 
 /** 有說明的詞：同一個詞、同一種說明只列一次；拼寫完全相同的不必說明（與一般搜尋相同） */
 const tagged = computed(() => {
-  /** @type {Map<string, any>} */
-  const seen = new Map()
+  const seen = new Map<string, { token: string; evidence: PatternEvidence }>()
   for (const m of props.hit.matches) {
     for (const c of m.cells) {
       const e = c.evidence

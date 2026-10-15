@@ -1,29 +1,35 @@
-<script setup>
+<script setup lang="ts">
 /**
  * 「構詞 BCDP」分頁（docs/lab-design.md 第 4 節）：逐步展示構詞搜尋怎麼找到詞根。
  *
  * 資料來自搜尋 Worker 的 explainMorphology（與搜尋同一套程式、同一個總成本上限），
- * 播放由 src/fuzzy/steps.js 的 bcdpSteps 決定。四個面板依計算順序排列：
+ * 播放由 app/src/lab/steps.ts 的 bcdpSteps 決定。四個面板依計算順序排列：
  * ① 詞綴各層與交界狀態 → ② 通道與詞圖走訪 → ③ 整個詞的對齊 → ④ 分析。
  */
-import { MISS_NOTES, bcdpStateAt, bcdpSteps } from '@babizu/../app/src/lab/steps.js'
+import { MISS_NOTES, bcdpStateAt, bcdpSteps, type MorphExplanation } from '@/lab/steps.ts'
 import { useDebounceFn, useEventListener } from '@vueuse/core'
-import { computed, ref, shallowRef, watch } from 'vue'
+import { computed, ref, shallowRef, watch, type PropType } from 'vue'
 import AlignmentStrip from '@/components/lab/AlignmentStrip.vue'
 import PlaybackControls from '@/components/lab/PlaybackControls.vue'
 import StepNote from '@/components/lab/StepNote.vue'
 import { Input } from '@/components/ui/input'
-import { usePlayback } from '@/composables/usePlayback.js'
-import { msg, t } from '@/i18n.js'
-import { formatDistance, formatMorphStep, morphGloss, morphStepLabel, site } from '@/lib/labels.js'
+import { useLatestRequest } from '@/composables/useLatestRequest.ts'
+import { usePlayback } from '@/composables/usePlayback.ts'
+import { msg, t } from '@/i18n.ts'
+import { formatDistance, formatMorphStep, morphGloss, morphStepLabel, site } from '@/lib/labels.ts'
 import { cn } from '@/lib/utils'
-import { getSearchClient } from '@/services/search-client.js'
+import { getSearchClient } from '@/services/search-client.ts'
 
 const props = defineProps({
   /** 初始的查詢、詞根與步驟（網址參數） */
-  initial: { type: Object, default: () => ({}) },
+  initial: { type: Object as PropType<{ q?: string; t?: string; step?: number }>, default: () => ({}) },
 })
-const emit = defineEmits(['update:query'])
+const emit = defineEmits<{ 'update:query': [query: { q: string; t: string | null; step: number | null }] }>()
+
+/** 查詢夠長、做了構詞搜尋時的說明 */
+type FullExplanation = Extract<MorphExplanation, { tooShort: false }>
+/** 一個通道（原查詢或還原變體） */
+type Variant = FullExplanation['variants'][number]
 
 const EXAMPLES = site.lab.morph?.examples ?? []
 const FAILURES = site.lab.morph?.failures ?? []
@@ -31,14 +37,13 @@ const DOCS = 'https://github.com/Babizu/babizu/blob/main/docs/'
 
 const q = ref(String(props.initial.q ?? EXAMPLES[0]?.[0] ?? ''))
 const term = ref(String(props.initial.t ?? (props.initial.q ? '' : (EXAMPLES[0]?.[1] ?? ''))))
-/** @type {import('vue').ShallowRef<any>} */
-const e = shallowRef(null)
+const e = shallowRef<MorphExplanation | null>(null)
 const loading = ref(false)
 const failed = ref(false)
 
-let request = 0
+const latest = useLatestRequest()
 const load = useDebounceFn(async () => {
-  const id = ++request
+  const isCurrent = latest.start()
   if (!q.value.trim()) {
     e.value = null
     return
@@ -47,11 +52,11 @@ const load = useDebounceFn(async () => {
   failed.value = false
   try {
     const result = await getSearchClient().explainMorphology(q.value, term.value.trim() || null)
-    if (id === request) e.value = result
+    if (isCurrent()) e.value = result
   } catch {
-    if (id === request) failed.value = true
+    if (isCurrent()) failed.value = true
   } finally {
-    if (id === request) loading.value = false
+    if (isCurrent()) loading.value = false
   }
 }, 250)
 watch([q, term], load, { immediate: true })
@@ -61,41 +66,45 @@ const total = computed(() => steps.value.length)
 const playback = usePlayback(total, { initial: props.initial.step })
 const state = computed(() => (e.value ? bcdpStateAt(e.value, steps.value, playback.index.value) : null))
 const step = computed(() => (playback.index.value >= 0 ? steps.value[playback.index.value] : null))
-const focus = computed(() => /** @type {any} */ (state.value?.focus ?? null))
+const focus = computed(() => state.value?.focus ?? null)
 useEventListener(window, 'keydown', playback.onKeydown)
 watch([q, term, playback.index], () =>
   emit('update:query', { q: q.value, t: term.value || null, step: playback.atEnd.value ? null : playback.index.value }),
 )
 
-/** @param {string[]} example */
-function useExample([x, y]) {
+function useExample([x, y]: string[]) {
   q.value = x
   term.value = y
 }
-/** @param {number | null} v */
-const fmt = (v) => formatDistance(v ?? Infinity)
-/** 查詢的第 i 個位置之前的字元（表頭；0 是 ε） @param {number} i */
-const charBefore = (i) => (i === 0 ? 'ε' : e.value.chars[i - 1] === ' ' ? '␣' : e.value.chars[i - 1])
+/** 距離（null 表示 ∞） */
+const fmt = (v: number | null | undefined) => formatDistance(v ?? Infinity)
+/** 查詢的第 i 個位置之前的字元（表頭；0 是 ε） */
+const charBefore = (i: number) => {
+  const ch = i === 0 ? 'ε' : (e.value?.chars[i - 1] ?? '')
+  return ch === ' ' ? '␣' : ch
+}
 
 // ── ① 詞綴各層：前綴各層、前綴合併、後綴各層、後綴合併（依計算順序顯示） ──
 const levelRows = computed(() => {
   const x = e.value
   if (!x || x.tooShort) return []
   return [
-    ...x.prefixLevels.map((/** @type {any[]} */ row, /** @type {number} */ s) => ({
+    ...x.prefixLevels.map((row, s) => ({
       key: `p${s}`,
       label: t('前綴第 {level} 層', { level: s + 1 }),
       row,
       shown: (state.value?.prefixLevels ?? 0) > s,
       focused: focus.value?.side === 'prefix' && focus.value?.level === s + 1,
+      merged: false,
     })),
     { key: 'P', label: t('前綴合併（詞幹起點）'), row: x.merged.P, shown: state.value?.merged, focused: state.value?.merged && step.value?.kind === 'merge', merged: true },
-    ...x.suffixLevels.map((/** @type {any[]} */ row, /** @type {number} */ s) => ({
+    ...x.suffixLevels.map((row, s) => ({
       key: `s${s}`,
       label: t('後綴第 {level} 層', { level: s + 1 }),
       row,
       shown: (state.value?.suffixLevels ?? 0) > s,
       focused: focus.value?.side === 'suffix' && focus.value?.level === s + 1,
+      merged: false,
     })),
     { key: 'S', label: t('後綴合併（詞尾耦合）'), row: x.merged.S, shown: state.value?.merged, focused: state.value?.merged && step.value?.kind === 'merge', merged: true },
   ]
@@ -109,42 +118,43 @@ const CHANNEL_LABELS = {
   infix: msg('拿掉中綴 <{form}>'),
   reduplication: msg('拿掉重疊部分 {form}'),
 }
-/** 通道的說明：通道本身，加上併進來、要求詞根元音開頭的環綴 @param {any} v */
-const channelLabel = (v) =>
+/** 通道的說明：通道本身，加上併進來、要求詞根元音開頭的環綴 */
+const channelLabel = (v: Variant) =>
   [...(v.noBase ? [] : [baseLabel(v)]), ...(v.alt ? [t('元音開頭的詞根接 {form}', { form: v.alt.options.map(formatMorphStep).join('、') })] : [])].join('；')
-/** @param {any} v */
-const baseLabel = (v) => {
+const baseLabel = (v: Variant) => {
   // 前綴式環綴的通道由後綴相同的幾個環綴共用：列出它們
   if (v.kind === 'circumfix') return t('環綴 {form}', { form: (v.options ?? []).map(formatMorphStep).join('、') })
   // 還原變體：同一種拿法的步驟（單獨的中綴、重疊，與用它當左邊的環綴）共用一個通道，逐一列出
-  /** @param {any} op */
-  const one = (op) =>
+  const one = (op: NonNullable<Variant['op']>) =>
     op.type === 'circumfix'
-      ? t('拿掉環綴 {form} 的左邊「{left}」', { form: formatMorphStep(op), left: op.left.form })
-      : t(CHANNEL_LABELS[/** @type {keyof typeof CHANNEL_LABELS} */ (v.kind)], { form: op.form })
-  const label = v.op ? (v.options ?? [v.op]).map(one).join('；') : t(CHANNEL_LABELS[/** @type {keyof typeof CHANNEL_LABELS} */ (v.kind)], { form: '' })
+      ? t('拿掉環綴 {form} 的左邊「{left}」', { form: formatMorphStep(op), left: op.left?.form ?? '' })
+      : t(CHANNEL_LABELS[v.kind as keyof typeof CHANNEL_LABELS], { form: op.form })
+  const label = v.op ? (v.options ?? [v.op]).map(one).join('；') : t(CHANNEL_LABELS[v.kind as keyof typeof CHANNEL_LABELS], { form: '' })
   return label + (v.op && v.prefixed ? t('（接在前綴之後）') : '')
 }
 
 // ── ③ 整個詞的對齊 ──
 /** 各詞素依序排列，交界以｜分開 */
-const segments = computed(() => (e.value?.alignment?.segments ?? []).map((/** @type {any} */ s) => ({ ...s, text: formatMorphStep({ type: s.type, form: s.form }) })))
-const alignedSteps = computed(() => (e.value?.alignment?.steps ?? []).slice(0, state.value?.aligned ?? 0))
+/** 指定的詞根命中時的對齊 */
+const alignment = computed(() => (e.value && !e.value.tooShort ? e.value.alignment : null))
+const segments = computed(() => (alignment.value?.segments ?? []).map((s) => ({ ...s, text: formatMorphStep({ type: s.type, form: s.form }) })))
+const alignedSteps = computed(() => (alignment.value?.steps ?? []).slice(0, state.value?.aligned ?? 0))
 
 // ── ④ 分析 ──
-const stepCost = computed(() => (e.value?.hit?.steps ?? []).reduce((/** @type {number} */ sum, /** @type {any} */ s) => sum + s.cost, 0))
+/** 指定的詞根的最佳分析 */
+const hit = computed(() => (e.value && !e.value.tooShort ? e.value.hit : null))
+const stepCost = computed(() => (hit.value?.steps ?? []).reduce((sum, s) => sum + s.cost, 0))
 /** 步驟依詞中的順序排列（hit.steps 由外而內）：前綴、重疊在詞幹前，中綴在詞幹上，後綴在詞幹後 */
 const pieces = computed(() => {
-  const all = e.value?.hit?.steps ?? []
-  const of = (/** @type {string[]} */ types) => all.filter((/** @type {any} */ s) => types.includes(s.type))
+  const all = hit.value?.steps ?? []
+  const of = (types: string[]) => all.filter((s) => types.includes(s.type))
   // 環綴緊貼詞幹，放在前綴之後（晶片上寫成 ta-…-aw）
   return { before: of(['prefix', 'reduplication', 'circumfix']), inner: of(['infix']), after: of(['suffix']).reverse() }
 })
 
 /** 面板是否已經輪到（目前階段之後的面板淡化） */
 const PHASES = ['levels', 'channels', 'result', 'alignment']
-/** @param {string} phase */
-const reached = (phase) => state.value && PHASES.indexOf(state.value.phase) >= PHASES.indexOf(phase)
+const reached = (phase: string) => state.value && PHASES.indexOf(state.value.phase) >= PHASES.indexOf(phase)
 const PANEL = 'bg-card rounded-lg border p-4'
 </script>
 
@@ -333,7 +343,7 @@ const PANEL = 'bg-card rounded-lg border p-4'
             </p>
           </template>
           <p v-else-if="e.term" class="text-muted-foreground text-sm">
-            {{ t(MISS_NOTES[/** @type {keyof typeof MISS_NOTES} */ (e.reason)], { term: e.term, maxDistance: fmt(e.params.maxDistance), cutoff: fmt(e.cutoff) }) }}
+            {{ t(MISS_NOTES[e.reason as keyof typeof MISS_NOTES], { term: e.term, maxDistance: fmt(e.params.maxDistance), cutoff: fmt(e.cutoff) }) }}
           </p>
           <p v-else class="text-muted-foreground text-sm">{{ t('在上方選一個詞根，看它的對齊與分析。') }}</p>
         </section>

@@ -1,28 +1,30 @@
-<script setup>
+<script setup lang="ts">
 /**
  * 規則與成本編輯器。所有修改立即反映在動態規劃表與詞圖搜尋上。
  */
 import { PlusIcon, RotateCcwIcon, Trash2Icon } from '@lucide/vue'
-import { ref } from 'vue'
+import type { RulePosition } from '#bcdp'
+import { ref, type PropType } from 'vue'
+import type { EditableCosts, EditableRule, LabState } from './lab-state.ts'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Slider } from '@/components/ui/slider'
-import { t } from '@/i18n.js'
-import { categoryLabel, costLabel, formatDistance, positionLabel } from '@/lib/labels.js'
+import { t } from '@/i18n.ts'
+import { categoryLabel, costLabel, formatDistance, positionLabel } from '@/lib/labels.ts'
 
 const props = defineProps({
   /** createLabState() 的 state（reactive，直接修改） */
-  state: { type: Object, required: true },
+  state: { type: Object as PropType<LabState>, required: true },
   activeRuleCount: { type: Number, required: true },
 })
-const emit = defineEmits(['reset'])
+const emit = defineEmits<{ reset: [] }>()
 
 /** 顯示名稱在模板裡用 t() 查（切換語系時即時更新） */
-const COSTS = ['substitute', 'delete', 'insert', 'space']
-const POSITIONS = ['any', 'initial', 'final']
+const COSTS: Array<keyof EditableCosts> = ['substitute', 'delete', 'insert', 'space']
+const POSITIONS: RulePosition[] = ['any', 'initial', 'final']
 
-const draft = ref({ source: '', target: '', weight: 0.1, position: 'any' })
+const draft = ref<EditableRule>({ source: '', target: '', weight: 0.1, position: 'any' })
 
 function addCustom() {
   if (!draft.value.source && !draft.value.target) return

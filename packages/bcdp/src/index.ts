@@ -22,7 +22,7 @@
 export { createNormalizer, defaultNormalize, toChars, DEFAULT_CHAR_MAP, type Normalizer, type NormalizerOptions } from './text-normalize.ts'
 export { CostModel, DEFAULT_COSTS, type CostOptions } from './costs.ts'
 export { RuleSet, type RuleGroup, type RulePosition, type RuleTableRow } from './rules.ts'
-export { WeightedEditDistance, type AlignmentStep, type Explanation, type MetricOptions, type PublicRule } from './distance.ts'
+export { WeightedEditDistance, type AlignmentStep, type CellCandidate, type Explanation, type MetricOptions, type PublicRule } from './distance.ts'
 export { NORMALIZATIONS, resolveNormalization, type NormalizationStrategy } from './score-normalization.ts'
 export { Dawg, DAWG_FORMAT, DAWG_VERSION, type SerializedDawg } from './dawg.ts'
 export { FuzzyIndex, INDEX_FORMAT, INDEX_VERSION, type NodeVisit, type SearchOptions, type SearchResult, type SearchStats, type SerializedIndex, type SpreadCutoff } from './fuzzy-index.ts'
@@ -45,6 +45,7 @@ export {
   type ReduplicationPattern,
 } from './morphology.ts'
 export { createMorphSearch, type MorphHit, type MorphSearch, type MorphSearchDeps, type MorphStepHit, type Prepared, type SoundNote } from './morph-search.ts'
+export type { MissReason, MorphAlignment } from './morph-explain.ts'
 export { DERIVATION_MAX_COST, isVirtualRootShape, lexicalEdgeCost, soundOf, virtualRootCost, virtualRoots, type VirtualRoot } from './virtual-roots.ts'
 export { expandGrammar, isGrammarSpec, validateGrammar, type GrammarSpec } from './grammar.ts'
 export { roundCost, EPSILON } from './dp.ts'

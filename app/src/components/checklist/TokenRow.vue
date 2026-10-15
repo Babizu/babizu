@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 /**
  * 檢查清單：例句中沒有辭典條目的一個詞。
  *
@@ -6,20 +6,21 @@
  * 模糊命中可以點開看對齊、構詞命中可以點開看拆解），以及依最接近的詞條猜的類別。
  * 兩欄並列，校對者一眼就能判斷它只是方言變體、沒被列出的加綴派生，還是真的缺條目。
  */
-import { computed } from 'vue'
+import { computed, type PropType } from 'vue'
+import type { WorkerResult } from '@/services/search-client.ts'
 import DialectBadge from '@/components/common/DialectBadge.vue'
 import HighlightText from '@/components/common/HighlightText.vue'
 import MetaTag from '@/components/common/MetaTag.vue'
 import HitTags from '@/components/search/HitTags.vue'
-import { useSources } from '@/composables/useSources.js'
-import { t } from '@/i18n.js'
-import { formatCount, recordRoute } from '@/lib/labels.js'
-import { vCardLink } from '@/lib/card-link.js'
-import { TOKEN_KINDS } from './kinds.js'
+import { useSources } from '@/composables/useSources.ts'
+import { t } from '@/i18n.ts'
+import { formatCount, recordRoute } from '@/lib/labels.ts'
+import { vCardLink } from '@/lib/card-link.ts'
+import { TOKEN_KINDS } from './kinds.ts'
 
 const props = defineProps({
   /** Checklist.tokenPage 的一項 */
-  item: { type: Object, required: true },
+  item: { type: Object as PropType<WorkerResult<'checklistTokens'>['items'][number]>, required: true },
 })
 
 const { shortTitle } = useSources()

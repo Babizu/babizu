@@ -1,25 +1,27 @@
-<script setup>
+<script setup lang="ts">
 /**
  * 溯源卡：這筆資料來自哪裡、在來源中的位置、原始出處人、校對狀態，
  * 並可開啟原書掃描頁、複製引用、到來源中瀏覽前後文。
  */
 import { BookOpenIcon, CopyIcon, FileImageIcon, ListTreeIcon } from '@lucide/vue'
-import { computed, ref } from 'vue'
+import type { CorpusRecord } from '@babizu/schema/types.ts'
+import { computed, ref, type PropType } from 'vue'
+import type { SourceInfo } from '@/services/data.ts'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { toast } from '@/components/ui/sonner'
 import StatusBadge from '@/components/common/StatusBadge.vue'
-import { t } from '@/i18n.js'
-import { formatTimecode, shardUnitLabel } from '@/lib/labels.js'
+import { t } from '@/i18n.ts'
+import { formatTimecode, shardUnitLabel } from '@/lib/labels.ts'
 import ScanViewer from './ScanViewer.vue'
 
 const props = defineProps({
   /** 標準記錄 */
-  record: { type: Object, required: true },
+  record: { type: Object as PropType<CorpusRecord>, required: true },
   /** 來源後設資料（useSources 的一筆） */
-  source: { type: Object, default: null },
+  source: { type: Object as PropType<SourceInfo | null>, default: null },
   /** 記錄所在分片的鍵與名稱 */
-  shard: { type: Object, required: true },
+  shard: { type: Object as PropType<{ key: string; label: string }>, required: true },
 })
 
 const scanOpen = ref(false)
@@ -28,9 +30,8 @@ const citation = computed(() => props.record.citation)
 /** 以「欄位名稱：值」列出所有有值的位置資訊 */
 const rows = computed(() => {
   const c = citation.value
-  /** @type {Array<[string, string]>} */
-  const out = []
-  if (c.pages?.length) out.push([t('頁碼'), c.pages.map((/** @type {number} */ p) => `p.${p}`).join('–')])
+  const out: Array<[string, string]> = []
+  if (c.pages?.length) out.push([t('頁碼'), c.pages.map((p) => `p.${p}`).join('–')])
   else if (c.page !== null) out.push([t('頁碼'), `p.${c.page}`])
   if (c.code) out.push([t('編號'), c.code])
   if (c.row !== null) out.push([t('列號'), t('第 {row} 列', { row: c.row })])

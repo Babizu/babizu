@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 /**
  * 檢查清單：人工拆解與句型搜尋的構詞樣式不一致的一筆記錄（babizu/search 的 Checklist.segmentationPage）。
  *
@@ -6,34 +6,35 @@
  * 搜尋比不比得到（✓ 比到、✗ 漏、? 規格沒有），搜尋比到、拆解沒有的詞綴（誤配），以及搜尋依這個模糊程度
  * 取到的拆法（比對的就是這些）。詞綴可以點，直接以那個構詞樣式搜尋。
  */
-import { computed } from 'vue'
+import { computed, type PropType } from 'vue'
+import type { WorkerResult } from '@/services/search-client.ts'
 import MetaTag from '@/components/common/MetaTag.vue'
-import { useSources } from '@/composables/useSources.js'
-import { msg, t } from '@/i18n.js'
-import { formatDistance, morphSummary, recordRoute } from '@/lib/labels.js'
+import { useSources } from '@/composables/useSources.ts'
+import { msg, t } from '@/i18n.ts'
+import { formatDistance, morphSummary, recordRoute } from '@/lib/labels.ts'
 import { cn } from '@/lib/utils'
 
 const props = defineProps({
   /** Checklist.segmentationPage 的一項 */
-  item: { type: Object, required: true },
+  item: { type: Object as PropType<NonNullable<WorkerResult<'checklistSegmentations'>>['items'][number]>, required: true },
   /** 比對用的模糊程度（點詞綴搜尋時沿用） */
   fuzziness: { type: String, default: 'normal' },
 })
 
 const { shortTitle } = useSources()
 
-/** 以構詞樣式搜尋（模糊程度與這份對照相同） @param {string} query */
-const searchRoute = (query) => ({ name: 'search', query: { q: query, ...(props.fuzziness === 'normal' ? {} : { fz: props.fuzziness }) } })
+/** 以構詞樣式搜尋（模糊程度與這份對照相同） */
+const searchRoute = (query: string) => ({ name: 'search', query: { q: query, ...(props.fuzziness === 'normal' ? {} : { fz: props.fuzziness }) } })
 
-/** 拆解中的詞綴的寫法（與構詞樣式相同的符號） @param {{type: string, form: string}} a */
-const affixText = (a) => (a.type === 'prefix' ? `${a.form}-` : a.type === 'suffix' ? `-${a.form}` : `<${a.form}>`)
+/** 拆解中的詞綴的寫法（與構詞樣式相同的符號） */
+const affixText = (a: { type: string; form: string }) => (a.type === 'prefix' ? `${a.form}-` : a.type === 'suffix' ? `-${a.form}` : `<${a.form}>`)
 
 const STATUS = {
   match: { glyph: '✓', label: msg('比到'), class: 'text-muted-foreground' },
   miss: { glyph: '✗', label: msg('漏'), class: 'border-destructive/40 text-destructive' },
   unknown: { glyph: '?', label: msg('規格沒有'), class: 'text-muted-foreground border-dashed' },
 }
-const affixes = computed(() => props.item.affixes.map((/** @type {any} */ a) => ({ ...a, text: affixText(a), status: STATUS[/** @type {keyof typeof STATUS} */ (a.status)] })))
+const affixes = computed(() => props.item.affixes.map((a) => ({ ...a, text: affixText(a), status: STATUS[a.status] })))
 const CHIP = 'inline-flex min-h-8 items-center gap-1 rounded-sm border px-2 text-sm'
 </script>
 

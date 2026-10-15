@@ -1,20 +1,22 @@
-<script setup>
+<script setup lang="ts">
 /**
  * 對齊結果：最佳路徑的每一步，上方是查詢片段、下方是候選片段。
  * 操作類型以符號為主、顏色為輔（docs/lab-design.md 第 2 節），色盲或黑白列印也能分辨。
  */
-import { t } from '@/i18n.js'
-import { categoryLabel, formatDistance, opLabel } from '@/lib/labels.js'
+import type { AlignmentStep } from '#bcdp'
+import type { PropType } from 'vue'
+import { t } from '@/i18n.ts'
+import { categoryLabel, formatDistance, opLabel } from '@/lib/labels.ts'
 
 defineProps({
   /** explain().alignment */
-  steps: { type: Array, required: true },
+  steps: { type: Array as PropType<AlignmentStep[]>, required: true },
   /** 不顯示圖例（同一頁有多條對齊時只顯示一次） */
   compact: { type: Boolean, default: false },
 })
 
 /** 各操作的符號與底色（語意 token） */
-const OPS = {
+const OPS: Record<AlignmentStep['op'], { symbol: string; cls: string }> = {
   match: { symbol: '＝', cls: 'border bg-card text-foreground' },
   rule: { symbol: '≈', cls: 'bg-accent text-accent-foreground' },
   substitute: { symbol: '≠', cls: 'bg-op-substitute text-op-substitute-foreground' },

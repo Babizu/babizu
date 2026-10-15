@@ -3,7 +3,7 @@
  * 以及給演算法實驗室逐步展示的中間結果（explain）。
  */
 
-import type { SegmentOptions, WeightedEditDistance } from './distance.ts'
+import type { Explanation, SegmentOptions, WeightedEditDistance } from './distance.ts'
 import { roundCost } from './dp.ts'
 import { FuzzyIndex, type NodeVisit } from './fuzzy-index.ts'
 import { finish } from './morph-finish.ts'
@@ -17,6 +17,23 @@ export interface Segment {
   type: 'prefix' | 'stem' | 'suffix'
   form: string
 }
+
+/** 指定的詞根命中時，整個詞的對齊（explain 的 alignment；∞ 寫成 null） */
+export interface MorphAlignment {
+  /** 還原變體的字元 */
+  query: string[]
+  /** 詞素：前綴、詞幹、後綴（length 是字元數） */
+  segments: Array<{ type: Segment['type']; form: string; length: number }>
+  /** 詞素交界在詞上的位置 */
+  junctions: number[]
+  distance: number
+  matrix: Array<Array<number | null>>
+  path: Explanation['path']
+  steps: Explanation['alignment']
+}
+
+/** 指定的詞根不在命中裡的原因 */
+export type MissReason = 'same' | 'short' | 'spread' | 'bound'
 
 /**
  * 命中的完整說明：整個詞的聯合對齊（metric.explainSegments），各詞素依序接起來，
@@ -82,7 +99,7 @@ export function explain(ctx: MorphContext, query: string, term: string | null = 
   const chars = Array.from(query)
   const params = { maxSteps: spec.maxSteps, minStem: spec.minStem, lemmaSpread: spec.lemmaSpread, maxDistance }
   const prepared = prepare(ctx, query, maxDistance)
-  if (!prepared) return { query, chars, params, tooShort: true as const, term, reason: term === null ? null : 'short' }
+  if (!prepared) return { query, chars, params, tooShort: true as const, term, reason: term === null ? null : ('short' as MissReason) }
   const walks: NodeVisit[][] = prepared.channels.map(() => [])
   seed(ctx, prepared)
   const results = index.searchChannels(prepared.channels.map((ch, c) => ({ query: ch.query, options: { ...ch.options, onNode: (e: NodeVisit) => walks[c].push(e) } })))
@@ -92,9 +109,9 @@ export function explain(ctx: MorphContext, query: string, term: string | null = 
   const rowOf = (row: ArrayLike<number>) => Array.from(row, finite)
 
   let hit: MorphHit | null = null
-  let alignment: Record<string, unknown> | null = null
+  let alignment: MorphAlignment | null = null
   /** 找不到 term 的原因 */
-  let reason: string | null = null
+  let reason: MissReason | null = null
   if (term !== null) {
     hit = hits.find((h) => h.term === term) ?? null
     if (hit) {

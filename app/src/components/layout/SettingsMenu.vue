@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 /**
  * 設定：外觀（淺色、深色、跟隨系統）與介面語言，收在頁首的一個按鈕裡。
  * 兩者都是少數幾個互斥的選項，用分段按鈕（ToggleGroup）一眼看完，不用下拉選單。
@@ -7,8 +7,8 @@ import { MonitorIcon, MoonIcon, Settings2Icon, SunIcon } from '@lucide/vue'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
-import { useTheme } from '@/composables/useTheme.js'
-import { msg, useI18n } from '@/i18n.js'
+import { useTheme } from '@/composables/useTheme.ts'
+import { msg, useI18n } from '@/i18n.ts'
 
 const { mode, setMode } = useTheme()
 const { t, locale, locales, localeNames, setLocale } = useI18n()
@@ -19,13 +19,12 @@ const THEMES = [
   { value: 'auto', icon: MonitorIcon, labelKey: msg('跟隨系統') },
 ]
 
-/** ToggleGroup 再按一次同一項會送出空值：保持原選擇 @param {unknown} value */
-const onTheme = (value) => {
-  if (value) setMode(/** @type {'light' | 'dark' | 'auto'} */ (value))
+/** ToggleGroup 再按一次同一項會送出空值：保持原選擇 */
+const onTheme = (value: unknown) => {
+  if (value) setMode(value as 'light' | 'dark' | 'auto')
 }
-/** @param {unknown} value */
-const onLocale = (value) => {
-  if (value) setLocale(/** @type {string} */ (value))
+const onLocale = (value: unknown) => {
+  if (value) setLocale(value as string)
 }
 </script>
 

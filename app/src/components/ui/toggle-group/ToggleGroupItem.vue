@@ -1,18 +1,22 @@
 <!-- shadcn-vue new-york-v4 元件的 JavaScript 版（以 reka-ui 為基礎）。修改樣式時請保持與其他元件一致。 -->
-<script setup>
+<script setup lang="ts">
 import { ToggleGroupItem } from 'reka-ui'
 import { inject } from 'vue'
 import { cn } from '@/lib/utils'
-import { toggleVariants } from '.'
+import { TOGGLE_GROUP, toggleVariants } from '.'
 
 defineOptions({ inheritAttrs: false })
-const props = defineProps({ class: { type: null, default: undefined } })
-const context = inject('toggleGroup', { variant: 'default', size: 'default' })
+const props = defineProps({
+  value: { type: [String, Number], required: true },
+  class: { type: null, default: undefined },
+})
+const context = inject(TOGGLE_GROUP, { variant: 'default', size: 'default' })
 </script>
 
 <template>
   <ToggleGroupItem
     v-bind="$attrs"
+    :value="props.value"
     data-slot="toggle-group-item"
     :data-variant="context.variant"
     :data-size="context.size"

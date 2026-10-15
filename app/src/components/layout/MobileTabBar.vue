@@ -1,16 +1,15 @@
-<script setup>
+<script setup lang="ts">
 /**
  * 行動裝置底部分頁列：拇指可及的主要導覽。桌面（md 以上）隱藏。
  */
 import { useRoute } from 'vue-router'
-import { useI18n } from '@/i18n.js'
-import { NAV_ITEMS } from './nav.js'
+import { useI18n } from '@/i18n.ts'
+import { NAV_ITEMS } from './nav.ts'
 
 const route = useRoute()
 const { t } = useI18n()
 
-/** @param {string} name */
-const isActive = (name) =>
+const isActive = (name: string) =>
   route.name === name ||
   (name === 'sources' && route.name === 'browse') ||
   (name === 'search' && route.name === 'record')

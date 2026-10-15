@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 /**
  * 詞條家族中的一個子項目（詞形、例句、另立的衍生詞條），比詞條列精簡：
  * 出處與詞條相同，不再重複；另立條目只標「另立條目」，出處放在提示中。
@@ -10,20 +10,20 @@
  * - 以詞根身分命中的列（辭典標註它衍生自查詢的詞根）不加命中標籤：
  *   那是詞根命中的連帶結果，說明已經在詞條那一列，樹狀排列也看得出它屬於哪個詞根
  */
-import { computed } from 'vue'
+import type { EntryNode } from '@babizu/search/index.ts'
+import { computed, type PropType } from 'vue'
 import AudioButton from '@/components/common/AudioButton.vue'
 import DialectBadge from '@/components/common/DialectBadge.vue'
 import MetaTag from '@/components/common/MetaTag.vue'
-import { t } from '@/i18n.js'
-import { displayHit } from '@/lib/entry-groups.js'
-import { recordRoute, unitLabel } from '@/lib/labels.js'
-import { vCardLink } from '@/lib/card-link.js'
+import { t } from '@/i18n.ts'
+import { displayHit } from '@/lib/entry-groups.ts'
+import { recordRoute, unitLabel } from '@/lib/labels.ts'
+import { vCardLink } from '@/lib/card-link.ts'
 import { DICTIONARY_KINDS } from '@babizu/search/scoring.ts'
 import HitTags from './HitTags.vue'
 
 const props = defineProps({
-  /** EntryNode：{ doc, hit, also, children } */
-  node: { type: Object, required: true },
+  node: { type: Object as PropType<EntryNode>, required: true },
   query: { type: String, default: '' },
 })
 
@@ -31,7 +31,7 @@ const doc = computed(() => props.node.doc)
 const hit = computed(() => displayHit(props.node))
 // 經由辭典構詞關係命中的子項目不加標籤：樹狀排列已經看得出關係
 const showTags = computed(() => hit.value !== null && !DICTIONARY_KINDS.has(hit.value.kind))
-const exact = computed(() => showTags.value && hit.value.matchType === 'fuzzy' && hit.value.distance === 0)
+const exact = computed(() => showTags.value && hit.value?.matchType === 'fuzzy' && hit.value.distance === 0)
 const showUnit = computed(() => doc.value.unit !== 'word' && doc.value.unit !== 'sentence')
 </script>
 
@@ -49,7 +49,7 @@ const showUnit = computed(() => doc.value.unit !== 'word' && doc.value.unit !== 
         <DialectBadge v-for="d in doc.dialects" :key="d" :dialect="d" />
         <MetaTag v-if="showUnit">{{ unitLabel(doc.unit) }}</MetaTag>
         <MetaTag v-if="exact" variant="soft">{{ t('完全相符') }}</MetaTag>
-        <HitTags v-else-if="showTags" :hit="hit" :query="query" :show-root-kind="false" />
+        <HitTags v-else-if="showTags && hit" :hit="hit" :query="query" :show-root-kind="false" />
         <MetaTag v-if="doc.role === 'head'" :title="doc.citation">{{ t('另立條目') }}</MetaTag>
         <!-- 寫法相同、另立的條目：標籤本身是連結，點了進入那個條目 -->
         <RouterLink

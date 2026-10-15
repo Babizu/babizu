@@ -345,7 +345,7 @@ v0.9.2 拆解表收下同分的其他讀法，召回每一級都提高，新增�
 ## 6. 錯誤與提示
 
 剖析與解析的錯誤丟出 `PatternError`（代碼、在查詢中的範圍、參數），搜尋回應的 `error` 帶著它，不丟出例外。
-引擎在 Web Worker 中不能翻譯，代碼的說明文字在介面（`app/src/lib/pattern.js`），依介面語系顯示。代碼一覽見 `src/pattern/errors.js`。
+引擎在 Web Worker 中不能翻譯，代碼的說明文字在介面（`app/src/lib/pattern.ts`），依介面語系顯示。代碼一覽見 `src/pattern/errors.js`。
 
 | 代碼 | 情形 |
 |---|---|

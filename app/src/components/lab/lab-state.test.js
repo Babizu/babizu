@@ -5,7 +5,7 @@
 import { createSearchMetric, createTextTools } from '@babizu/search/text.ts'
 import site from 'virtual:babizu/site'
 import { describe, expect, it } from 'vitest'
-import { createLabState } from './lab-state.js'
+import { createLabState } from './lab-state.ts'
 
 /** 取自設定檔規則的字母，加上空白與體例符號，讓隨機詞對常常碰到規則、邊界與正規化 */
 const ALPHABET = ['a', 'e', 'i', 'u', 'o', 'r', 'l', 'n', 'g', 'x', 'h', 'k', 'd', 'z', 's', 't', "'", ' ', '-']

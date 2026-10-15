@@ -1,62 +1,73 @@
-<script setup>
+<script setup lang="ts">
 /**
  * 語詞索引（KWIC，key word in context）：每個命中區間一列，左文靠右、命中置中、右文靠左，
  * 對齊之後一眼看得出同一個句型前後接了什麼。可以依左邊或右邊緊鄰的詞排序（語料庫查詢工具的慣例）。
  * 窄螢幕（< sm）改成一般的一行文字，命中的部分加粗。
  */
-import { computed, ref } from 'vue'
+import type { DocSummary } from '@babizu/search/index.ts'
+import type { PatternHit } from '@babizu/pattern/index.ts'
+import { computed, ref, type PropType } from 'vue'
 import { Button } from '@/components/ui/button'
-import { t } from '@/i18n.js'
-import { formatCount, recordRoute } from '@/lib/labels.js'
-import { KWIC_SORTS } from '@/lib/pattern.js'
+import { t } from '@/i18n.ts'
+import { formatCount, recordRoute } from '@/lib/labels.ts'
+import { KWIC_SORTS } from '@/lib/pattern.ts'
 
 const props = defineProps({
-  /** babizu/pattern 的 PatternHit[]（已依頻率表的篩選過濾） */
-  hits: { type: Array, required: true },
+  /** 已依頻率表的篩選過濾 */
+  hits: { type: Array as PropType<PatternHit[]>, required: true },
 })
 /** 排序方式（KWIC_SORTS 的 key） */
-const sort = defineModel('sort', { type: String, default: 'position' })
+const sort = defineModel<string>('sort', { default: 'position' })
 
 const STEP = 100
 /** 左右各留多少字元（在詞的邊界截斷） */
 const CONTEXT_CHARS = 48
 const limit = ref(STEP)
 
-/** @param {string} s */
-const leftContext = (s) => {
+const leftContext = (s: string) => {
   if (s.length <= CONTEXT_CHARS) return s
   const cut = s.slice(-CONTEXT_CHARS)
   const space = cut.indexOf(' ')
   return `…${space >= 0 ? cut.slice(space + 1) : cut}`
 }
-/** @param {string} s */
-const rightContext = (s) => {
+const rightContext = (s: string) => {
   if (s.length <= CONTEXT_CHARS) return s
   const cut = s.slice(0, CONTEXT_CHARS)
   const space = cut.lastIndexOf(' ')
   return `${space >= 0 ? cut.slice(0, space) : cut}…`
 }
 
+/** 語詞索引的一列 */
+interface KwicLine {
+  id: string
+  doc: DocSummary
+  left: string
+  match: string
+  right: string
+  /** 排序鍵：左右緊鄰的詞、命中的詞 */
+  keys: { left: string; right: string; match: string }
+}
+
 const lines = computed(() => {
-  const out = []
-  for (const h of /** @type {any[]} */ (props.hits)) {
+  const out: KwicLine[] = []
+  for (const h of props.hits) {
     for (const m of h.matches) {
       if (m.cond !== 0) continue
-      const text = /** @type {string} */ (h.doc.text)
+      const text = h.doc.text
       out.push({
         id: `${h.doc.id}:${m.start}`,
         doc: h.doc,
         left: leftContext(text.slice(0, m.start)),
         match: text.slice(m.start, m.end),
         right: rightContext(text.slice(m.end)),
-        keys: { left: m.left[0] ?? '', right: m.right[0] ?? '', match: m.cells.map((/** @type {any} */ c) => c.key).join(' ') },
+        keys: { left: m.left[0] ?? '', right: m.right[0] ?? '', match: m.cells.map((c) => c.key).join(' ') },
       })
     }
   }
   if (sort.value === 'position') return out
-  const k = /** @type {'left' | 'right' | 'match'} */ (sort.value)
+  const k = sort.value as 'left' | 'right' | 'match'
   // 沒有鄰詞（在句首或句尾）的排在最後
-  return [...out].sort((a, b) => (a.keys[k] === '') - (b.keys[k] === '') || a.keys[k].localeCompare(b.keys[k]) || a.keys.match.localeCompare(b.keys.match))
+  return [...out].sort((a, b) => Number(a.keys[k] === '') - Number(b.keys[k] === '') || a.keys[k].localeCompare(b.keys[k]) || a.keys.match.localeCompare(b.keys.match))
 })
 </script>
 

@@ -8,7 +8,7 @@ import { loadSiteConfig, missingMessages, unusedMessages, type ResolvedSite } fr
 import { prepareSiteData } from './prepare.ts'
 import { createViteConfig } from './vite.ts'
 
-export { defineSite, loadSiteConfig, localize, missingMessages, unusedMessages, varietyColors, type Localized, type ResolvedSite, type SiteConfigInput, type VarietyConfig } from './config.ts'
+export { defineSite, loadSiteConfig, localize, missingMessages, unusedMessages, varietyColors, type ClientSite, type Localized, type ResolvedSite, type SiteConfigInput, type VarietyConfig } from './config.ts'
 export { extractMessages } from './extract-messages.ts'
 export { prepareSiteData, SITE_DATA_VERSION } from './prepare.ts'
 export { createViteConfig, varietyCss } from './vite.ts'

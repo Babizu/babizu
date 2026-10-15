@@ -1,13 +1,14 @@
 <!-- shadcn-vue new-york-v4 元件的 JavaScript 版（以 reka-ui 為基礎）。修改樣式時請保持與其他元件一致。 -->
-<script setup>
+<script setup lang="ts">
 import { XIcon } from '@lucide/vue'
 import { DialogClose, DialogContent, DialogOverlay, DialogPortal } from 'reka-ui'
+import type { PropType } from 'vue'
 import { cn } from '@/lib/utils'
 
 defineOptions({ inheritAttrs: false })
 const props = defineProps({
   class: { type: null, default: undefined },
-  side: { type: String, default: 'right' },
+  side: { type: String as PropType<'right' | 'left' | 'top' | 'bottom'>, default: 'right' },
 })
 
 const SIDES = {

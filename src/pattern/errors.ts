@@ -2,7 +2,7 @@
  * @file 句型查詢的錯誤與提示。
  *
  * 引擎在 Web Worker 中執行，不能呼叫介面的翻譯函式 t()，所以這裡只定義**代碼、位置與參數**；
- * 顯示給讀者的文字由介面依代碼翻譯（app/src/lib/pattern.js）。代碼的意思寫在下面的清單，
+ * 顯示給讀者的文字由介面依代碼翻譯（app/src/lib/pattern.ts）。代碼的意思寫在下面的清單，
  * 規格見 docs/pattern-query.md 第 6 節。
  */
 

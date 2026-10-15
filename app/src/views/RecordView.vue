@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 /**
  * 詞條頁：一筆記錄的完整資訊。
  *
@@ -10,6 +10,8 @@
  */
 import { ArrowLeftIcon, FileQuestionIcon } from '@lucide/vue'
 import { useMediaQuery } from '@vueuse/core'
+import type { CorpusGroup, CorpusRecord } from '@babizu/schema/types.ts'
+import type { EntryHit } from '@babizu/search/index.ts'
 import { computed, ref, shallowRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AudioButton from '@/components/common/AudioButton.vue'
@@ -22,12 +24,13 @@ import InterlinearGloss from '@/components/record/InterlinearGloss.vue'
 import NeighborList from '@/components/record/NeighborList.vue'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { useSearchIndex } from '@/composables/useSearchIndex.js'
-import { useSources } from '@/composables/useSources.js'
-import { pageTitle } from '@/composables/usePageTitle.js'
-import { t } from '@/i18n.js'
-import { recordRoute, roleLabel, unitLabel, writingSystemLabel } from '@/lib/labels.js'
-import { loadShard } from '@/services/data.js'
+import { useSearchIndex } from '@/composables/useSearchIndex.ts'
+import { useLatestRequest } from '@/composables/useLatestRequest.ts'
+import { useSources } from '@/composables/useSources.ts'
+import { pageTitle } from '@/composables/usePageTitle.ts'
+import { t } from '@/i18n.ts'
+import { playableAudio, recordRoute, roleLabel, unitLabel, writingSystemLabel } from '@/lib/labels.ts'
+import { loadShard } from '@/services/data.ts'
 
 const route = useRoute()
 const router = useRouter()
@@ -38,37 +41,33 @@ const id = computed(() => `${route.params.source}:${route.params.localId}`)
 /** 桌面把出處卡放側欄，行動裝置放在內容中間（只渲染一份） */
 const isDesktop = useMediaQuery('(min-width: 1024px)')
 
-/** @type {import('vue').ShallowRef<any>} */
-const record = shallowRef(null)
-/** @type {import('vue').ShallowRef<any>} */
-const group = shallowRef(null)
-/** @type {import('vue').ShallowRef<any[]>} */
-const groupRecords = shallowRef([])
-/** @type {import('vue').ShallowRef<{key: string, label: string} | null>} */
-const shard = shallowRef(null)
-/** @type {import('vue').ShallowRef<any[] | null>} */
-const neighbors = shallowRef(null)
-/** @type {import('vue').ShallowRef<Array<{id: string, text: string, type: string}>>} */
-const related = shallowRef([])
-const status = ref(/** @type {'loading' | 'ready' | 'not-found' | 'error'} */ ('loading'))
+const record = shallowRef<CorpusRecord | null>(null)
+const group = shallowRef<CorpusGroup | null>(null)
+const groupRecords = shallowRef<CorpusRecord[]>([])
+const shard = shallowRef<{ key: string; label: string } | null>(null)
+const neighbors = shallowRef<EntryHit[] | null>(null)
+const related = shallowRef<Array<{ id: string; text: string; type: string }>>([])
+const status = ref<'loading' | 'ready' | 'not-found' | 'error'>('loading')
 const errorMessage = ref('')
 
+const latest = useLatestRequest()
 watch(
   id,
   async (currentId) => {
+    const isCurrent = latest.start()
     status.value = 'loading'
     neighbors.value = null
     related.value = []
     try {
       load()
       const doc = await client.docById(currentId)
-      if (currentId !== id.value) return
+      if (!isCurrent()) return
       if (!doc) {
         status.value = 'not-found'
         return
       }
       const data = await loadShard(doc.source, doc.shard)
-      if (currentId !== id.value) return
+      if (!isCurrent()) return
       const found = data.records.find((r) => r.id === currentId)
       if (!found) {
         status.value = 'not-found'
@@ -76,8 +75,9 @@ watch(
       }
       record.value = found
       shard.value = { key: data.shard, label: data.label }
-      group.value = found.group ? (data.groups.find((g) => g.id === found.group.id) ?? null) : null
-      groupRecords.value = found.group ? data.records.filter((r) => r.group?.id === found.group.id) : [found]
+      const groupId = found.group?.id
+      group.value = groupId ? (data.groups.find((g) => g.id === groupId) ?? null) : null
+      groupRecords.value = groupId ? data.records.filter((r) => r.group?.id === groupId) : [found]
       status.value = 'ready'
       // 分頁標題用詞形，分享連結、書籤與瀏覽紀錄才認得出是哪一筆
       pageTitle.value = found.text
@@ -86,21 +86,21 @@ watch(
       // 失敗時要落到「空」而不是一直停在 null，否則相近詞區塊會永遠顯示載入骨架。
       client
         .neighbors(currentId)
-        .catch(() => [])
+        .catch((): EntryHit[] => [])
         .then((hits) => {
-          if (currentId === id.value) neighbors.value = hits
+          if (isCurrent()) neighbors.value = hits
         })
       Promise.all(
-        found.related.map(async (/** @type {any} */ link) => {
+        found.related.map(async (link) => {
           const target = await client.docById(link.target).catch(() => null)
           return { id: link.target, text: target?.text ?? link.target, type: link.type }
         }),
       ).then((list) => {
-        if (currentId === id.value) related.value = list
+        if (isCurrent()) related.value = list
       })
     } catch (e) {
       // 使用者已經切到別筆就不要用舊請求的錯誤蓋掉新頁面
-      if (currentId !== id.value) return
+      if (!isCurrent()) return
       errorMessage.value = e instanceof Error ? e.message : String(e)
       status.value = 'error'
     }
@@ -109,7 +109,7 @@ watch(
 )
 
 const source = computed(() => (record.value ? (sourcesById.value.get(record.value.source) ?? null) : null))
-const audio = computed(() => record.value?.media.find((/** @type {any} */ m) => m.type === 'audio' && m.available))
+const audio = computed(() => (record.value ? playableAudio(record.value) : null))
 const morphology = computed(() => record.value?.morphology)
 const hasMorphology = computed(
   () =>

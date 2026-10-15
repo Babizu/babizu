@@ -1,12 +1,12 @@
-<script setup>
+<script setup lang="ts">
 /**
  * 「關於」頁的句型搜尋說明（錨點 #pattern）：寫法一覽、比對規則與可以點的例子。
  * 框架不寫死任何語言的詞，表中用「詞」「詞綴」等代稱；實際的例子來自站台設定 patternExamples。
  * 語言設定檔沒有構詞規格時，構詞樣式的幾列不顯示。完整規格見 docs/pattern-query.md。
  */
 import { computed } from 'vue'
-import { t, tr } from '@/i18n.js'
-import { site } from '@/lib/labels.js'
+import { t, tr } from '@/i18n.ts'
+import { site } from '@/lib/labels.ts'
 
 const hasMorphology = Boolean(site.profile?.morphology)
 

@@ -1,18 +1,18 @@
-<script setup>
+<script setup lang="ts">
 /**
  * 搜尋結果中的一個詞條家族：辭典已經確認屬於同一個詞條的命中排在一起。
  * 詞條（家族的代表，通常是詞根）固定在最上面，底下依辭典的上下層關係縮排列出命中的詞形、例句與另立的衍生詞條。
  * 只有一筆時與一般的詞條列相同；寫法完全相同的一組單獨結果（group.spelling）顯示成同形詞組。
  */
-import { computed } from 'vue'
-import { displayHit, isSingle } from '@/lib/entry-groups.js'
+import type { EntryGroup } from '@babizu/search/index.ts'
+import { computed, type PropType } from 'vue'
+import { displayHit, isSingle } from '@/lib/entry-groups.ts'
 import EntryHitItem from './EntryHitItem.vue'
 import EntryTree from './EntryTree.vue'
 import SpellingSetItem from './SpellingSetItem.vue'
 
 const props = defineProps({
-  /** search 引擎的 EntryGroup：{ root, best, hits } */
-  group: { type: Object, required: true },
+  group: { type: Object as PropType<EntryGroup>, required: true },
   query: { type: String, default: '' },
 })
 

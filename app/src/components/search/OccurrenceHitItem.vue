@@ -1,26 +1,26 @@
-<script setup>
+<script setup lang="ts">
 /**
  * 搜尋結果：查詢詞出現在其中的例句或語料句，命中的詞以高亮標示。
  * 每個查詢詞怎麼命中這一句用與詞條相同的標籤（HitTags）說明：模糊對齊、自動拆解、自動派生（演算法推定），
  * 或「確定拆解／派生／同根」（句中的詞與查詢有辭典標註的構詞關係）。多詞查詢時每組標籤前面寫出句中命中的詞。
  */
-import { computed } from 'vue'
+import type { OccurrenceHit } from '@babizu/search/index.ts'
+import { computed, type PropType } from 'vue'
 import AudioButton from '@/components/common/AudioButton.vue'
 import DialectBadge from '@/components/common/DialectBadge.vue'
 import HighlightText from '@/components/common/HighlightText.vue'
-import { recordRoute } from '@/lib/labels.js'
-import { vCardLink } from '@/lib/card-link.js'
+import { recordRoute } from '@/lib/labels.ts'
+import { vCardLink } from '@/lib/card-link.ts'
 import HitTags from './HitTags.vue'
 import ResultCitation from './ResultCitation.vue'
 
 const props = defineProps({
-  /** search-core 的 OccurrenceHit */
-  hit: { type: Object, required: true },
+  hit: { type: Object as PropType<OccurrenceHit>, required: true },
 })
 
 const doc = computed(() => props.hit.doc)
-/** 各查詢詞的命中；舊版的回應沒有 matches 時只顯示命中方式 */
-const matches = computed(() => props.hit.matches ?? [{ word: '', term: '', token: '', kind: 'token', matchType: props.hit.matchType, distance: 0 }])
+/** 各查詢詞的命中 */
+const matches = computed(() => props.hit.matches)
 </script>
 
 <template>

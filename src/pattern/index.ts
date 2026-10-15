@@ -11,7 +11,19 @@ export { parsePattern } from './parser.ts'
 export { findMatches, matchesAnywhere } from './match.ts'
 export { segmentText, MAX_READINGS } from './sentences.ts'
 export { createPatternMorphology, PARSE_SELECTION, readingOfSteps, satisfies, selectParses, stepMorphs } from './morph.ts'
-export { PatternSearch, PATTERN_GROUPS, MAX_MATCHES, TIME_BUDGET_MS } from './search.ts'
+export {
+  PatternSearch,
+  PATTERN_GROUPS,
+  MAX_MATCHES,
+  TIME_BUDGET_MS,
+  type PatternCell,
+  type PatternEvidence,
+  type PatternGroupKey,
+  type PatternHit,
+  type PatternMatch,
+  type PatternResponse,
+  type PatternSearchOptions,
+} from './search.ts'
 export {
   PatternError,
   PATTERN_ERRORS,

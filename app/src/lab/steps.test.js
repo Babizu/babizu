@@ -1,5 +1,5 @@
 /**
- * 演算法實驗室的步驟模型（src/fuzzy/steps.js）：步數與說明結果一致、最後一步的狀態等於正式實作的結果、
+ * 演算法實驗室的步驟模型（app/src/lab/steps.ts）：步數與說明結果一致、最後一步的狀態等於正式實作的結果、
  * 狀態只由步驟序號決定（可以任意跳）、每個說明都有英文譯文。
  */
 
@@ -7,11 +7,11 @@ import { describe, expect, it } from 'vitest'
 import en from '../../../locales/en.json' with { type: 'json' }
 import { createAnalyzer, createMorphSearch, FuzzyIndex, REDUPLICATION_PATTERNS, RuleSet, WeightedEditDistance } from '#bcdp'
 import { alternationRules } from '#bcdp'
-import { bcdpStateAt, bcdpSteps, dawgStateAt, dawgSteps, DISTANCE_PARAMS, dpStateAt, dpSteps } from './steps.js'
+import { bcdpStateAt, bcdpSteps, dawgStateAt, dawgSteps, DISTANCE_PARAMS, dpStateAt, dpSteps } from './steps.ts'
 import { sourceText } from '@babizu/site/messages.ts'
 import { createRandom, pick, randomString } from '../../../packages/bcdp/test/helpers.js'
 
-/** 說明（中文原文）有英文譯文，文字中的 {參數} 都由步驟提供 @param {import('./steps.js').Step} step */
+/** 說明（中文原文）有英文譯文，文字中的 {參數} 都由步驟提供 @param {import('./steps.ts').Step} step */
 function expectNote(step) {
   for (const text of [sourceText(step.note.key), /** @type {Record<string, string>} */ (en)[step.note.key]]) {
     expect(typeof text, step.note.key).toBe('string')

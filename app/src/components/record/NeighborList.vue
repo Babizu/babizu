@@ -1,17 +1,19 @@
-<script setup>
+<script setup lang="ts">
 /**
  * 跨來源相近詞：其他來源、其他方言中拼寫相近的詞條，附距離與規則說明。
  */
+import type { EntryHit } from '@babizu/search/index.ts'
+import type { PropType } from 'vue'
 import DialectBadge from '@/components/common/DialectBadge.vue'
 import MatchExplanation from '@/components/common/MatchExplanation.vue'
-import { useSources } from '@/composables/useSources.js'
-import { recordRoute } from '@/lib/labels.js'
-import { vCardLink } from '@/lib/card-link.js'
-import { t } from '@/i18n.js'
+import { useSources } from '@/composables/useSources.ts'
+import { recordRoute } from '@/lib/labels.ts'
+import { vCardLink } from '@/lib/card-link.ts'
+import { t } from '@/i18n.ts'
 
 defineProps({
-  /** search-core 的 EntryHit[] */
-  hits: { type: Array, required: true },
+  /** 搜尋引擎的 neighbors */
+  hits: { type: Array as PropType<EntryHit[]>, required: true },
   query: { type: String, required: true },
 })
 

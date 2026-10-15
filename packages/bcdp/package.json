@@ -7,13 +7,13 @@
   "private": true,
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
       "babizu-source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
     "./fst": {
-      "types": "./dist/fst/index.d.ts",
       "babizu-source": "./src/fst/index.ts",
+      "types": "./dist/fst/index.d.ts",
       "default": "./dist/fst/index.js"
     }
   },

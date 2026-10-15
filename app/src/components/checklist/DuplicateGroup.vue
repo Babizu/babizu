@@ -1,34 +1,35 @@
-<script setup>
+<script setup lang="ts">
 /**
  * 檢查清單：詞形完全相同的一組詞條（或句子完全相同的一組例句），放在一起比對。
  *
  * 每一筆一列：出處在左、釋義在右，縱向對齊，一眼看得出哪幾筆的釋義一樣。
  * 同一個來源內釋義也相同的列標「釋義相同」：那是最可能重複登錄的地方。
  */
-import { computed } from 'vue'
+import type { DocSummary } from '@babizu/search/index.ts'
+import { computed, type PropType } from 'vue'
+import type { WorkerResult } from '@/services/search-client.ts'
 import DialectBadge from '@/components/common/DialectBadge.vue'
 import MetaTag from '@/components/common/MetaTag.vue'
-import { useSources } from '@/composables/useSources.js'
-import { t } from '@/i18n.js'
-import { formatCount, recordRoute } from '@/lib/labels.js'
-import { vCardLink } from '@/lib/card-link.js'
+import { useSources } from '@/composables/useSources.ts'
+import { t } from '@/i18n.ts'
+import { formatCount, recordRoute } from '@/lib/labels.ts'
+import { vCardLink } from '@/lib/card-link.ts'
 
 const props = defineProps({
   /** Checklist.duplicatePage／sentencePage 的一組 */
-  group: { type: Object, required: true },
+  group: { type: Object as PropType<WorkerResult<'checklistDuplicates'>['items'][number]>, required: true },
   /** word：詞條（標題用大號詞形，比的是釋義）；sentence：例句（標題是整句，比的是翻譯） */
-  kind: { type: String, default: 'word' },
+  kind: { type: String as PropType<'word' | 'sentence'>, default: 'word' },
 })
 
 const { shortTitle } = useSources()
 
 /** 同一個來源內釋義也相同的記錄（沒有釋義的不算） */
 const repeated = computed(() => {
-  /** @type {Map<string, number>} */
-  const seen = new Map()
-  const key = (/** @type {any} */ d) => (d.zh || d.en ? `${d.source}\u0000${d.zh}\u0000${d.en}` : '')
+  const seen = new Map<string, number>()
+  const key = (d: DocSummary) => (d.zh || d.en ? `${d.source}\u0000${d.zh}\u0000${d.en}` : '')
   for (const d of props.group.docs) if (key(d)) seen.set(key(d), (seen.get(key(d)) ?? 0) + 1)
-  return new Set(props.group.docs.filter((/** @type {any} */ d) => (seen.get(key(d)) ?? 0) > 1).map((/** @type {any} */ d) => d.id))
+  return new Set(props.group.docs.filter((d) => (seen.get(key(d)) ?? 0) > 1).map((d) => d.id))
 })
 </script>
 

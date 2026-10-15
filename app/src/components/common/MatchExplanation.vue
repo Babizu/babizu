@@ -1,23 +1,24 @@
-<script setup>
+<script setup lang="ts">
 /**
  * 模糊命中的說明：距離＋每個非相同字元的對齊步驟（例如「l→n 詞尾」）。
  * 點擊可展開完整說明，並連到演算法實驗室看動態規劃表。
  */
-import { computed } from 'vue'
+import type { AlignmentNote } from '@babizu/search/index.ts'
+import { computed, type PropType } from 'vue'
 import { Badge } from '@/components/ui/badge'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { t } from '@/i18n.js'
-import { categoryLabel, COSTS, formatDistance, formatStep, opLabel } from '@/lib/labels.js'
+import { t } from '@/i18n.ts'
+import { categoryLabel, COSTS, formatDistance, formatStep, opLabel } from '@/lib/labels.ts'
 
 const props = defineProps({
   distance: { type: Number, required: true },
-  /** search-core 的 AlignmentNote[] */
-  alignment: { type: Array, default: null },
+  /** 非相同字元的對齊步驟 */
+  alignment: { type: Array as PropType<AlignmentNote[] | null>, default: null },
   query: { type: String, default: '' },
   term: { type: String, default: '' },
 })
 
-const steps = computed(() => /** @type {Array<{op: string, source: string, target: string, cost: number, category: string | null}>} */ (props.alignment ?? []))
+const steps = computed(() => props.alignment ?? [])
 /** 摘要只列前兩步 */
 const summary = computed(() =>
   steps.value

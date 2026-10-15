@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { fetchWithRetry } from './fetch-retry.js'
+import { fetchWithRetry } from './fetch-retry.ts'
 
 describe('fetchWithRetry', () => {
   afterEach(() => vi.unstubAllGlobals())

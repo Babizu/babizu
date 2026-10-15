@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 /**
  * 空狀態、錯誤、提示的統一呈現。
  */

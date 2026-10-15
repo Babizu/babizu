@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 /**
  * 句型搜尋的結果：三個分頁（網址的 tab）。
  * - 記錄：依語言單位分成詞條（詞綴與詞）、片語、句子三區（引擎的 PATTERN_GROUPS），每筆記錄一列，
@@ -7,27 +7,27 @@
  * - 頻率：主條件每一格的詞形次數（PatternFrequency）；點一個詞形會篩選句子與對照。
  * 提示（例如 mo- 視為 mu-）列在結果上方；不錨定的改寫（…-pa-…）可以點，其他網址參數（模糊程度、篩選）保留。
  */
-import { computed, ref, watch } from 'vue'
+import type { PatternMatch, PatternResponse } from '@babizu/pattern/index.ts'
+import { computed, ref, watch, type PropType } from 'vue'
 import { useRoute } from 'vue-router'
 import StateMessage from '@/components/common/StateMessage.vue'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { msg, t } from '@/i18n.js'
-import { formatCount } from '@/lib/labels.js'
-import { patternIssueText } from '@/lib/pattern.js'
+import { msg, t } from '@/i18n.ts'
+import { formatCount } from '@/lib/labels.ts'
+import { patternIssueText } from '@/lib/pattern.ts'
 import PatternFrequency from './PatternFrequency.vue'
 import PatternHitItem from './PatternHitItem.vue'
 import PatternKwic from './PatternKwic.vue'
 
 const props = defineProps({
-  /** babizu/pattern 的 PatternResponse */
-  response: { type: Object, required: true },
+  response: { type: Object as PropType<PatternResponse>, required: true },
   searching: { type: Boolean, default: false },
 })
 /** 分頁：records、kwic、frequency */
-const tab = defineModel('tab', { type: String, default: 'records' })
+const tab = defineModel<string>('tab', { default: 'records' })
 /** 語詞索引的排序 */
-const sort = defineModel('sort', { type: String, default: 'position' })
+const sort = defineModel<string>('sort', { default: 'position' })
 
 const PAGE_SIZE = 20
 /** 分區的名稱（引擎的 PATTERN_GROUPS） */
@@ -36,8 +36,8 @@ const GROUP_LABELS = { entries: msg('詞條'), phrases: msg('片語'), sentences
 const limits = ref({ entries: PAGE_SIZE, phrases: PAGE_SIZE, sentences: PAGE_SIZE })
 /** 只看哪一區（all：三區依序列出） */
 const section = ref('all')
-/** 頻率表選取的詞形 @type {import('vue').Ref<{slot: number, form: string} | null>} */
-const selected = ref(null)
+/** 頻率表選取的詞形 */
+const selected = ref<{slot: number, form: string} | null>(null)
 watch(
   () => props.response,
   () => {
@@ -47,47 +47,42 @@ watch(
   },
 )
 
-/** 一個命中區間在某一格比到的詞形 @param {any} m @param {number} slot */
-const formAt = (m, slot) =>
+/** 一個命中區間在某一格比到的詞形 */
+const formAt = (m: PatternMatch, slot: number) =>
   m.cells
-    .filter((/** @type {any} */ c) => c.slot === slot)
-    .map((/** @type {any} */ c) => c.key)
+    .filter((c) => c.slot === slot)
+    .map((c) => c.key)
     .join(' ')
 
 /** 依頻率表的選取過濾：只留下那一格是那個詞形的命中區間 */
 const hits = computed(() => {
-  const all = /** @type {any[]} */ (props.response.hits)
+  const all = props.response.hits
   const sel = selected.value
   if (!sel) return all
   return all
-    .map((h) => ({ ...h, matches: h.matches.filter((/** @type {any} */ m) => m.cond !== 0 || formAt(m, sel.slot) === sel.form) }))
-    .filter((h) => h.matches.some((/** @type {any} */ m) => m.cond === 0))
+    .map((h) => ({ ...h, matches: h.matches.filter((m) => m.cond !== 0 || formAt(m, sel.slot) === sel.form) }))
+    .filter((h) => h.matches.some((m) => m.cond === 0))
 })
-/**
- * 有命中的分區：名稱、筆數（選了頻率表的詞形時是篩選後的筆數）與這一區的記錄。
- * 舊版的回應沒有分區時，全部當成一區（句子）。
- */
-const groups = computed(() => {
-  const list = /** @type {Array<{key: keyof typeof GROUP_LABELS, total: number}>} */ (props.response.groups ?? [{ key: 'sentences', total: props.response.totals.hits }])
-  return list
+/** 有命中的分區：名稱、筆數（選了頻率表的詞形時是篩選後的筆數）與這一區的記錄。 */
+const groups = computed(() =>
+  props.response.groups
     .map((g) => {
-      const items = hits.value.filter((h) => (h.group ?? 'sentences') === g.key)
+      const items = hits.value.filter((h) => h.group === g.key)
       return { key: g.key, label: t(GROUP_LABELS[g.key]), total: selected.value ? items.length : g.total, items }
     })
-    .filter((g) => g.items.length > 0)
-})
+    .filter((g) => g.items.length > 0),
+)
 /** 目前列出的分區 */
 const shown = computed(() => (section.value === 'all' ? groups.value : groups.value.filter((g) => g.key === section.value)))
 /** 記錄分頁上的筆數 */
 const recordCount = computed(() => groups.value.reduce((sum, g) => sum + g.total, 0))
-/** @param {keyof typeof GROUP_LABELS} key */
-const showMore = (key) => {
+const showMore = (key: keyof typeof GROUP_LABELS) => {
   limits.value = { ...limits.value, [key]: limits.value[key] + PAGE_SIZE }
 }
-const warnings = computed(() => props.response.warnings.map((/** @type {any} */ w) => patternIssueText(w)))
+const warnings = computed(() => props.response.warnings.map((w) => patternIssueText(w)))
 const route = useRoute()
-/** 提示的改寫：同一頁換掉查詢（以句型搜尋），分頁回到句子 @param {string} q */
-const rewrite = (q) => ({ name: 'search', query: { ...route.query, q, m: 'pattern', tab: undefined } })
+/** 提示的改寫：同一頁換掉查詢（以句型搜尋），分頁回到句子 */
+const rewrite = (q: string) => ({ name: 'search', query: { ...route.query, q, m: 'pattern', tab: undefined } })
 </script>
 
 <template>

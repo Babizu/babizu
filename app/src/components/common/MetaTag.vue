@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 /**
  * 低調的屬性標籤（單位、角色、比對身分等）：shadcn 的 Badge（size tag），與方言徽章同高，讓一行內的標籤對齊。
  */

@@ -1,12 +1,12 @@
-<script setup>
+<script setup lang="ts">
 /**
  * 頂端列：網站名稱、主選單（桌面）、設定（外觀與介面語言，SettingsMenu）。
  * 行動裝置的主選單在底部分頁列（MobileTabBar）。
  */
 import { useRoute } from 'vue-router'
-import { useI18n } from '@/i18n.js'
-import { site } from '@/lib/labels.js'
-import { NAV_ITEMS } from './nav.js'
+import { useI18n } from '@/i18n.ts'
+import { site } from '@/lib/labels.ts'
+import { NAV_ITEMS } from './nav.ts'
 import SettingsMenu from './SettingsMenu.vue'
 
 const route = useRoute()
@@ -15,8 +15,7 @@ const { t, tr } = useI18n()
 /** 站徽（站台 public/ 目錄中的檔案，與 index.html 的 favicon 同一個），依部署路徑組出網址 */
 const iconUrl = site.icon ? `${import.meta.env.BASE_URL}${site.icon}` : null
 
-/** @param {string} name */
-const isActive = (name) => route.name === name || (name === 'sources' && route.name === 'browse')
+const isActive = (name: string) => route.name === name || (name === 'sources' && route.name === 'browse')
 </script>
 
 <template>

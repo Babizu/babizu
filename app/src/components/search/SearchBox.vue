@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 /**
  * 搜尋框。
  * - 行動裝置：鍵盤顯示「搜尋」鍵、關閉自動大寫與自動修正（族語拼寫會被亂改）
@@ -6,8 +6,8 @@
  */
 import { SearchIcon, XIcon } from '@lucide/vue'
 import { computed, nextTick, ref } from 'vue'
-import { t } from '@/i18n.js'
-import { site } from '@/lib/labels.js'
+import { t } from '@/i18n.ts'
+import { site } from '@/lib/labels.ts'
 import { cn } from '@/lib/utils'
 
 const props = defineProps({
@@ -18,10 +18,10 @@ const props = defineProps({
   size: { type: String, default: 'default' },
   class: { type: null, default: undefined },
 })
-const emit = defineEmits(['submit'])
+const emit = defineEmits<{ submit: [query: string] }>()
 const model = defineModel({ type: String, default: '' })
 
-const input = ref(/** @type {HTMLInputElement | null} */ (null))
+const input = ref<HTMLInputElement | null>(null)
 const SPECIAL_CHARS = site.specialChars
 const placeholderText = computed(() => props.placeholder || t('輸入族語、中文或英文'))
 
@@ -35,8 +35,8 @@ function clear() {
   input.value?.focus()
 }
 
-/** 在游標位置插入字元 @param {string} ch */
-async function insert(ch) {
+/** 在游標位置插入字元 */
+async function insert(ch: string) {
   const el = input.value
   if (!el) return
   const start = el.selectionStart ?? model.value.length

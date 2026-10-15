@@ -1,13 +1,14 @@
-<script setup>
+<script setup lang="ts">
 /**
  * 逐詞對譯（interlinear gloss）：每個詞形與其對譯上下對齊。
  * 以 flex-wrap 排列，窄螢幕自動換行而不會橫向溢出。
  */
-import { t } from '@/i18n.js'
+import type { PropType } from 'vue'
+import { t } from '@/i18n.ts'
 
 defineProps({
-  /** Array<{form: string, gloss: string}> */
-  pairs: { type: Array, required: true },
+  /** 標準記錄的 interlinear */
+  pairs: { type: Array as PropType<Array<{ form: string; gloss: string }>>, required: true },
 })
 </script>
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { setLocale } from '@/i18n.js'
+import { setLocale } from '@/i18n.ts'
 import {
   dialectLabel,
   formatDistance,
@@ -12,7 +12,7 @@ import {
   recordRoute,
   unitLabel,
   writingSystemLabel,
-} from './labels.js'
+} from './labels.ts'
 
 describe('labels', () => {
   it('距離格式：最多兩位小數', () => {

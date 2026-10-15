@@ -1,27 +1,28 @@
-<script setup>
+<script setup lang="ts">
 /**
  * 精簡的記錄列：用在詞條脈絡（同一詞條的派生詞與例句）與來源瀏覽頁。
  */
-import { computed } from 'vue'
+import type { CorpusRecord } from '@babizu/schema/types.ts'
+import { computed, type PropType } from 'vue'
 import AudioButton from '@/components/common/AudioButton.vue'
 import DialectBadge from '@/components/common/DialectBadge.vue'
 import MetaTag from '@/components/common/MetaTag.vue'
-import { formatTimecode, recordRoute, roleLabel } from '@/lib/labels.js'
-import { vCardLink } from '@/lib/card-link.js'
+import { formatTimecode, playableAudio, recordRoute, roleLabel } from '@/lib/labels.ts'
+import { vCardLink } from '@/lib/card-link.ts'
 import { cn } from '@/lib/utils'
 
 const props = defineProps({
-  record: { type: Object, required: true },
+  record: { type: Object as PropType<CorpusRecord>, required: true },
   /** 縮排層級（0 = 詞條本身） */
   depth: { type: Number, default: 0 },
   active: { type: Boolean, default: false },
   showRole: { type: Boolean, default: true },
 })
 
-const audio = computed(() => props.record.media.find((/** @type {any} */ m) => m.type === 'audio' && m.available))
+const audio = computed(() => playableAudio(props.record))
 const gloss = computed(() =>
   props.record.senses
-    .map((/** @type {any} */ s) => [s.zh, s.en].filter(Boolean).join(' '))
+    .map((s) => [s.zh, s.en].filter(Boolean).join(' '))
     .filter(Boolean)
     .join('；'),
 )

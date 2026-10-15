@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 /**
  * 版面外框：頂端列、主內容、行動裝置底部分頁列、全站通知。
  * 一進站就在背景載入搜尋索引，使用者搜尋時通常已就緒。
@@ -8,17 +8,17 @@ import AppHeader from '@/components/layout/AppHeader.vue'
 import MobileTabBar from '@/components/layout/MobileTabBar.vue'
 import { Toaster } from '@/components/ui/sonner'
 import { TooltipProvider } from '@/components/ui/tooltip'
-import { useDocumentTitle } from '@/composables/usePageTitle.js'
-import { useSearchIndex } from '@/composables/useSearchIndex.js'
-import { useI18n } from '@/i18n.js'
-import { site } from '@/lib/labels.js'
+import { useDocumentTitle } from '@/composables/usePageTitle.ts'
+import { useSearchIndex } from '@/composables/useSearchIndex.ts'
+import { useI18n } from '@/i18n.ts'
+import { site } from '@/lib/labels.ts'
 
 const { load } = useSearchIndex()
 const { t, tr } = useI18n()
 useDocumentTitle()
 onMounted(() => {
   // 讓首屏先畫完再載入索引
-  const idle = window.requestIdleCallback ?? ((/** @type {() => void} */ fn) => setTimeout(fn, 200))
+  const idle = window.requestIdleCallback ?? ((fn: () => void) => setTimeout(fn, 200))
   idle(() => load())
 })
 </script>

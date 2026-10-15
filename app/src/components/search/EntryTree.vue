@@ -1,20 +1,20 @@
-<script setup>
+<script setup lang="ts">
 /**
  * 詞條家族的子項目（樹狀、逐層縮排）。左邊的細線表示「屬於上面那一列」。
  *
- * 同一層依子樹中最好的分數排序（見 babizu/search 的 family.js），只先顯示前幾項，
+ * 同一層依子樹中最好的分數排序（見 babizu/search 的 family.ts），只先顯示前幾項，
  * 其餘收在「再顯示」按鈕後面：一個詞根可能有十幾個衍生詞，全部展開會把其他結果擠到很下面。
  */
-import { computed, ref } from 'vue'
-import { t } from '@/i18n.js'
-import { visibleCount } from '@/lib/entry-groups.js'
+import type { EntryNode } from '@babizu/search/index.ts'
+import { computed, ref, type PropType } from 'vue'
+import { t } from '@/i18n.ts'
+import { visibleCount } from '@/lib/entry-groups.ts'
 import EntryRow from './EntryRow.vue'
 
 defineOptions({ name: 'EntryTree' })
 
 const props = defineProps({
-  /** EntryNode[] */
-  nodes: { type: Array, required: true },
+  nodes: { type: Array as PropType<EntryNode[]>, required: true },
   query: { type: String, default: '' },
   depth: { type: Number, default: 0 },
 })
@@ -23,7 +23,7 @@ const expanded = ref(false)
 const shown = computed(() => (expanded.value ? props.nodes : props.nodes.slice(0, visibleCount(props.nodes.length, props.depth))))
 /** 收起來的項目中命中的記錄數 */
 const hiddenHits = computed(() =>
-  props.nodes.slice(shown.value.length).reduce((n, /** @type {any} */ node) => n + node.hits, 0),
+  props.nodes.slice(shown.value.length).reduce((n, node) => n + node.hits, 0),
 )
 </script>
 

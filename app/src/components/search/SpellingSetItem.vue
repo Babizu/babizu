@@ -1,7 +1,7 @@
-<script setup>
+<script setup lang="ts">
 /**
  * 搜尋結果中的同形詞組：不同來源（或同一來源的同形異義詞）寫法完全相同的詞，詞形只寫一次，
- * 底下每筆記錄一列：釋義與方言在上、出處在下（見 babizu/search 的 family.js「同形詞組」）。
+ * 底下每筆記錄一列：釋義與方言在上、出處在下（見 babizu/search 的 family.ts「同形詞組」）。
  *
  * 版面與詞條家族同一套語彙：縮排＋左側細線表示「屬於上面那一列」。差別在家族的子項目是不同的詞形，
  * 同形詞組的每一列是同一個詞在不同來源的說法，所以不再重複詞形，改以釋義當每一列的主體。
@@ -9,29 +9,30 @@
  * 命中標籤（≈ 距離、自動拆解…）每筆都一樣時放在詞形旁，只寫一次；不一樣時（例如一筆是以其他寫法命中）才放在各列。
  * 也在某個詞條家族裡的記錄（kita- 條下的 mikita）標出「也列在 kita- 條下」：家族本身照樣在結果中。
  */
-import { computed } from 'vue'
+import type { EntryHit, SpellingSet } from '@babizu/search/index.ts'
+import { computed, type PropType } from 'vue'
 import AudioButton from '@/components/common/AudioButton.vue'
 import DialectBadge from '@/components/common/DialectBadge.vue'
 import MetaTag from '@/components/common/MetaTag.vue'
-import { useSources } from '@/composables/useSources.js'
-import { t } from '@/i18n.js'
-import { recordRoute, unitLabel } from '@/lib/labels.js'
-import { vCardLink } from '@/lib/card-link.js'
+import { useSources } from '@/composables/useSources.ts'
+import { t } from '@/i18n.ts'
+import { recordRoute, unitLabel } from '@/lib/labels.ts'
+import { vCardLink } from '@/lib/card-link.ts'
 import HitTags from './HitTags.vue'
 import ResultCitation from './ResultCitation.vue'
 
 const props = defineProps({
-  /** EntryGroup.spelling：{ text, members: [{ doc, hit, family }] } */
-  set: { type: Object, required: true },
+  /** EntryGroup.spelling */
+  set: { type: Object as PropType<SpellingSet>, required: true },
   query: { type: String, default: '' },
 })
 
 const { shortTitle } = useSources()
 const members = computed(() => props.set.members)
 
-/** 命中方式的簽名：一樣的話標籤只放在詞形旁 @param {any} hit */
-const signature = (hit) => [hit.kind, hit.matchType, hit.distance, hit.term, hit.analysis ? JSON.stringify(hit.analysis.steps ?? null) : ''].join('|')
-const sharedTags = computed(() => new Set(members.value.map((/** @type {any} */ m) => signature(m.hit))).size === 1)
+/** 命中方式的簽名：一樣的話標籤只放在詞形旁 */
+const signature = (hit: EntryHit) => [hit.kind, hit.matchType, hit.distance, hit.term, hit.analysis ? JSON.stringify(hit.analysis.steps ?? null) : ''].join('|')
+const sharedTags = computed(() => new Set(members.value.map((m) => signature(m.hit))).size === 1)
 </script>
 
 <template>

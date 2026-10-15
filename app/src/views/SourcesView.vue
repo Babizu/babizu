@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 /**
  * 資料來源總覽：每個來源的後設資料、收錄統計、說明與瀏覽入口。
  */
@@ -9,22 +9,21 @@ import StateMessage from '@/components/common/StateMessage.vue'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
-import { useSources } from '@/composables/useSources.js'
+import { useSources } from '@/composables/useSources.ts'
 import { UNIT_CODES } from '@babizu/schema/constants.ts'
-import { t } from '@/i18n.js'
-import { formatCount, shardUnitLabel, sourceTypeLabel, unitLabel } from '@/lib/labels.js'
+import { t } from '@/i18n.ts'
+import { formatCount, shardUnitLabel, sourceTypeLabel, unitLabel } from '@/lib/labels.ts'
 
 const { sources, loaded, error } = useSources()
 /** 統計的顯示順序：最常用的「詞」在前 */
-const UNIT_KEYS = ['word', 'phrase', 'sentence', 'affix'].filter((u) => UNIT_CODES.includes(u))
+const UNIT_KEYS = (['word', 'phrase', 'sentence', 'affix'] as const).filter((u) => UNIT_CODES.includes(u))
 
 /**
  * 全部來源的加總。讀者想先知道「這本辭典整體有多少東西」，再往下看各來源的細節，
  * 所以放在各來源卡片之前。
  */
 const totals = computed(() => {
-  /** @type {Record<string, number>} */
-  const sum = { records: 0, word: 0, phrase: 0, sentence: 0, affix: 0, audio: 0, scans: 0 }
+  const sum: Record<string, number> = { records: 0, word: 0, phrase: 0, sentence: 0, affix: 0, audio: 0, scans: 0 }
   for (const s of sources.value) {
     for (const key of Object.keys(sum)) sum[key] += s.stats?.[key] ?? 0
   }
@@ -41,8 +40,8 @@ const TOTAL_ROWS = computed(() =>
   ].filter((row) => totals.value[row.key] > 0),
 )
 
-/** 來源說明（略過空白的項目：轉接器的預留欄位不該畫成空的條列點） @param {{notes?: string[]}} s */
-const notesOf = (s) => (s.notes ?? []).filter((note) => note.trim())
+/** 來源說明（略過空白的項目：轉接器的預留欄位不該畫成空的條列點） */
+const notesOf = (s: {notes?: string[]}) => (s.notes ?? []).filter((note) => note.trim())
 </script>
 
 <template>
@@ -104,7 +103,7 @@ const notesOf = (s) => (s.notes ?? []).filter((note) => note.trim())
               class="bg-muted/60 hover:bg-accent hover:text-accent-foreground block rounded-lg px-3 py-2 transition-colors"
             >
               <dt class="text-muted-foreground text-xs">{{ unitLabel(u) }}</dt>
-              <dd class="font-serif text-lg font-semibold tabular-nums">{{ formatCount(s.stats[u]) }}</dd>
+              <dd class="font-serif text-lg font-semibold tabular-nums">{{ formatCount(s.stats?.[u] ?? 0) }}</dd>
             </RouterLink>
             <div v-if="s.stats?.audio" class="bg-muted/60 rounded-lg px-3 py-2">
               <dt class="text-muted-foreground text-xs">{{ t('錄音') }}</dt>

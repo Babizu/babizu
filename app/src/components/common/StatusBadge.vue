@@ -1,22 +1,23 @@
-<script setup>
+<script setup lang="ts">
 /**
  * 校對狀態徽章（三級）：未校對＝紅、初步校對＝黃、二審校對＝綠。
  * 顏色定義集中在這裡，全站一致。
  */
-import { computed } from 'vue'
-import { t } from '@/i18n.js'
-import { QUALITY_STATUSES, statusLabel } from '@/lib/labels.js'
+import { computed, type PropType } from 'vue'
+import { t } from '@/i18n.ts'
+import { QUALITY_STATUSES, statusLabel } from '@/lib/labels.ts'
 import { cn } from '@/lib/utils'
 
 const props = defineProps({
   /** unreviewed／reviewed／verified */
-  status: { type: String, required: true },
+  status: { type: String as PropType<keyof typeof QUALITY_STATUSES | (string & {})>, required: true },
   /** dot：只顯示小圓點＋文字（結果列用）；badge：有底色的徽章（詞條頁用） */
-  variant: { type: String, default: 'dot' },
+  variant: { type: String as PropType<'dot' | 'badge'>, default: 'dot' },
   class: { type: null, default: undefined },
 })
 
-const info = computed(() => QUALITY_STATUSES[props.status] ?? null)
+/** 不認得的狀態不顯示 */
+const info = computed(() => (Object.hasOwn(QUALITY_STATUSES, props.status) ? QUALITY_STATUSES[props.status as keyof typeof QUALITY_STATUSES] : null))
 
 /**
  * 結果列每一行都會出現校對狀態，所以文字用次要色、只讓圓點帶顏色，

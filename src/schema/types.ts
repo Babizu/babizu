@@ -25,7 +25,7 @@ export interface Sense {
 
 /** 其他書寫系統的寫法 */
 export interface AltText {
-  /** 書寫系統代碼（顯示名稱由站台設定的 writingSystems 或 app/src/lib/labels.js 的 WRITING_SYSTEM_LABELS 提供） */
+  /** 書寫系統代碼（顯示名稱由站台設定的 writingSystems 或 app/src/lib/labels.ts 的 WRITING_SYSTEM_LABELS 提供） */
   system: string
   text: string
 }
@@ -164,6 +164,8 @@ export interface CorpusSource {
   defaultDialects: Dialect[]
   orthography: string | null
   browse: { mode: 'page' | 'category' | 'recording' | 'list'; shardLabel: string }
+  /** 這個來源有沒有校對流程；沒有時網站不顯示校對狀態 */
+  reviewTracked: boolean
   notes: string[]
   stats?: Record<string, number>
 }

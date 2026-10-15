@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 /**
  * 來源瀏覽：依來源的分片（辭典的頁、分類的章、語料的場次）逐一瀏覽。
  * 《巴宰語詞典》可在桌面並排顯示原書掃描頁，方便對照。
@@ -11,10 +11,12 @@ import GroupRecords from '@/components/record/GroupRecords.vue'
 import ScanViewer from '@/components/record/ScanViewer.vue'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { useSources } from '@/composables/useSources.js'
-import { t } from '@/i18n.js'
-import { formatCount, shardUnitLabel } from '@/lib/labels.js'
-import { dataUrl, loadShard } from '@/services/data.js'
+import { useLatestRequest } from '@/composables/useLatestRequest.ts'
+import { useSources } from '@/composables/useSources.ts'
+import { t } from '@/i18n.ts'
+import { formatCount, shardUnitLabel } from '@/lib/labels.ts'
+import { dataUrl, loadShard } from '@/services/data.ts'
+import type { CorpusGroup, CorpusRecord, CorpusShard } from '@babizu/schema/types.ts'
 
 const route = useRoute()
 const router = useRouter()
@@ -25,13 +27,13 @@ const shards = computed(() => source.value?.shards ?? [])
 const shardKey = computed(() => String(route.params.shard || shards.value[0]?.key || ''))
 const shardIndex = computed(() => shards.value.findIndex((s) => s.key === shardKey.value))
 
-/** @type {import('vue').ShallowRef<import('@babizu/schema/types.ts').CorpusShard | null>} */
-const shard = shallowRef(null)
+const shard = shallowRef<CorpusShard | null>(null)
 const loading = ref(false)
 const loadError = ref('')
 const scanOpen = ref(false)
 const showScan = ref(true)
 
+const latest = useLatestRequest()
 watch(
   [() => source.value?.id, shardKey],
   async ([sourceId, key]) => {
@@ -39,7 +41,7 @@ watch(
     loading.value = true
     loadError.value = ''
     // 快速翻頁時，舊請求晚回來不能動到新頁面的狀態（載入中、錯誤訊息都一樣）
-    const isCurrent = () => sourceId === source.value?.id && key === shardKey.value
+    const isCurrent = latest.start()
     try {
       const data = await loadShard(sourceId, key)
       if (!isCurrent()) return
@@ -66,9 +68,8 @@ function scrollToHash() {
 const groups = computed(() => {
   const data = shard.value
   if (!data) return []
-  /** @type {Map<string, any[]>} */
-  const byGroup = new Map()
-  const loose = []
+  const byGroup = new Map<string, CorpusRecord[]>()
+  const loose: CorpusRecord[] = []
   for (const r of data.records) {
     if (r.group) {
       const list = byGroup.get(r.group.id) ?? []
@@ -76,7 +77,10 @@ const groups = computed(() => {
       byGroup.set(r.group.id, list)
     } else loose.push(r)
   }
-  const out = data.groups.map((g) => ({ group: g, records: byGroup.get(g.id) ?? [] }))
+  const out: Array<{ group: Pick<CorpusGroup, 'id' | 'type' | 'title' | 'subtitle'>; records: CorpusRecord[] }> = data.groups.map((g) => ({
+    group: g,
+    records: byGroup.get(g.id) ?? [],
+  }))
   if (loose.length) out.push({ group: { id: 'loose', type: 'list', title: t('其他'), subtitle: null }, records: loose })
   return out
 })
@@ -85,15 +89,13 @@ const groups = computed(() => {
 const scan = computed(() => shard.value?.records.find((r) => r.citation.scan)?.citation.scan ?? null)
 const activeId = computed(() => decodeURIComponent(route.hash.slice(1)))
 
-/** @param {number} offset */
-function go(offset) {
+function go(offset: number) {
   const next = shards.value[shardIndex.value + offset]
   if (next) router.push({ name: 'browse', params: { source: source.value?.id, shard: next.key } })
 }
 
-/** @param {Event} event */
-function onSelect(event) {
-  const key = /** @type {HTMLSelectElement} */ (event.target).value
+function onSelect(event: Event) {
+  const key = (event.target as HTMLSelectElement).value
   router.push({ name: 'browse', params: { source: source.value?.id, shard: key } })
 }
 </script>

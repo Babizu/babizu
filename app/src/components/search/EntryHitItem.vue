@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 /**
  * 搜尋結果：詞條（詞形、變體、詞根、其他寫法命中）。
  * 整列可點擊進入詞條頁；播放鈕與說明按鈕不會觸發導覽。
@@ -6,25 +6,26 @@
  * 也用在詞條家族的第一列（EntryGroupItem）：家族的代表記錄本身不一定命中（hit 為 null），
  * 這時只顯示詞條內容，並標明它是底下命中項目所屬的詞條。
  */
-import { computed } from 'vue'
+import type { DocSummary, EntryHit } from '@babizu/search/index.ts'
+import { computed, type PropType } from 'vue'
 import AudioButton from '@/components/common/AudioButton.vue'
 import DialectBadge from '@/components/common/DialectBadge.vue'
 import MetaTag from '@/components/common/MetaTag.vue'
-import { t } from '@/i18n.js'
-import { recordRoute, roleLabel, unitLabel } from '@/lib/labels.js'
-import { vCardLink } from '@/lib/card-link.js'
+import { t } from '@/i18n.ts'
+import { recordRoute, roleLabel, unitLabel } from '@/lib/labels.ts'
+import { vCardLink } from '@/lib/card-link.ts'
 import HitTags from './HitTags.vue'
 import ResultCitation from './ResultCitation.vue'
 
 const props = defineProps({
-  /** search-core 的 EntryHit；null 表示這筆記錄本身沒有命中 */
-  hit: { type: Object, default: null },
-  /** 記錄摘要（DocSummary）；沒給就用 hit.doc */
-  doc: { type: Object, default: null },
+  /** null 表示這筆記錄本身沒有命中 */
+  hit: { type: Object as PropType<EntryHit | null>, default: null },
+  /** 記錄摘要；沒給就用 hit.doc（兩者至少要給一個） */
+  doc: { type: Object as PropType<DocSummary | null>, default: null },
   query: { type: String, default: '' },
 })
 
-const doc = computed(() => props.doc ?? props.hit.doc)
+const doc = computed(() => (props.doc ?? props.hit?.doc) as DocSummary)
 const showUnit = computed(() => doc.value.unit !== 'word')
 const contextLabel = computed(() => {
   const role = doc.value.role

@@ -1,31 +1,28 @@
-<script setup>
+<script setup lang="ts">
 /**
  * 頻率：主條件每一格比到的詞形與次數（例如 `_ ki _` 的第一格是哪些動詞）。
  * 每一格一張表；點一個詞形，句子與語詞索引只留下這一格是這個詞形的命中（再點一次取消）。
  * 次數是所有命中區間（不只畫面上這幾筆），「句」是有幾筆記錄。
  * 只有一種詞形的格（例如寫出的固定詞）不必一張表，在上面一行列出。
  */
-import { computed } from 'vue'
-import { t } from '@/i18n.js'
-import { formatCount } from '@/lib/labels.js'
+import type { PatternResponse } from '@babizu/pattern/index.ts'
+import { computed, type PropType } from 'vue'
+import { t } from '@/i18n.ts'
+import { formatCount } from '@/lib/labels.ts'
 
 const props = defineProps({
-  /** PatternResponse.frequency */
-  frequency: { type: Array, required: true },
-  /** PatternResponse.slots */
-  slots: { type: Array, required: true },
+  frequency: { type: Array as PropType<PatternResponse['frequency']>, required: true },
+  slots: { type: Array as PropType<PatternResponse['slots']>, required: true },
 })
 /** 選取的詞形 {slot, form}；null 是不篩選 */
-const selected = defineModel({ type: Object, default: null })
+const selected = defineModel<{ slot: number; form: string } | null>({ default: null })
 
-/** @param {number} slot @param {string} form */
-const toggle = (slot, form) => {
+const toggle = (slot: number, form: string) => {
   selected.value = selected.value?.slot === slot && selected.value?.form === form ? null : { slot, form }
 }
-/** @param {any} f */
-const maxOf = (f) => Math.max(1, ...f.rows.map((/** @type {any} */ r) => r.count))
-const fixed = computed(() => props.frequency.filter((/** @type {any} */ f) => f.distinct === 1))
-const varied = computed(() => props.frequency.filter((/** @type {any} */ f) => f.distinct > 1))
+const maxOf = (f: PatternResponse['frequency'][number]) => Math.max(1, ...f.rows.map((r) => r.count))
+const fixed = computed(() => props.frequency.filter((f) => f.distinct === 1))
+const varied = computed(() => props.frequency.filter((f) => f.distinct > 1))
 </script>
 
 <template>

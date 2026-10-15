@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 /**
  * 搜尋頁。
  *
@@ -19,22 +19,24 @@ import { SearchXIcon } from '@lucide/vue'
 import { computed, ref, shallowRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import StateMessage from '@/components/common/StateMessage.vue'
-import EntryGroupItem from '@/components/search/EntryGroupItem.vue'
 import PatternError from '@/components/pattern/PatternError.vue'
 import PatternResults from '@/components/pattern/PatternResults.vue'
 import FilterPanel from '@/components/search/FilterPanel.vue'
-import GlossHitItem from '@/components/search/GlossHitItem.vue'
-import OccurrenceHitItem from '@/components/search/OccurrenceHitItem.vue'
+import ResultItems, { type ResultSection } from '@/components/search/ResultItems.vue'
 import SearchBox from '@/components/search/SearchBox.vue'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { useRecentSearches } from '@/composables/useRecentSearches.js'
-import { useSearchIndex } from '@/composables/useSearchIndex.js'
-import { useI18n } from '@/i18n.js'
-import { formatCount, formatDistance, site } from '@/lib/labels.js'
+import { useLatestRequest } from '@/composables/useLatestRequest.ts'
+import { useRecentSearches } from '@/composables/useRecentSearches.ts'
+import { useSearchIndex } from '@/composables/useSearchIndex.ts'
+import { useI18n } from '@/i18n.ts'
+import { formatCount, formatDistance, site } from '@/lib/labels.ts'
 import { isPatternQuery, looksLikePattern } from '@babizu/pattern/detect.ts'
+import type { PatternResponse } from '@babizu/pattern/index.ts'
+import type { SearchMethod } from '@babizu/search/index.ts'
+import type { SearchResponse } from '@/services/search-client.ts'
 
 const route = useRoute()
 const router = useRouter()
@@ -54,13 +56,13 @@ const PAGE_SIZE = 20
 const PREVIEW = { entries: 8, occurrences: 4, glosses: 4 }
 
 // ---- 網址 ↔ 狀態 ----
-const list = (/** @type {unknown} */ v) => (typeof v === 'string' && v ? v.split(',') : [])
+const list = (v: unknown) => (typeof v === 'string' && v ? v.split(',') : [])
 const query = ref(String(route.query.q ?? ''))
 const DEFAULT_FIELDS = ['native', 'gloss']
 const filters = computed({
   get: () => ({
     fields: route.query.f === undefined ? DEFAULT_FIELDS : list(route.query.f),
-    fuzziness: /** @type {'exact' | 'normal' | 'loose'} */ (route.query.fz ?? 'normal'),
+    fuzziness: (route.query.fz ?? 'normal') as 'exact' | 'normal' | 'loose',
     sources: list(route.query.src),
     dialects: list(route.query.dia),
     units: list(route.query.unit),
@@ -86,7 +88,7 @@ const tab = computed({
 
 // ---- 句型搜尋 ----
 /** 這個查詢要不要以句型搜尋：網址的 m 優先，否則依寫法自動判斷 */
-const patternMode = computed(() => isPatternQuery(String(route.query.q ?? ''), /** @type {string | undefined} */ (route.query.m)))
+const patternMode = computed(() => isPatternQuery(String(route.query.q ?? ''), route.query.m as string | undefined))
 /** 查詢有句型的寫法、但被強制以一般搜尋：提示可以切回來 */
 const forcedPlain = computed(() => route.query.m === 'plain' && looksLikePattern(String(route.query.q ?? '')).pattern)
 const PATTERN_TABS = ['records', 'kwic', 'frequency']
@@ -98,8 +100,7 @@ const kwicSort = computed({
   get: () => String(route.query.ks ?? 'position'),
   set: (k) => updateQuery({ ks: k === 'position' ? undefined : k }),
 })
-/** @param {'plain' | 'pattern' | undefined} m */
-const setMode = (m) => updateQuery({ m, tab: undefined, ks: undefined })
+const setMode = (m: 'plain' | 'pattern' | undefined) => updateQuery({ m, tab: undefined, ks: undefined })
 const activeFilterCount = computed(
   () =>
     filters.value.sources.length +
@@ -109,8 +110,7 @@ const activeFilterCount = computed(
     (filters.value.fields.length === DEFAULT_FIELDS.length ? 0 : 1),
 )
 
-/** @param {Record<string, string | undefined>} patch */
-function updateQuery(patch, mode = 'replace') {
+function updateQuery(patch: Record<string, string | undefined>, mode = 'replace') {
   const next = { ...route.query, ...patch }
   for (const key of Object.keys(next)) {
     // f=（空字串）代表「兩個範圍都沒選」，要保留在網址上
@@ -120,7 +120,7 @@ function updateQuery(patch, mode = 'replace') {
 }
 
 // 換了查詢就回到自動判斷（m）與第一個分頁
-const syncQueryToUrl = useDebounceFn((/** @type {string} */ q) => {
+const syncQueryToUrl = useDebounceFn((q: string) => {
   if (q.trim() !== String(route.query.q ?? '')) updateQuery({ q: q.trim() || undefined, tab: undefined, m: undefined, ks: undefined })
 }, 300)
 watch(query, (q) => syncQueryToUrl(q))
@@ -131,8 +131,7 @@ watch(
   },
 )
 
-/** @param {string} q */
-function onSubmit(q) {
+function onSubmit(q: string) {
   if (!q) return
   query.value = q
   remember(q)
@@ -140,14 +139,13 @@ function onSubmit(q) {
 }
 
 // ---- 搜尋 ----
-/** @type {import('vue').ShallowRef<import('@/services/search-client.js').SearchResponse | null>} */
-const response = shallowRef(null)
-/** @type {import('vue').ShallowRef<any>} 句型搜尋的回應（babizu/pattern 的 PatternResponse） */
-const patternResponse = shallowRef(null)
+const response = shallowRef<SearchResponse | null>(null)
+/** 句型搜尋的回應（babizu/pattern 的 PatternResponse） */
+const patternResponse = shallowRef<PatternResponse | null>(null)
 const searching = ref(false)
-const searchError = ref(/** @type {string | null} */ (null))
+const searchError = ref<string | null>(null)
 const limits = ref({ entries: PAGE_SIZE, occurrences: PAGE_SIZE, glosses: PAGE_SIZE })
-let requestSeq = 0
+const latest = useLatestRequest()
 
 // 監看的是會改變結果的參數，接成一個字串：只換分頁（tab、ks）時字串不變，不重新搜尋
 // （回傳陣列的話每次都是新的陣列，任何網址變動都會觸發）
@@ -161,7 +159,7 @@ watch(
       patternResponse.value = null
       return
     }
-    const seq = ++requestSeq
+    const isCurrent = latest.start()
     searching.value = true
     searchError.value = null
     try {
@@ -170,21 +168,22 @@ watch(
       const recordFilters = { sources: f.sources, dialects: f.dialects, units: f.units }
       if (patternMode.value) {
         const result = await client.searchPattern(q, { fuzziness: f.fuzziness, filters: recordFilters })
-        if (seq === requestSeq) {
+        if (isCurrent()) {
           patternResponse.value = result
           response.value = null
         }
       } else {
-        const result = await client.search(q, { fuzziness: f.fuzziness, fields: f.fields, filters: recordFilters, exclude: f.exclude })
-        if (seq === requestSeq) {
+        // 網址上不認得的搜尋方法引擎會忽略
+        const result = await client.search(q, { fuzziness: f.fuzziness, fields: f.fields, filters: recordFilters, exclude: f.exclude as SearchMethod[] })
+        if (isCurrent()) {
           response.value = result
           patternResponse.value = null
         }
       }
     } catch (e) {
-      if (seq === requestSeq) searchError.value = e instanceof Error ? e.message : String(e)
+      if (isCurrent()) searchError.value = e instanceof Error ? e.message : String(e)
     } finally {
-      if (seq === requestSeq) searching.value = false
+      if (isCurrent()) searching.value = false
     }
   },
   { immediate: true },
@@ -195,23 +194,23 @@ const totals = computed(() => response.value?.totals ?? { entries: 0, entryGroup
 const totalHits = computed(() => totals.value.entryGroups + totals.value.occurrences + totals.value.glosses)
 /** 模糊命中的相近拼寫（距離 > 0） */
 const fuzzyTerms = computed(() => (response.value?.terms ?? []).filter((t) => t.distance > 0).slice(0, 8))
-const sections = computed(() => {
+const sections = computed((): ResultSection[] => {
   const r = response.value
   if (!r) return []
   const fields = filters.value.fields
-  return [
+  const all: ResultSection[] = [
     { key: 'entries', label: t('詞條'), items: r.entryGroups, total: r.totals.entryGroups, field: 'native' },
     { key: 'occurrences', label: t('例句'), items: r.occurrences, total: r.totals.occurrences, field: 'native' },
     { key: 'glosses', label: t('釋義'), items: r.glosses, total: r.totals.glosses, field: 'gloss' },
-  ].filter(
+  ]
+  return all.filter(
     (s) =>
       // 沒選到的搜尋範圍不顯示；有選的範圍即使 0 筆也保留分頁（讓使用者知道有搜）
       fields.includes(s.field) && (s.total > 0 || (r.mode === 'latin' && s.field === 'native')),
   )
 })
 
-/** @param {'entries' | 'occurrences' | 'glosses'} key */
-function showMore(key) {
+function showMore(key: 'entries' | 'occurrences' | 'glosses') {
   limits.value = { ...limits.value, [key]: limits.value[key] + PAGE_SIZE }
 }
 
@@ -415,11 +414,7 @@ const filterSheetOpen = ref(false)
                   </button>
                 </div>
                 <div class="divide-y">
-                  <template v-for="hit in s.items.slice(0, PREVIEW[s.key])" :key="hit.doc?.id ?? hit.root.doc.id">
-                    <EntryGroupItem v-if="s.key === 'entries'" :group="hit" :query="response.query" />
-                    <OccurrenceHitItem v-else-if="s.key === 'occurrences'" :hit="hit" />
-                    <GlossHitItem v-else :hit="hit" :query="response.query" />
-                  </template>
+                  <ResultItems :section="s" :limit="PREVIEW[s.key]" :query="response.query" />
                 </div>
               </section>
             </TabsContent>
@@ -427,11 +422,7 @@ const filterSheetOpen = ref(false)
             <!-- 各區完整列表 -->
             <TabsContent v-for="s in sections" :key="s.key" :value="s.key">
               <div class="divide-y">
-                <template v-for="hit in s.items.slice(0, limits[s.key])" :key="hit.doc?.id ?? hit.root.doc.id">
-                  <EntryGroupItem v-if="s.key === 'entries'" :group="hit" :query="response.query" />
-                  <OccurrenceHitItem v-else-if="s.key === 'occurrences'" :hit="hit" />
-                  <GlossHitItem v-else :hit="hit" :query="response.query" />
-                </template>
+                <ResultItems :section="s" :limit="limits[s.key]" :query="response.query" />
               </div>
               <div v-if="s.items.length > limits[s.key]" class="mt-4 flex justify-center">
                 <Button variant="outline" @click="showMore(s.key)">

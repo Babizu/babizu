@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 /**
  * 詞圖（DAWG）模糊搜尋視覺化：以一小組詞建立詞圖，顯示搜尋時每個節點的
  * 距離下界、允許上界、是否剪枝，以及因祖先被剪枝而從未走訪的節點。
@@ -6,24 +6,24 @@
  * 注意：DAWG 會合併共同後綴，所以同一個節點可能出現在清單的好幾個位置
  * （例如 -an 結尾的詞共用同一個節點）。走訪是依「路徑」進行的，因此仍然正確。
  *
- * 逐步播放：每個走訪的節點一步（src/fuzzy/steps.js 的 dawgSteps），依深度優先的走訪順序。
+ * 逐步播放：每個走訪的節點一步（lab/steps.ts 的 dawgSteps），依深度優先的走訪順序。
  */
-import { FuzzyIndex } from '#bcdp'
-import { dawgStateAt, dawgSteps } from '@babizu/../app/src/lab/steps.js'
+import { FuzzyIndex, type NodeVisit, type WeightedEditDistance } from '#bcdp'
+import { dawgStateAt, dawgSteps } from '@/lab/steps.ts'
 import { useEventListener } from '@vueuse/core'
-import { computed, ref } from 'vue'
+import { computed, ref, type PropType } from 'vue'
 import PlaybackControls from '@/components/lab/PlaybackControls.vue'
 import StepNote from '@/components/lab/StepNote.vue'
 import { Input } from '@/components/ui/input'
 import { Slider } from '@/components/ui/slider'
-import { usePlayback } from '@/composables/usePlayback.js'
-import { t } from '@/i18n.js'
-import { formatDistance, site } from '@/lib/labels.js'
+import { usePlayback } from '@/composables/usePlayback.ts'
+import { t } from '@/i18n.ts'
+import { formatDistance, site } from '@/lib/labels.ts'
 import { cn } from '@/lib/utils'
 
 const props = defineProps({
   /** 目前設定的 WeightedEditDistance */
-  metric: { type: Object, required: true },
+  metric: { type: Object as PropType<WeightedEditDistance>, required: true },
 })
 
 /** 預設詞庫與查詢來自站台設定（lab.words，否則用 lab.pairs 裡的詞）；都沒有就用一組示意用的拉丁字母詞 */
@@ -36,10 +36,21 @@ const maxDistance = ref([0.5])
 
 const words = computed(() => [...new Set(wordsText.value.split(/[\s,，、]+/u).filter(Boolean))].slice(0, 200))
 
+/** 詞圖攤平後的一列：一條路徑（前綴）與它的走訪結果 */
+interface Row {
+  prefix: string
+  label: string
+  depth: number
+  node: number
+  terminal: boolean
+  /** 走訪事件與走訪順序；沒有走訪（祖先被剪枝）時是 null */
+  visit: (NodeVisit & { order: number }) | null
+}
+
 const run = computed(() => {
   const index = new FuzzyIndex(props.metric).addAll(words.value)
-  /** 依走訪順序的事件 @type {any[]} */
-  const events = []
+  /** 依走訪順序的事件 */
+  const events: NodeVisit[] = []
   const { results, stats } = index.searchWithStats(query.value, {
     maxDistance: maxDistance.value[0],
     onNode: (event) => events.push(event),
@@ -49,10 +60,8 @@ const run = computed(() => {
 
   // 依路徑攤平整個詞圖（依字元排序），標上走訪結果
   const dawg = index.dawg
-  /** @type {Array<{prefix: string, label: string, depth: number, node: number, terminal: boolean, visit: any}>} */
-  const rows = []
-  /** @param {number} node @param {string} prefix @param {number} depth */
-  const walk = (node, prefix, depth) => {
+  const rows: Row[] = []
+  const walk = (node: number, prefix: string, depth: number) => {
     for (let e = dawg.firstEdge(node); e < dawg.endEdge(node); e++) {
       const label = dawg.label(e)
       const target = dawg.target(e)
@@ -72,10 +81,9 @@ const state = computed(() => dawgStateAt(steps.value, playback.index.value))
 const step = computed(() => (playback.index.value >= 0 ? steps.value[playback.index.value] : null))
 useEventListener(window, 'keydown', playback.onKeydown)
 
-/** 這一列在目前這一步是否已走訪 @param {any} row */
-const shown = (row) => row.visit && row.visit.order < state.value.visited
-/** @param {any} row */
-const isFocus = (row) => state.value.focus?.prefix === row.prefix && playback.index.value < total.value - 1
+/** 這一列在目前這一步是否已走訪 */
+const shown = (row: Row): row is Row & { visit: NonNullable<Row['visit']> } => row.visit !== null && row.visit.order < state.value.visited
+const isFocus = (row: Row) => state.value.focus?.prefix === row.prefix && playback.index.value < total.value - 1
 </script>
 
 <template>

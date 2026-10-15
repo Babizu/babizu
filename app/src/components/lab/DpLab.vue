@@ -1,33 +1,34 @@
-<script setup>
+<script setup lang="ts">
 /**
  * 「動態規劃表」分頁：輸入兩個詞，逐格顯示 D(i, j)，點選任一格看它的候選轉移，並顯示最佳對齊。
- * 播放由 src/fuzzy/steps.js 的 dpSteps 決定（每格一步，最後一步標出最佳路徑）。
+ * 播放由 app/src/lab/steps.ts 的 dpSteps 決定（每格一步，最後一步標出最佳路徑）。
  */
-import { dpStateAt, dpSteps } from '@babizu/../app/src/lab/steps.js'
+import { dpStateAt, dpSteps } from '@/lab/steps.ts'
 import { useEventListener } from '@vueuse/core'
-import { computed, ref, watch } from 'vue'
+import type { WeightedEditDistance } from '#bcdp'
+import { computed, ref, watch, type PropType } from 'vue'
 import AlignmentStrip from '@/components/lab/AlignmentStrip.vue'
 import CellInspector from '@/components/lab/CellInspector.vue'
 import DpMatrix from '@/components/lab/DpMatrix.vue'
 import PlaybackControls from '@/components/lab/PlaybackControls.vue'
 import StepNote from '@/components/lab/StepNote.vue'
 import { Input } from '@/components/ui/input'
-import { usePlayback } from '@/composables/usePlayback.js'
-import { t } from '@/i18n.js'
-import { formatDistance, site } from '@/lib/labels.js'
+import { usePlayback } from '@/composables/usePlayback.ts'
+import { t } from '@/i18n.ts'
+import { formatDistance, site } from '@/lib/labels.ts'
 
 const props = defineProps({
   /** 目前設定的 WeightedEditDistance */
-  metric: { type: Object, required: true },
+  metric: { type: Object as PropType<WeightedEditDistance>, required: true },
   /** 初始的兩個詞與步驟（網址參數） */
-  initial: { type: Object, default: () => ({}) },
+  initial: { type: Object as PropType<{ a?: string; b?: string; step?: number }>, default: () => ({}) },
 })
-const emit = defineEmits(['update:query'])
+const emit = defineEmits<{ 'update:query': [query: { a: string; b: string; step: number | null }] }>()
 
 /** 顯示用的長度上限（code point），避免表格過大 */
 const MAX_LENGTH = 24
-/** 以 code point 截斷（UTF-16 切片會切壞非 BMP 字元） @param {unknown} s */
-const clip = (s) => Array.from(String(s ?? '')).slice(0, MAX_LENGTH).join('')
+/** 以 code point 截斷（UTF-16 切片會切壞非 BMP 字元） */
+const clip = (s: unknown) => Array.from(String(s ?? '')).slice(0, MAX_LENGTH).join('')
 /** 一鍵帶入的詞對（站台設定 lab.pairs）；第一組是預設值 */
 const PRESETS = site.lab.pairs
 const [DEFAULT_A, DEFAULT_B] = PRESETS[0] ?? ['', '']
@@ -43,20 +44,19 @@ const state = computed(() => dpStateAt(explanation.value, steps.value, playback.
 const step = computed(() => (playback.index.value >= 0 ? steps.value[playback.index.value] : null))
 
 /** 選取的格：預設右下角；播放時跟著目前格 */
-const selected = ref(/** @type {[number, number] | null} */ (null))
+const selected = ref<[number, number] | null>(null)
 watch(explanation, (e) => (selected.value = [e.query.length, e.candidate.length]), { immediate: true })
 watch(
   () => state.value.focus,
   (f) => {
-    if (f) selected.value = [f.i, f.j]
+    if (f?.i !== undefined && f.j !== undefined) selected.value = [f.i, f.j]
   },
 )
 
 watch([a, b, playback.index], () => emit('update:query', { a: a.value, b: b.value, step: playback.atEnd.value ? null : playback.index.value }))
 useEventListener(window, 'keydown', playback.onKeydown)
 
-/** @param {string[]} preset */
-function usePreset([x, y]) {
+function usePreset([x, y]: string[]) {
   a.value = x
   b.value = y
 }

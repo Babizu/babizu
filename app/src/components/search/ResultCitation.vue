@@ -1,9 +1,9 @@
-<script setup>
+<script setup lang="ts">
 /**
  * 結果列底部的出處行：來源簡稱＋出處說明＋校對狀態。
  */
 import StatusBadge from '@/components/common/StatusBadge.vue'
-import { useSources } from '@/composables/useSources.js'
+import { useSources } from '@/composables/useSources.ts'
 
 defineProps({
   source: { type: String, required: true },

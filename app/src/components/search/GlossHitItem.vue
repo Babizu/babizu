@@ -1,20 +1,20 @@
-<script setup>
+<script setup lang="ts">
 /**
  * 搜尋結果：中文、英文或臺語釋義相符。
  */
-import { computed } from 'vue'
+import type { GlossHit } from '@babizu/search/index.ts'
+import { computed, type PropType } from 'vue'
 import AudioButton from '@/components/common/AudioButton.vue'
 import DialectBadge from '@/components/common/DialectBadge.vue'
 import HighlightText from '@/components/common/HighlightText.vue'
 import MetaTag from '@/components/common/MetaTag.vue'
-import { t } from '@/i18n.js'
-import { recordRoute, unitLabel } from '@/lib/labels.js'
-import { vCardLink } from '@/lib/card-link.js'
+import { t } from '@/i18n.ts'
+import { recordRoute, unitLabel } from '@/lib/labels.ts'
+import { vCardLink } from '@/lib/card-link.ts'
 import ResultCitation from './ResultCitation.vue'
 
 const props = defineProps({
-  /** search-core 的 GlossHit */
-  hit: { type: Object, required: true },
+  hit: { type: Object as PropType<GlossHit>, required: true },
   query: { type: String, default: '' },
 })
 

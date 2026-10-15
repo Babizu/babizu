@@ -1,12 +1,12 @@
-<script setup>
+<script setup lang="ts">
 /**
  * 播放按鈕。所有按鈕共用 useAudioPlayer 的單一播放器，按下另一個會停止前一個。
  */
 import { LoaderCircleIcon, PauseIcon, PlayIcon, TriangleAlertIcon } from '@lucide/vue'
-import { computed } from 'vue'
-import { Button } from '@/components/ui/button'
-import { useAudioPlayer } from '@/composables/useAudioPlayer.js'
-import { msg, t } from '@/i18n.js'
+import { computed, type PropType } from 'vue'
+import { Button, type ButtonVariants } from '@/components/ui/button'
+import { useAudioPlayer } from '@/composables/useAudioPlayer.ts'
+import { msg, t } from '@/i18n.ts'
 import { cn } from '@/lib/utils'
 
 const props = defineProps({
@@ -14,11 +14,12 @@ const props = defineProps({
   playKey: { type: String, required: true },
   /** 相對資料根目錄的音檔路徑 */
   src: { type: String, required: true },
-  start: { type: Number, default: null },
-  end: { type: Number, default: null },
+  /** 片段的起訖秒數（整個音檔時是 null） */
+  start: { type: Number as PropType<number | null>, default: null },
+  end: { type: Number as PropType<number | null>, default: null },
   /** 無障礙標籤，例如要播放的文字 */
   label: { type: String, default: '' },
-  size: { type: String, default: 'icon' },
+  size: { type: String as PropType<ButtonVariants['size']>, default: 'icon' },
   class: { type: null, default: undefined },
 })
 
@@ -31,7 +32,7 @@ const ariaLabel = computed(() => {
   return t(playing ? msg('停止錄音') : msg('播放錄音'))
 })
 
-function onClick(/** @type {MouseEvent} */ event) {
+function onClick(event: MouseEvent) {
   // 按鈕常放在可點擊的結果列中，避免同時觸發導覽
   event.preventDefault()
   event.stopPropagation()

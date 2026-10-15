@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 /**
  * 動態規劃表（ARIA grid，docs/lab-design.md 第 4 節）。
  * - 列 i：查詢字串前 i 個字元；欄 j：候選字串前 j 個字元；格內是 D(i, j)
@@ -7,29 +7,31 @@
  * - 鍵盤：整張表只有一個 tab stop，方向鍵在格子間移動，Home／End 到列首尾，Ctrl＋Home／End 到表格兩角，
  *   Enter／Space 選取
  */
-import { computed, nextTick, ref, useTemplateRef, watch } from 'vue'
-import { t } from '@/i18n.js'
-import { formatDistance } from '@/lib/labels.js'
+import type { Explanation } from '#bcdp'
+import type { StepFocus } from '@/lab/steps.ts'
+import { computed, nextTick, ref, useTemplateRef, watch, type PropType } from 'vue'
+import { t } from '@/i18n.ts'
+import { formatDistance } from '@/lib/labels.ts'
 import { cn } from '@/lib/utils'
 
 const props = defineProps({
   /** WeightedEditDistance.explain() 的結果 */
-  explanation: { type: Object, required: true },
+  explanation: { type: Object as PropType<Explanation>, required: true },
   revealed: { type: Number, default: Infinity },
   showPath: { type: Boolean, default: true },
   /** 播放中的目前格 {i, j} */
-  focus: { type: Object, default: null },
+  focus: { type: Object as PropType<StepFocus | null>, default: null },
   /** 選取的格 [i, j] */
-  selected: { type: Array, default: null },
+  selected: { type: Array as unknown as PropType<[number, number] | null>, default: null },
 })
-const emit = defineEmits(['select'])
+const emit = defineEmits<{ select: [cell: [number, number]] }>()
 
 const e = computed(() => props.explanation)
-const table = useTemplateRef('table')
+const table = useTemplateRef<HTMLElement>('table')
 
 /** 每一格在計算順序中的位置 */
 const orderIndex = computed(() => {
-  const map = new Map()
+  const map = new Map<string, number>()
   e.value.order.forEach(([i, j], k) => map.set(`${i},${j}`, k))
   return map
 })
@@ -37,35 +39,31 @@ const onPath = computed(() => new Set(e.value.path.map(([i, j]) => `${i},${j}`))
 const maxValue = computed(() => Math.max(1, ...e.value.matrix.flat().filter(Number.isFinite)))
 
 /** roving tabindex：目前可以 tab 進來的那一格 */
-const active = ref(/** @type {[number, number]} */ ([0, 0]))
+const active = ref<[number, number]>([0, 0])
 watch(
   () => props.selected ?? [e.value.query.length, e.value.candidate.length],
   (cell) => (active.value = [cell[0], cell[1]]),
   { immediate: true },
 )
 
-/** @param {number} i @param {number} j */
-function isRevealed(i, j) {
-  return orderIndex.value.get(`${i},${j}`) < props.revealed
+function isRevealed(i: number, j: number) {
+  return (orderIndex.value.get(`${i},${j}`) ?? Infinity) < props.revealed
 }
-/** @param {number} i @param {number} j */
-const isPath = (i, j) => props.showPath && onPath.value.has(`${i},${j}`)
-/** @param {number} i @param {number} j */
-const isFocus = (i, j) => props.focus?.i === i && props.focus?.j === j
-/** @param {number} i @param {number} j */
-const isSelected = (i, j) => props.selected?.[0] === i && props.selected?.[1] === j
+const isPath = (i: number, j: number) => props.showPath && onPath.value.has(`${i},${j}`)
+const isFocus = (i: number, j: number) => props.focus?.i === i && props.focus?.j === j
+const isSelected = (i: number, j: number) => props.selected?.[0] === i && props.selected?.[1] === j
 
-/** 格角的方向箭頭 @param {number} i @param {number} j */
-function arrow(i, j) {
+/** 格角的方向箭頭 */
+function arrow(i: number, j: number) {
   const best = e.value.candidates[i][j][0]
   if (!best) return ''
   // 規則可能一次跨越多格，統一用 ⤡ 表示；來源格在右側說明中列出
   if (best.op === 'rule') return '⤡'
-  return { match: '↖', substitute: '↖', delete: '↑', insert: '←' }[best.op] ?? ''
+  const ARROWS: Record<string, string> = { match: '↖', substitute: '↖', delete: '↑', insert: '←' }
+  return ARROWS[best.op] ?? ''
 }
 
-/** @param {number} i @param {number} j */
-function cellClass(i, j) {
+function cellClass(i: number, j: number) {
   const revealed = isRevealed(i, j)
   const path = isPath(i, j)
   const best = e.value.candidates[i][j][0]
@@ -80,8 +78,8 @@ function cellClass(i, j) {
   )
 }
 
-/** 以數值深淺表示成本（路徑格不套用） @param {number} i @param {number} j */
-function cellStyle(i, j) {
+/** 以數值深淺表示成本（路徑格不套用） */
+function cellStyle(i: number, j: number) {
   if (!isRevealed(i, j) || isPath(i, j)) return {}
   const v = e.value.matrix[i][j]
   const ratio = Math.min(1, v / maxValue.value)
@@ -95,15 +93,11 @@ function cellStyle(i, j) {
 
 /**
  * grid 內的鍵盤操作。
- * @param {KeyboardEvent} event
- * @param {number} i
- * @param {number} j
  */
-function onKeydown(event, i, j) {
+function onKeydown(event: KeyboardEvent, i: number, j: number) {
   const rows = e.value.query.length
   const cols = e.value.candidate.length
-  /** @type {[number, number] | null} */
-  let next = null
+  let next: [number, number] | null = null
   if (event.key === 'ArrowUp') next = [Math.max(0, i - 1), j]
   else if (event.key === 'ArrowDown') next = [Math.min(rows, i + 1), j]
   else if (event.key === 'ArrowLeft') next = [i, Math.max(0, j - 1)]
@@ -118,7 +112,7 @@ function onKeydown(event, i, j) {
   if (!next) return
   event.preventDefault()
   active.value = next
-  nextTick(() => table.value?.querySelector(`[data-cell="${next[0]},${next[1]}"]`)?.focus())
+  nextTick(() => table.value?.querySelector<HTMLElement>(`[data-cell="${next[0]},${next[1]}"]`)?.focus())
 }
 </script>
 

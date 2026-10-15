@@ -26,17 +26,14 @@ import { marked } from 'marked'
 import { validateProfile, type LanguageProfile } from '#bcdp'
 import { PatternError } from '../pattern/errors.ts'
 import { parsePattern } from '../pattern/parser.ts'
+import type { ClientSite, ColorPair, ResolvedVariety } from './client.ts'
 import { extractMessages } from './extract-messages.ts'
 import { BUILTIN_LOCALE_NAMES, BUILTIN_LOCALES, FRAMEWORK_ROOT, SOURCE_LOCALE, loadBuiltinMessages } from './paths.ts'
 
+export type { ClientSite, ColorPair, ResolvedVariety } from './client.ts'
+
 /** 可以依語系提供的文字：字串（所有語系共用）或 `{ 'zh-TW': …, en: … }`。 */
 export type Localized = string | Record<string, string>
-
-/** 一組前景與背景顏色（CSS 色值） */
-export interface ColorPair {
-  fg: string
-  bg: string
-}
 
 /** 語言變體（方言） */
 export interface VarietyConfig {
@@ -151,14 +148,6 @@ export function varietyColors(hue: number, child: boolean): { light: ColorPair; 
     light: { fg: `oklch(${child ? 0.5 : 0.47} ${(0.1 * c).toFixed(3)} ${hue})`, bg: `oklch(0.955 ${(0.03 * c).toFixed(3)} ${hue})` },
     dark: { fg: `oklch(${child ? 0.8 : 0.82} ${(0.09 * c).toFixed(3)} ${hue})`, bg: `oklch(${child ? 0.3 : 0.31} ${(0.04 * c).toFixed(3)} ${hue})` },
   }
-}
-
-/** 解析後的語言變體（送進瀏覽器） */
-export interface ResolvedVariety {
-  code: string
-  parent: string | null
-  label: Record<string, string>
-  colors: { light: ColorPair; dark: ColorPair }
 }
 
 /**
@@ -296,6 +285,36 @@ export async function loadSiteConfig(siteDir: string) {
 
   if (errors.length > 0) throw new Error(`站台設定有誤（${configFile}）：\n- ${errors.join('\n- ')}`)
 
+  // 會送進瀏覽器的部分（必須可以 JSON 序列化；型別在 client.ts，前端也用）
+  const client: ClientSite = {
+    id: input.id,
+    locales,
+    defaultLocale,
+    localeNames,
+    title: localize(input.title, locales, defaultLocale) as Record<string, string>,
+    shortTitle: localize(input.shortTitle ?? input.title, locales, defaultLocale),
+    description: localize(input.description, locales, defaultLocale),
+    footer: localize(input.footer, locales, defaultLocale),
+    icon: existsSync(join(publicDir, icon)) ? icon : null,
+    themeColor: input.themeColor ?? '#2f3f7a',
+    varieties,
+    writingSystems: Object.fromEntries(
+      Object.entries(input.writingSystems ?? {}).map(([code, label]) => [code, localize(label, locales, defaultLocale)]),
+    ),
+    specialChars: input.specialChars ?? [],
+    examples: (input.examples ?? []).map((e) => ({ q: e.q, note: localize(e.note, locales, defaultLocale) })),
+    patternExamples: (input.patternExamples ?? []).map((e) => ({ q: e.q, note: localize(e.note, locales, defaultLocale) })),
+    about,
+    lab: {
+      pairs: input.lab?.pairs ?? [],
+      words: input.lab?.words ?? null,
+      morph: { examples: input.lab?.morph?.examples ?? [], failures: input.lab?.morph?.failures ?? [] },
+    },
+    messages,
+    // 沒有語言設定檔時上面已經丟出錯誤
+    profile: profile as LanguageProfile,
+  }
+
   return {
     root,
     configFile,
@@ -303,34 +322,8 @@ export async function loadSiteConfig(siteDir: string) {
     dataDir: join(root, input.data ?? 'data'),
     publicDir,
     overrides,
-    /** 會送進瀏覽器的部分（必須可以 JSON 序列化） */
-    client: {
-      id: input.id,
-      locales,
-      defaultLocale,
-      localeNames,
-      title: localize(input.title, locales, defaultLocale) as Record<string, string>,
-      shortTitle: localize(input.shortTitle ?? input.title, locales, defaultLocale),
-      description: localize(input.description, locales, defaultLocale),
-      footer: localize(input.footer, locales, defaultLocale),
-      icon: existsSync(join(publicDir, icon)) ? icon : null,
-      themeColor: input.themeColor ?? '#2f3f7a',
-      varieties,
-      writingSystems: Object.fromEntries(
-        Object.entries(input.writingSystems ?? {}).map(([code, label]) => [code, localize(label, locales, defaultLocale)]),
-      ),
-      specialChars: input.specialChars ?? [],
-      examples: (input.examples ?? []).map((e) => ({ q: e.q, note: localize(e.note, locales, defaultLocale) })),
-      patternExamples: (input.patternExamples ?? []).map((e) => ({ q: e.q, note: localize(e.note, locales, defaultLocale) })),
-      about,
-      lab: {
-        pairs: input.lab?.pairs ?? [],
-        words: input.lab?.words ?? null,
-        morph: { examples: input.lab?.morph?.examples ?? [], failures: input.lab?.morph?.failures ?? [] },
-      },
-      messages,
-      profile,
-    },
+    /** 會送進瀏覽器的部分 */
+    client,
   }
 }
 

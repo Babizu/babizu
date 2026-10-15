@@ -1,5 +1,5 @@
 <!-- shadcn-vue new-york-v4 元件的 JavaScript 版（以 reka-ui 為基礎）。修改樣式時請保持與其他元件一致。 -->
-<script setup>
+<script setup lang="ts">
 import { SliderRange, SliderRoot, SliderThumb, SliderTrack } from 'reka-ui'
 import { cn } from '@/lib/utils'
 
@@ -14,7 +14,7 @@ const props = defineProps({
   thumbLabel: { type: String, default: undefined },
   thumbValueText: { type: String, default: undefined },
 })
-const model = defineModel({ type: Array, default: () => [0] })
+const model = defineModel<number[]>({ default: () => [0] })
 </script>
 
 <template>

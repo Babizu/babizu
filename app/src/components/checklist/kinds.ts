@@ -1,0 +1,70 @@
+/**
+ * @file 檢查清單的類別名稱（依最接近的詞條猜的類別、完全相同的詞條的篩選）。
+ * 每個類別帶一個符號：與搜尋結果的「≈」同一套寫法，不另加圖示。
+ */
+
+import type { SegmentationFilter, TokenKind } from '@babizu/search/index.ts'
+import { msg } from '@/i18n.ts'
+
+/** 一個類別（或篩選）：值、符號、名稱與說明 */
+export interface KindOption<V extends string> {
+  value: V
+  glyph?: string
+  label: string
+  hint?: string
+}
+
+/** 例句中沒有詞條的詞：依最接近的詞條猜的類別（babizu/search 的 TokenKind） */
+export const TOKEN_KINDS: Array<Required<KindOption<TokenKind>>> = [
+  {
+    value: 'variant',
+    glyph: '≈',
+    label: msg('像方言變體'),
+    hint: msg('只靠方言對應規則就對得上辭典中的詞條，多半是同一個詞的另一種寫法。'),
+  },
+  {
+    value: 'derivation',
+    glyph: '+',
+    label: msg('像加綴派生'),
+    hint: msg('自動拆解（演算法推定）找得到辭典中的詞根，多半是詞根條目底下沒有列出的加綴形式。'),
+  },
+  {
+    value: 'near',
+    glyph: '~',
+    label: msg('有相近的詞條'),
+    hint: msg('辭典中有拼寫相近的詞條，但不是單純的方言對應或加綴，需要人工判斷。'),
+  },
+  {
+    value: 'none',
+    glyph: '∅',
+    label: msg('沒有相近的詞條'),
+    hint: msg('辭典中找不到拼寫相近的詞條，可能需要新增條目。'),
+  },
+]
+
+/** 完全相同的詞條、重複的例句：篩選 */
+export const DUPLICATE_FILTERS: Array<KindOption<'all' | 'repeated' | 'sameSource' | 'crossSource'>> = [
+  { value: 'all', label: msg('全部') },
+  { value: 'repeated', label: msg('疑似重複登錄'), hint: msg('同一個來源內，文字與釋義（例句是翻譯）都相同的記錄') },
+  { value: 'sameSource', label: msg('同一來源內') },
+  { value: 'crossSource', label: msg('跨來源') },
+]
+
+/** 人工拆解對照：篩選（babizu/search 的 SegmentationFilter）；每一列至少有一種不一致 */
+export const SEGMENTATION_FILTERS: Array<Required<KindOption<SegmentationFilter>>> = [
+  { value: 'all', glyph: '', label: msg('全部'), hint: msg('有任何不一致的記錄') },
+  { value: 'miss', glyph: '✗', label: msg('漏（召回）'), hint: msg('人工拆解有這個詞綴，句型搜尋比不到：拉低召回') },
+  { value: 'extra', glyph: '+', label: msg('誤配（準確）'), hint: msg('句型搜尋比到這個詞綴，人工拆解沒有：拉低準確') },
+  {
+    value: 'unknown',
+    glyph: '?',
+    label: msg('規格沒有的詞綴'),
+    hint: msg('人工拆解中的詞綴不在構詞規格中，不比：可能要補進規格，或是拆解與規格的寫法不同'),
+  },
+  {
+    value: 'rootMissing',
+    glyph: '∅',
+    label: msg('詞根不在詞庫'),
+    hint: msg('人工拆解中的詞根不是詞庫中的詞：補上這個詞根的條目，搜尋常常就拆得到'),
+  },
+]

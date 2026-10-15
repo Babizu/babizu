@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 /**
  * 關於：框架提供的特色一覽＋站台自己的說明（站台設定 about，Markdown 依語系分檔）。
  *
@@ -10,9 +10,9 @@
 import { AudioLinesIcon, BookMarkedIcon, LayersIcon, WavesIcon } from '@lucide/vue'
 import { computed } from 'vue'
 import PatternGuide from '@/components/pattern/PatternGuide.vue'
-import { useSources } from '@/composables/useSources.js'
-import { useI18n } from '@/i18n.js'
-import { formatCount, site } from '@/lib/labels.js'
+import { useSources } from '@/composables/useSources.ts'
+import { useI18n } from '@/i18n.ts'
+import { formatCount, site } from '@/lib/labels.ts'
 
 const { sources } = useSources()
 const { t, tr } = useI18n()

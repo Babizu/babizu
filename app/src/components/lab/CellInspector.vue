@@ -1,16 +1,17 @@
-<script setup>
+<script setup lang="ts">
 /**
  * 單格說明：列出到達這一格的所有候選轉移，成本最低者即為這格的值。
  */
-import { computed } from 'vue'
-import { t } from '@/i18n.js'
-import { categoryLabel, formatDistance, opLabel, positionLabel } from '@/lib/labels.js'
+import type { CellCandidate, Explanation, PublicRule } from '#bcdp'
+import { computed, type PropType } from 'vue'
+import { t } from '@/i18n.ts'
+import { categoryLabel, formatDistance, opLabel, positionLabel } from '@/lib/labels.ts'
 import { cn } from '@/lib/utils'
 
 const props = defineProps({
-  explanation: { type: Object, required: true },
+  explanation: { type: Object as PropType<Explanation>, required: true },
   /** [i, j] */
-  cell: { type: Array, required: true },
+  cell: { type: Array as unknown as PropType<[number, number]>, required: true },
 })
 
 const i = computed(() => props.cell[0])
@@ -20,8 +21,8 @@ const candidates = computed(() => props.explanation.candidates[i.value][j.value]
 const xPrefix = computed(() => props.explanation.query.slice(0, i.value).join(''))
 const yPrefix = computed(() => props.explanation.candidate.slice(0, j.value).join(''))
 
-/** 候選轉移的文字說明 @param {any} c */
-function describe(c) {
+/** 候選轉移的文字說明 */
+function describe(c: CellCandidate) {
   const [fi, fj] = c.from
   const xs = props.explanation.query.slice(fi, i.value).join('')
   const ys = props.explanation.candidate.slice(fj, j.value).join('')
@@ -39,8 +40,8 @@ function describe(c) {
   }
 }
 
-/** 規則的附註：分類、適用位置、是否為自動補上的反向規則 @param {any} rule */
-function ruleNote(rule) {
+/** 規則的附註：分類、適用位置、是否為自動補上的反向規則 */
+function ruleNote(rule: PublicRule) {
   const parts = [rule.category ? categoryLabel(rule.category) : t('語音規則')]
   if (rule.position === 'initial' || rule.position === 'final') parts.push(positionLabel(rule.position))
   if (rule.reversed) parts.push(t('反向'))
