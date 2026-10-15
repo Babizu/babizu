@@ -261,7 +261,7 @@ describe('拆解表：與自動派生圖、一般搜尋的自動拆解是同一�
   })
 
   it('表面相同的讀法都收：元音開頭的詞根上前綴 a- 與中綴 <a> 同分，<a>…-en 與 a-…-en 都找得到 aidemen', () => {
-    // 研究紀錄 U.25：同分時原本只留一種讀法（規格中較前的前綴 a-），<a>…-an 找不到 aitukuan
+    // 回歸：同分時只留一種讀法（規格中較前的前綴 a-）的話，<a>…-an 找不到 aitukuan
     const grammar = { ...PATTERN_GRAMMAR, morphemes: [...PATTERN_GRAMMAR.morphemes, { id: 'pre.a', type: 'prefix', form: 'a' }] }
     const small = buildPatternEngine(grammar, [rec('a', 'word', 'idem'), rec('b', 'word', 'aidemen')])
     const id = small.index.dawg.lookup('aidemen')
@@ -541,6 +541,6 @@ describe('句、讀法、& 與 !、篩選、頻率', () => {
   })
 })
 
-it('測試資料的構詞文法沿用 docs/morph-grammar.md 的寫法', () => {
+it('測試資料的構詞文法沿用 packages/bcdp/docs/morph-grammar.md 的寫法', () => {
   expect(PATTERN_GRAMMAR.morphemes.find((m) => m.id === 'AF')?.forms).toEqual(['m', 'mu', 'mi', 'me'])
 })

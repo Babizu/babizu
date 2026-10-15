@@ -23,8 +23,8 @@ const text = computed(() => {
   )
   return t(props.step.note.key, params)
 })
-/** 框架文件的位置（proofRef 形如 bcdp.md#…） */
-const DOCS = 'https://github.com/Babizu/babizu/blob/main/docs/'
+/** BCDP 套件文件的位置（proofRef 形如 bcdp.md#…） */
+const DOCS = 'https://github.com/Babizu/babizu/blob/main/packages/bcdp/docs/'
 const docHref = computed(() => (props.step?.proofRef ? `${DOCS}${props.step.proofRef}` : null))
 </script>
 

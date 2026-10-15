@@ -8,7 +8,7 @@
  * - 示範站台 examples/minimal：網站資料（建到暫存目錄）、check、搜尋、句型搜尋、相近的詞、列表
  * - 仿巴宰語的合成語料（test/search/morph-corpus.js，隨機詞根加上巴宰語語法書中常見的詞綴；含構詞文法、
  *   自動派生圖與拆解表）：搜尋、句型搜尋、構詞說明、構詞搜尋、檢查清單、實驗室的步驟
- * 私有的 golden（minubizu 的 tools/refactor/golden.mjs）以真實的辭典資料涵蓋同樣的項目。
+ * 私有 repo 另有一份 golden，以真實的辭典資料涵蓋同樣的項目。
  */
 
 import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'

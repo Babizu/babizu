@@ -1,7 +1,7 @@
 /**
  * @file 效能基準：以隨機生成、形似巴宰語的 2 萬個詞建立索引，量測模糊查詢時間。
  *
- * 執行：npm run bench（在 packages/fuzzy-search 或根目錄）
+ * 執行：npm run bench（babizu 根目錄）
  */
 
 import { performance } from 'node:perf_hooks'

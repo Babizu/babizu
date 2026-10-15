@@ -1,5 +1,5 @@
 /**
- * @file 前端單元測試用的 `virtual:babizu/site`（實際建置時由 src/site/vite.js 產生）。
+ * @file 前端單元測試用的 `virtual:babizu/site`（實際建置時由 src/site/vite.ts 產生）。
  * 用巴宰–噶哈巫語的設定，因為它有從屬變體（愛蘭 ⊂ 巴宰）與真實的規則表。
  */
 

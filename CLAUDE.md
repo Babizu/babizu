@@ -29,7 +29,7 @@ node --conditions=babizu-source bin/babizu.js build ../pazeh-kaxabu   # 用本�
 
 | 位置 | 內容 |
 |---|---|
-| `packages/bcdp/` | 零依賴的 BCDP 套件（`#bcdp`、`babizu/fuzzy`）：加權編輯距離、DAWG 詞圖與多通道走訪（`channel-walk.ts`）、交界狀態、語言設定檔、構詞規格與構詞文法、構詞搜尋（`morph-*.ts`）、虛擬詞根；`fst/` 是只供評估的 WFST 參考後端。不能 import babizu。演算法說明見 `docs/bcdp.md` |
+| `packages/bcdp/` | 零依賴的 BCDP 套件（`#bcdp`、`babizu/fuzzy`）：加權編輯距離、DAWG 詞圖與多通道走訪（`channel-walk.ts`）、交界狀態、語言設定檔、構詞規格與構詞文法、構詞搜尋（`morph-*.ts`）、虛擬詞根；`fst/` 是只供評估的 WFST 參考後端。不能 import babizu。演算法說明見 `packages/bcdp/docs/bcdp.md` |
 | `src/schema/` | JSON Schema（`json/`）、代碼表（`constants.ts`）、記錄的型別與工廠函式；`dialects` 允許值由站台設定注入 |
 | `src/search/` | 建置端：索引（`build.ts`）、自動派生圖（`derivations.ts`）、拆解表（`parses.ts`）。查詢端：`engine.ts`（門面）、詞形比對（`term-matcher.ts`、`derived-terms.ts`、`substring-index.ts`）、詞條與例句（`native-search.ts`、`entry-search.ts`、`occurrence-search.ts`）、釋義、分數（`scoring.ts`）、詞條家族（`family.ts`）、檢查清單 |
 | `src/pattern/` | 句型搜尋（`docs/pattern-query.md`） |

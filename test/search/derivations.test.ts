@@ -412,7 +412,7 @@ describe('自動同根：詞根在詞庫中（查詢自動拆解出的詞根往�
   })
 
   it('多詞查詢：句中任何一個詞只是自動同根，這句就排在原本的命中之後、不佔上限（即使另一個詞是更弱的結尾相符）', () => {
-    // 研究紀錄 U.24：原本以句中「最弱的命中方式」判斷，結尾相符、包含比自動同根弱，s3 不算自動同根，會佔上限
+    // 回歸：以句中「最弱的命中方式」判斷的話，結尾相符、包含比自動同根弱，s3 不算自動同根，會佔上限
     const res = s.search('masamian lia', { fields: ['native'], limit: 1 })
     const ids = res.occurrences.map((o) => o.doc.id)
     expect(ids).toContain('dict:s2')
@@ -451,7 +451,7 @@ describe('自動同根：詞根在詞庫中（查詢自動拆解出的詞根往�
   })
 
   it('查詢本身也是別的詞的詞根時，詞庫詞根的同根照樣找：musamian 是 musamianan 的詞根，查它也找到 masamian（與反方向對稱）', () => {
-    // 研究紀錄 U.24：原本查詢是別的詞的詞根時連詞庫詞根的同根也不找，查 masamian 找得到 musamian、反過來卻找不到
+    // 回歸：查詢是別的詞的詞根時若連詞庫詞根的同根也不找，查 masamian 找得到 musamian、反過來卻找不到
     const there = s.search('masamian', { fields: ['native'] }).entries.find((h) => h.doc.id === 'dict:musamian')
     const back = s.search('musamian', { fields: ['native'] }).entries.find((h) => h.doc.id === 'dict:masamian')
     expect(there?.matchType).toBe('sibling')

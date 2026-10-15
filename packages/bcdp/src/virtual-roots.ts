@@ -1,5 +1,5 @@
 /**
- * @file 虛擬詞根：詞庫中沒有的詞根（docs/bcdp.md 10.5）。
+ * @file 虛擬詞根：詞庫中沒有的詞根（docs/bcdp.md 第 10 節）。
  *
  * 詞根不在詞庫中時，在詞圖上走訪找不到它：b<in>ubuer 與 ma-bubuer 共同的詞根 bubuer 不是任何記錄的詞形。
  * 同一個 BCDP 的交界列直接給出「字面的開放詞幹」（morph-search.ts 的 openStems）；這裡決定哪些開放詞幹算虛擬詞根：

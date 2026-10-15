@@ -2,7 +2,7 @@
 
 以下從零開始建立一個網站。完整的可執行版本在 [examples/minimal/](../examples/minimal/)。
 
-需要 Node.js 20.19 以上。
+需要 Node.js 22.18 以上。
 
 ## 1. 建立站台目錄
 
@@ -10,7 +10,7 @@
 mkdir my-dictionary && cd my-dictionary
 npm init -y
 npm pkg set type=module
-npm install github:Babizu/babizu#v0.5.0
+npm install github:Babizu/babizu#v1.0.0
 ```
 
 ## 2. 語言設定檔 `language.json`

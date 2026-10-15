@@ -1,5 +1,5 @@
 /**
- * @file 自動派生圖：查詞根時找到演算法推定的加綴變化（自動派生，docs/bcdp.md 第 10 節）。
+ * @file 自動派生圖：查詞根時找到演算法推定的加綴變化（自動派生，docs/derivations.md）。
  * 這是演算法推定的關係；辭典標註的派生關係在 docs.parent 與詞根 posting，兩者分開計算、分開標示。
  *
  * 建置時以構詞搜尋 BCDP 對詞庫中每個詞 w（含例句中的詞）求**成本最低的詞根** r（同分的都取），
@@ -13,11 +13,11 @@
  *
  * ## 虛擬詞根：詞庫中沒有的共同詞根（演算法在 BCDP 套件的 virtual-roots.ts）
  * 詞根不在詞庫中時，在詞圖上走訪找不到它：查 binubuer（b<in>ubuer）找不到 mabubuer（ma-bubuer），
- * 因為兩者共同的詞根 bubuer 不是任何記錄的詞形。所以同一個 BCDP 也求「詞庫外的詞根」（`virtualRoots`，docs/bcdp.md 10.5）：
+ * 因為兩者共同的詞根 bubuer 不是任何記錄的詞形。所以同一個 BCDP 也求「詞庫外的詞根」（`virtualRoots`，docs/derivations.md）：
  * - **字面**：詞根是詞中原樣的一段（BCDP 的 openStems，成本直接由交界列讀出），分析中的詞綴也必須原樣出現，
  *   只容許構詞音變（只有構詞音變的距離函式，createAlternationMetric）。不在詞庫裡的部分不能再加模糊，
  *   否則會發明詞根（abuk → a- ＋ rabuk）與同根；
- * - **長度懲罰**（借用最小描述長度的直覺，但每個詞各自計算、拼寫成本不分攤，不是標準的 MDL；docs/bcdp.md 10.5）：
+ * - **長度懲罰**（借用最小描述長度的直覺，但每個詞各自計算、拼寫成本不分攤，不是標準的 MDL；docs/derivations.md）：
  *   詞庫中的詞根只要指出是哪一個，詞庫外的要逐字寫出來，所以分析的分數是
  *   成本 ＋ `virtualRootLengthCost` × 詞根長度（`virtualRootCost`）。分數比 BCDP 在詞庫中最好的詞根的成本低才成立
  *   （原本的邊一條都不動，只在詞庫解釋不了的地方補上），取分數最低的（同分的都取）。長的詞庫外詞根常常是沒有認出的組合
@@ -431,7 +431,7 @@ export class DerivationGraph {
     while (stack.length) {
       const x = stack.pop() as number
       for (const c of this.children.get(x) ?? []) {
-        // 上限比不含詞根成本的成本（詞根成本只改名次，docs/bcdp.md 1.6 第 9 項）
+        // 上限比不含詞根成本的成本（詞根成本只改名次，packages/bcdp/docs/bcdp.md 1.6 第 9 項）
         if (this.analyses[c.analysis].cost - this.rootCostOf(x) > maxPath + EPSILON || reach.has(c.word)) continue
         reach.add(c.word)
         stack.push(c.word)

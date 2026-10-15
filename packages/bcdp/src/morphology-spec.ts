@@ -121,7 +121,7 @@ export interface MorphologySpec {
   lemmaSpread?: number
   /**
    * 詞庫外的詞根（虛擬詞根）每個字元的成本（預設 0.03）：詞庫中的詞根只要指出是哪一個，
-   * 詞庫外的要逐字寫出來，所以越長越貴（借用最小描述長度的直覺的長度懲罰，每個詞各自計算；docs/bcdp.md 10.5）。
+   * 詞庫外的要逐字寫出來，所以越長越貴（借用最小描述長度的直覺的長度懲罰，每個詞各自計算；docs/bcdp.md 第 10 節）。
    * 預設值以巴宰–噶哈巫語的資料校準
    */
   virtualRootLengthCost?: number

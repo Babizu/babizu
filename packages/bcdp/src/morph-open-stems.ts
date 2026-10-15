@@ -1,5 +1,5 @@
 /**
- * @file 開放詞彙的詞幹（虛擬詞根的候選；docs/bcdp.md 10.5）：由通道兩側的交界列直接讀出，不走訪詞圖。
+ * @file 開放詞彙的詞幹（虛擬詞根的候選；docs/bcdp.md 第 10 節）：由通道兩側的交界列直接讀出，不走訪詞圖。
  */
 
 import { EDGE_WORD, EPSILON } from './dp.ts'

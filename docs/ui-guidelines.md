@@ -169,7 +169,7 @@
 
 ### 詞條家族（搜尋結果）
 
-辭典確認屬於同一個詞條的命中排成一個區塊（`EntryGroupItem`；排序規則見 [fuzzy-search.md](fuzzy-search.md)）：
+辭典確認屬於同一個詞條的命中排成一個區塊（`EntryGroupItem`；排序規則見 [search.md](search.md) 第 6 節）：
 
 ```
 kita-  詞綴 / 詞根  自動拆解 pa- + kita          ← 詞條（家族的代表）固定在最上面，與一般結果列相同
@@ -191,7 +191,7 @@ kita-  詞綴 / 詞根  自動拆解 pa- + kita          ← 詞條（家族的�
 
 ### 同形詞組（搜尋結果）
 
-不同來源寫法完全相同的詞合成一項（`SpellingSetItem`；規則見 [fuzzy-search.md](fuzzy-search.md)）。
+不同來源寫法完全相同的詞合成一項（`SpellingSetItem`；規則見 [search.md](search.md) 第 6 節）。
 詞形只寫一次，底下每筆一列，比的是釋義：
 
 ```

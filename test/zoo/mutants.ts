@@ -71,7 +71,7 @@ export const MUTANTS = [
     file: 'packages/bcdp/src/morphology.ts',
     find: "const ok = pattern === 'CGV' ? onglide : !onglide && glides.has(chars[v1 + 1])",
     replace: "const ok = pattern === 'CGV' ? onglide : glides.has(chars[v1 + 1])",
-    why: 'CVG(ziux) 應該不適用；morphology.test.js 的模板表與參考實作的隨機仲裁',
+    why: 'CVG(ziux) 應該不適用；morphology.test.ts 的模板表與參考實作的隨機仲裁',
   },
   {
     name: 'CGV、CVG 的元音核可以超過兩個元音',
@@ -165,7 +165,7 @@ export const MUTANTS = [
     why: '回應的統計與逐次計算不同；engine 測試「重複的查詢詞只算一次，統計照樣累加」',
   },
   {
-    name: '構詞命中遇到同一個詞的模糊命中一律捨棄（v0.2.0 起的原始寫法）',
+    name: '構詞命中遇到同一個詞的模糊命中一律捨棄（最早的寫法）',
     file: 'src/search/scoring.ts',
     find: '  if (a >= b - EPSILON) return keep(prev, m)\n  return keep(m, prev)',
     replace: '  return keep(prev, m)',
@@ -520,7 +520,7 @@ export const MUTANTS = [
     file: 'src/pattern/morph.ts',
     find: '  const prefixOk = req.prefixesAnywhere ? anywhere(req.prefixes, reading.left) : runAt(req.prefixes, reading.left, 0)',
     replace: '  const prefixOk = anywhere(req.prefixes, reading.left)',
-    why: 'mi-… 找到 kamikita（ka-mi-kita），v0.6.0 的 imini 雜訊；morph 的 imini 測試、search 的 kamikita 測試',
+    why: 'mi-… 找到 kamikita（ka-mi-kita），詞綴不從最外層算起的 imini 雜訊；morph 的 imini 測試、search 的 kamikita 測試',
   },
   {
     name: '句型：後綴錨在內側（從第一個後綴算起）',
@@ -812,7 +812,7 @@ export const MUTANTS = [
     file: 'packages/bcdp/src/morph-finish.ts',
     find: 'if (r.term === query || Array.from(r.term).length < spec.minStem || r.distance > maxDistance + EPSILON) continue',
     replace: 'if (r.term === query || Array.from(r.term).length < spec.minStem || r.distance + rootCost(r.term) > maxDistance + EPSILON) continue',
-    why: '靠近上限的正確詞根因為詞根成本消失（研究紀錄 U.27：10 組確定詞對）；bcdp-reference（ref-morph 的上限比不含詞根成本的成本）',
+    why: '靠近上限的正確詞根因為詞根成本消失；bcdp-reference（ref-morph 的上限比不含詞根成本的成本）',
   },
   {
     name: '音節數超過成本表時當作 0',

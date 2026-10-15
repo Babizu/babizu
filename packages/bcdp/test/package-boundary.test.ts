@@ -10,12 +10,17 @@ import { describe, expect, it } from 'vitest'
 
 const PACKAGE = fileURLToPath(new URL('..', import.meta.url))
 
-/** @param dir */
-const files = (dir: string): string[] =>
-  readdirSync(dir).flatMap((name) => {
-    const path = join(dir, name)
-    return statSync(path).isDirectory() ? files(path) : /\.(js|mjs)$/.test(name) ? [path] : []
-  })
+/** 目錄下的原始碼檔（.ts；型別宣告檔除外）。檔案清單是空的就失敗，免得副檔名對不上時測試什麼都沒查就通過 */
+const files = (dir: string): string[] => {
+  const walk = (d: string): string[] =>
+    readdirSync(d).flatMap((name) => {
+      const path = join(d, name)
+      return statSync(path).isDirectory() ? walk(path) : /\.ts$/.test(name) && !name.endsWith('.d.ts') ? [path] : []
+    })
+  const found = walk(dir)
+  if (found.length === 0) throw new Error(`${dir} 中沒有原始碼檔`)
+  return found
+}
 
 /** 檔案中的 import／export from 與動態 import（不含註解中的例子） */
 function specifiersOf(file: string) {

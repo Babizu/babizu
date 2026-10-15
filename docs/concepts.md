@@ -35,14 +35,18 @@ flowchart LR
 
 | 子路徑 | 位置 | 職責 | 執行環境 |
 |---|---|---|---|
-| `babizu/fuzzy` | `src/fuzzy/` | 加權編輯距離、DAWG 詞圖模糊搜尋、語言設定檔 | 瀏覽器＋Node.js，零依賴 |
-| `babizu/schema` | `src/schema/` | 標準記錄的 JSON Schema、代碼表、建立記錄的輔助函式 | 瀏覽器＋Node.js（驗證器需要 ajv） |
-| `babizu/search` | `src/search/` | 搜尋鍵與斷詞、索引建置、查詢引擎 | 瀏覽器＋Node.js |
-| `babizu/dataset` | `src/dataset.js` | 資料集讀寫與驗證 | Node.js |
+| `babizu/fuzzy` | `packages/bcdp/` | BCDP 套件：加權編輯距離、DAWG 詞圖模糊搜尋、語言設定檔、構詞規格與構詞搜尋、虛擬詞根 | 瀏覽器＋Node.js，零依賴 |
+| `babizu/fst` | `packages/bcdp/src/fst/` | 只供評估的 WFST 參考後端 | 瀏覽器＋Node.js，零依賴 |
+| `babizu/schema` | `src/schema/` | 標準記錄的 JSON Schema、代碼表、記錄的型別與建立記錄的輔助函式 | 瀏覽器＋Node.js（驗證器需要 ajv） |
+| `babizu/search` | `src/search/` | 搜尋鍵與斷詞、索引建置、自動派生圖與拆解表、查詢引擎 | 瀏覽器＋Node.js |
+| `babizu/pattern` | `src/pattern/` | 句型搜尋（[pattern-query.md](pattern-query.md)） | 瀏覽器＋Node.js |
+| `babizu/dataset` | `src/dataset.ts` | 資料集讀寫與驗證 | Node.js |
 | `babizu/pipeline` | `src/pipeline/` | 轉接器輔助（試算表、docx、SSA 字幕）、`exportDataset` | Node.js |
 | `babizu/site` | `src/site/` | 讀站台設定、準備網站資料、Vite 建置 | Node.js |
 | — | `app/` | 網站前端（Vue 3＋shadcn-vue＋Tailwind CSS v4） | 瀏覽器 |
 | `babizu` 指令 | `bin/babizu.js` | `dev`／`build`／`preview`／`check`／`locales` | Node.js |
+
+全部以 TypeScript 撰寫；安裝時（`prepare`）編譯到 `dist/`，子路徑指向編譯結果與型別宣告。BCDP 套件不能 import babizu 的其他部分。
 
 設計原則：
 
@@ -62,7 +66,7 @@ flowchart LR
 | `search/docs.json` | 進站後在 Web Worker 背景載入 | 每筆記錄的搜尋結果摘要（欄式儲存）、語言變體的位元對照與包含關係 |
 | `search/lexicon.json` | 同上 | 序列化的詞圖（DAWG）與 posting |
 | `search/language.json` | 同上 | 語言設定檔（Worker 用它處理查詢） |
-| `search/derivations.json` | 同上 | 自動派生圖：每個詞由 BCDP 求得的最好詞根，查詞根時往下找自動派生形（[bcdp.md](bcdp.md) 第 10 節；沒有構詞規格時是空的） |
+| `search/derivations.json` | 同上 | 自動派生圖：每個詞由 BCDP 求得的最好詞根，查詞根時往下找自動派生形（[derivations.md](derivations.md)；沒有構詞規格時是空的） |
 | `search/parses.json` | 第一次用到句型搜尋的構詞樣式時（Web Worker） | 拆解表：每個詞的所有 BCDP 拆法，即自動拆解列出的那一串（[pattern-query.md](pattern-query.md) 3.5；沒有構詞規格時是空的） |
 | `search/segmentations.json` | 第一次用到檢查清單的人工拆解對照時（Web Worker，連同拆解表） | 有人工拆解（`morphology.segmentation`，含詞素界）的記錄編號與拆解（`src/search/segmentation.js`） |
 | `records/<來源>/<分片>.json` | 開啟詞條頁、瀏覽頁時 | 完整記錄與群組 |
@@ -90,7 +94,7 @@ flowchart LR
 | 句型（詞序與構詞） | 每筆記錄切成句與詞（查詢時）＋上面幾種＋拆解表 `search/parses.json`（第一次用到構詞樣式時載入） | 查詢用到 `_`、`…`、引號等寫法時改用句型搜尋：每個詞的條件用上面同一套比對，再依詞序比對，語意與正規表達式相同；構詞樣式依模糊程度取每個詞的拆法（自動拆解列出的那些），詞綴從最外層算起（[pattern-query.md](pattern-query.md)） |
 
 目標語言的各種比對合併後，換算成同一個等效距離一起排序（模糊、前綴、構詞、包含各有換算方式，詞條與例句同一套規則，`src/search/scoring.js`）；詞條區再把辭典確認屬於同一個詞條的結果排在一起（詞條家族），不同來源寫法完全相同的單獨結果合成一項（同形詞組）。每筆結果標示命中方式。
-演算法細節見 [fuzzy-search.md](fuzzy-search.md)。
+演算法細節見 [search.md](search.md)（命中方式、排序與分組）與 BCDP 套件的 [distance.md](../packages/bcdp/docs/distance.md)（距離與詞圖搜尋）。
 
 ### 辭典標註與自動推定：兩種來源的構詞關係一定分開
 

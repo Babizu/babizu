@@ -21,7 +21,7 @@ import { APP_DIR, FRAMEWORK_ROOT } from './paths.ts'
  *   元件之間的 provide／inject 對不上（對話框、彈出選單全部失效）；
  * - 反過來，`@/…`、`@babizu/…` 這類以 @ 開頭的別名，解析到 node_modules 裡，會被當成套件另外打包一份：
  *   同一個模組兩份實體，全站共用的狀態（語系、來源清單、播放器）各自一份，改了程式也不會重新載入。
- * 所以只打包明列的套件，其他一律當原始碼。新增前端依賴時要加進這裡（test/site/vite.test.js 檢查）。
+ * 所以只打包明列的套件，其他一律當原始碼。新增前端依賴時要加進這裡（test/site/vite.test.ts 檢查）。
  */
 export const FRONTEND_DEPS = ['vue', 'vue-router', 'reka-ui', '@lucide/vue', '@vueuse/core', 'class-variance-authority', 'clsx', 'tailwind-merge', 'vue-sonner']
 

@@ -108,7 +108,7 @@
     "packages/bcdp/tsconfig.json"
   ],
   "engines": {
-    "node": ">=20.19"
+    "node": ">=22.18"
   },
   "scripts": {
     "prepare": "tsc -b",

@@ -8,7 +8,7 @@ import { buildDerivationGraph, buildParseChart, buildSearchIndex, SearchEngine }
 import { PAZEH_PROFILE } from '../../packages/bcdp/test/fixtures/pazeh.ts'
 import type { Unit } from '../../src/schema/types.ts'
 
-/** 構詞文法：主事焦點的同位詞素組 {m, mu, mi, me}、中綴 <in> <a>、組合規則（docs/morph-grammar.md） */
+/** 構詞文法：主事焦點的同位詞素組 {m, mu, mi, me}、中綴 <in> <a>、組合規則（packages/bcdp/docs/morph-grammar.md） */
 export const PATTERN_GRAMMAR = {
   cost: 0.1,
   minStem: 3,

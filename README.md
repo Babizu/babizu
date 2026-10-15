@@ -8,7 +8,7 @@
 - **跨方言模糊搜尋**：多字元加權編輯距離，方言間系統性的語音對應（`r↔l`、詞尾 `l↔n`、`er↔ee`…）只算極小的距離；
   規則寫在語言設定檔（JSON），不用寫程式。另有前綴與包含比對，補足短查詢。
 - **構詞**：在語言設定檔宣告詞綴、中綴、重疊、環綴與構詞音變，或寫成構詞文法（詞素與組合規則，載入時展開成詞綴清單）。查衍生詞就能自動拆解出詞根，查詞根也能找到自動派生的詞（包括例句中、辭典沒有另立條目的，以及派生詞的派生詞），並說明由哪些詞素構成；演算法推定的關係一律標「自動」，與辭典標註的派生關係分開顯示。
-  音變與構詞聯合搜尋 BCDP（邊界耦合 DP）：音變以整個詞計算，可以跨越詞素交界（`minudox` → `daux`、`takitaw` → `kita`、`tau'alawan` → `alaw`）；詞綴鏈在交界上合併成一個狀態，與詞幹一次詞圖走訪耦合（[docs/bcdp.md](docs/bcdp.md)）。
+  音變與構詞聯合搜尋 BCDP（邊界耦合 DP）：音變以整個詞計算，可以跨越詞素交界（`minudox` → `daux`、`takitaw` → `kita`、`tau'alawan` → `alaw`）；詞綴鏈在交界上合併成一個狀態，與詞幹一次詞圖走訪耦合（[packages/bcdp/docs/bcdp.md](packages/bcdp/docs/bcdp.md)）。
 - **快**：詞庫存成 DAWG 詞圖（同時合併共同前綴與後綴），搜尋時動態規劃逐層剪枝，剪枝的正確性有證明與性質測試；
   1 萬多個詞只佔約 0.25 MB 記憶體，查詢數毫秒，在 Web Worker 中執行。
 - **溯源**：標準資料格式保留原始拼寫、頁碼、列號、時間碼、原書掃描頁；每筆記錄都有「出處」卡與複製引用。
@@ -18,10 +18,10 @@
 
 ## 快速開始
 
-需要 Node.js 20.19 以上。
+需要 Node.js 22.18 以上。
 
 ```bash
-npm install github:Babizu/babizu#v0.5.0
+npm install github:Babizu/babizu#v1.0.0
 npx babizu dev        # 在有 babizu.config.js 的目錄
 ```
 
@@ -39,13 +39,20 @@ npx babizu dev        # 在有 babizu.config.js 的目錄
 | [data-format.md](docs/data-format.md) | 標準資料格式（資料集）規格 |
 | [adapters.md](docs/adapters.md) | 寫轉接器，把原始資料轉成資料集 |
 | [i18n.md](docs/i18n.md) | 多語言介面：語系、覆寫字串、新增語系 |
-| [fuzzy-search.md](docs/fuzzy-search.md) | 模糊搜尋演算法：遞推式、剪枝正確性、DAWG、複雜度、API |
-| [bcdp.md](docs/bcdp.md) | 音變與構詞聯合搜尋 BCDP：模型、推導、正確性證明、實測 |
+| [search.md](docs/search.md) | 搜尋引擎：命中方式、分數、辭典的構詞關係、例句、詞條家族與同形詞組 |
+| [derivations.md](docs/derivations.md) | 自動派生與自動同根：查詞根找衍生詞、虛擬詞根 |
 | [pattern-query.md](docs/pattern-query.md) | 句型搜尋：依詞序與構詞找例句的查詢寫法、語意、與 BCDP 的對稱 |
-| [morph-grammar.md](docs/morph-grammar.md) | 構詞文法：詞素、組合規則與包覆單位，展開成詞綴清單的編譯原理 |
 | [ui-guidelines.md](docs/ui-guidelines.md) | 介面設計規範 |
 | [lab-design.md](docs/lab-design.md) | 演算法實驗室的設計規格 |
 | [deployment.md](docs/deployment.md) | 部署到 GitHub Pages 或其他靜態主機 |
+
+BCDP 套件（`packages/bcdp`）的文件：
+
+| 文件 | 內容 |
+|---|---|
+| [distance.md](packages/bcdp/docs/distance.md) | 加權編輯距離與詞圖搜尋：遞推式、剪枝正確性、DAWG、複雜度、API |
+| [bcdp.md](packages/bcdp/docs/bcdp.md) | 音變與構詞聯合搜尋 BCDP：模型、推導、正確性證明、開放詞幹、驗證方法 |
+| [morph-grammar.md](packages/bcdp/docs/morph-grammar.md) | 構詞文法：詞素、組合規則與包覆單位，展開成詞綴清單的編譯原理 |
 
 ## 指令
 
@@ -84,14 +91,14 @@ npm run zoo               # 錯誤解法動物園：每個具名突變都必須�
 
 ```
 ├── bin/babizu.js      指令列工具
+├── packages/bcdp/     BCDP 套件：加權編輯距離、DAWG、語言設定檔、構詞搜尋（零依賴；有自己的測試與文件）
 ├── src/
-│   ├── fuzzy/         加權編輯距離、DAWG、語言設定檔（零依賴）
-│   ├── schema/        標準資料格式：JSON Schema、代碼表、輔助函式
+│   ├── schema/        標準資料格式：JSON Schema、代碼表、型別、輔助函式
 │   ├── search/        搜尋鍵、索引建置、查詢引擎（建置端與瀏覽器共用）
 │   ├── pattern/       句型搜尋：剖析、比對器、構詞樣式（docs/pattern-query.md）
 │   ├── pipeline/      轉接器工具、exportDataset
 │   ├── site/          站台設定、網站資料準備、Vite 建置
-│   └── dataset.js     資料集讀寫與驗證
+│   └── dataset.ts     資料集讀寫與驗證
 ├── app/               網站前端（Vue 3＋shadcn-vue＋Tailwind CSS v4）
 ├── locales/           介面譯文（en；中文是原文，寫在程式裡）
 ├── examples/minimal/  示範站台

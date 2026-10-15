@@ -1,5 +1,5 @@
 /**
- * 同形詞組（src/search/family.js 的 mergeSpellings）：寫法完全相同的單獨結果合成一項，家族維持原樣。
+ * 同形詞組（src/search/family.ts 的 mergeSpellings）：寫法完全相同的單獨結果合成一項，家族維持原樣。
  * 資料是合成的，仿照 mikita、maturai 的情形：一部辭典（dict，有詞條家族）、兩份詞表（list、reed）。
  */
 

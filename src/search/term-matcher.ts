@@ -134,7 +134,7 @@ export class TermMatcher {
    * 自動拆解（去詞綴方向）：音變 ∘ 構詞 ∘ 詞庫的聯合搜尋 BCDP 的收尾。
    *
    * 分析的成本是構詞步驟加上整個詞的音變：同一套方言規則對整個詞計算，可以跨越詞素交界
-   * （ta-kita-aw → takitaw），詞首、詞尾規則與構詞音變在交界也適用（docs/bcdp.md）。
+   * （ta-kita-aw → takitaw），詞首、詞尾規則與構詞音變在交界也適用（packages/bcdp/docs/bcdp.md）。
    * 總成本上限是 lemmaMax。音變說明在需要時才計算（notesOf）。
    *
    * @param prepared 構詞搜尋的準備結果

@@ -147,7 +147,7 @@ const UNREACHABLE = 1e6
  * 只有構詞音變的距離函式：構詞規格的交界規則（構詞音變），沒有方言規則，一般的替換、刪除、插入都不可能。
  *
  * 虛擬詞根（詞根不在詞庫中）的分析用它：這樣的分析中，不在詞庫裡的部分不能再加模糊——詞幹是查詢中原樣的一段，
- * 詞綴也必須原樣出現，只容許構詞音變（docs/bcdp.md 10.5，virtual-roots.ts）。
+ * 詞綴也必須原樣出現，只容許構詞音變（docs/bcdp.md 第 10 節，virtual-roots.ts）。
  * @param options.normalize 正規化（省略時依設定檔的 normalizer）；要與搜尋用的距離函式相同
  */
 export function createAlternationMetricFromProfile(profile: LanguageProfile, { normalize }: { normalize?: (text: string) => string } = {}): WeightedEditDistance {

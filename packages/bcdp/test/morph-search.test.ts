@@ -1,10 +1,10 @@
 /**
- * 構詞搜尋（morph-search.js）的性質測試。對應 docs/bcdp.md：
+ * 構詞搜尋（morph-search.ts）的性質測試。對應 docs/bcdp.md：
  *
  * - 詞綴一層一層合併（第 5、7 節）：第 s 層的交界列等於「恰好 s 個詞綴」的每一條鏈分別算、再逐項取 min，
- *   每一條鏈的值以獨立的聯合對齊（ref-joint.js）計算。前綴由詞首往內；後綴由鏡像距離函式由詞尾往內，
+ *   每一條鏈的值以獨立的聯合對齊（ref-joint.ts）計算。前綴由詞首往內；後綴由鏡像距離函式由詞尾往內，
  *   換回正向座標後比較
- * - 整個構詞搜尋與窮舉的比較在 bcdp-reference.test.js
+ * - 整個構詞搜尋與窮舉的比較在 bcdp-reference.test.ts
  */
 
 import { describe, expect, it } from 'vitest'

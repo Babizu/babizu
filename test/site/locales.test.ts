@@ -23,12 +23,12 @@ const keys = extractMessages()
 
 const placeholders = (s: string) => [...s.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort()
 
-/** @param dir */
+/** 介面的原始碼檔（.vue、.ts；測試與型別宣告檔除外），與 extractMessages 掃的範圍相同 */
 function sourceFiles(dir: string): string[] {
   return readdirSync(dir).flatMap((name) => {
     const full = join(dir, name)
     if (statSync(full).isDirectory()) return sourceFiles(full)
-    return /\.(vue|js)$/.test(name) && !name.endsWith('.test.js') ? [full] : []
+    return /\.(vue|ts)$/.test(name) && !/\.test\.ts$/.test(name) && !name.endsWith('.d.ts') ? [full] : []
   })
 }
 
@@ -75,7 +75,9 @@ describe('介面語系', () => {
 
   it('不用樣板字串或舊的點號鍵呼叫 t()', () => {
     const offenders = []
-    for (const file of sourceFiles(join(ROOT, 'app', 'src'))) {
+    const files = sourceFiles(join(ROOT, 'app', 'src'))
+    expect(files.some((f) => f.endsWith('.ts'))).toBe(true)
+    for (const file of files) {
       const code = readFileSync(file, 'utf8')
       for (const m of code.matchAll(/\bt\(\s*`[^`]*`|\bt\(\s*'[a-z]\w*(?:\.\w+)+'/g)) offenders.push(`${file}: ${m[0]}`)
     }

@@ -2,7 +2,7 @@
 """
 BCDP 精華版：邊界耦合 DP（Boundary-Coupled DP）的 Python 教學實作。
 
-對照文件：babizu 的 docs/bcdp.md（章節編號沿用它的）、docs/fuzzy-search.md（加權編輯距離與剪枝）。
+對照文件：packages/bcdp/docs/bcdp.md（章節編號沿用它的）、packages/bcdp/docs/distance.md（加權編輯距離與剪枝）。
 正式實作（packages/bcdp/src）：morph-search.ts 與 morph-*.ts（構詞搜尋）、channel-walk.ts（多通道走訪與剪枝）、
 dp.ts（一列 DP）、junction.ts（交界狀態的合併）。
 
@@ -26,7 +26,7 @@ dp.ts（一列 DP）、junction.ts（交界狀態的合併）。
 兩者共用的只有「定義」：規則、位置語意（target_ok、query_ok）、還原變體的辨認（restore）。
 
 精華版省略的部分（正式實作都有，見 bcdp.md）：
-- 片語與空白（1.3 第 5 項）、正規化、編譯好的規則表（fuzzy-search.md 第 6 節）。
+- 片語與空白（1.3 第 5 項）、正規化、編譯好的規則表（distance.md 第 6 節）。
 - 包覆單位只收前綴式環綴 (L, ∅, R)；(∅, op, R)、(L, op, ∅)、要求詞根元音開頭的環綴從略。
 - 重疊只收 Ca、CV 兩種模板（允許的結束位置是「某個位置以後全部」）；CVCV、full 需要穩定引理（第 6 節）。
 - 詞綴各層逐一走訪每個詞綴（正式實作走詞綴 trie，共用開頭的列；結果相同）。
@@ -49,7 +49,7 @@ EPS = 1e-9
 # 1. 設定（硬編碼；正式實作由語言設定檔讀入）
 # ════════════════════════════════════════════════════════════════════════════
 
-# 基本編輯成本（fuzzy-search.md 第 1 節）。「查詢」是使用者輸入的表層形式，「底層」是詞綴與詞根接起來的字串。
+# 基本編輯成本（distance.md 第 1 節）。「查詢」是使用者輸入的表層形式，「底層」是詞綴與詞根接起來的字串。
 DEL = 1.0   # 查詢多一個字元（底層沒有）
 INS = 0.8   # 底層多一個字元（查詢沒有）
 SUB = 1.5   # 替換（相同字元 0）
@@ -81,7 +81,7 @@ MAX_DISTANCE = 1.0       # 總成本上限 B（不含詞根音節數的成本）
 LEMMA_SPREAD = 0.6       # 只保留「最佳 ＋ lemmaSpread」之內的命中（含詞根音節數的成本）
 ROOT_SYLLABLE_COST = {1: 0.5, 3: 0.1, 4: 0.2}   # 詞根依音節數另加的成本；沒列的是 0，最大的鍵也套用到更多音節
 
-# 示範詞庫（詞例取自 docs/bcdp.md、docs/fuzzy-search.md 中已公開的例子）
+# 示範詞庫（詞例取自 docs/bcdp.md、docs/distance.md 中已公開的例子）
 LEXICON = [
     'daux', 'kita', 'alaw', 'babun', 'bitut', 'kawas', 'sungut', 'pusungut', 'apux', 'baket',
     'dakut', 'samian', 'angit', 'aping', 'dusa', 'kiliw', 'tunur', 'luzuk', 'dius', 'kudung',
@@ -128,7 +128,7 @@ class RuleSet:
             self.by_target[r.target].append(r)
         self.max_target = max(len(r.target) for r in self.rules)
         self.crossing = [r for r in self.rules if r.crosses]
-        # 跨列下界（fuzzy-search.md 第 4 節）：target 的每個非空真前綴 p → 以 p 開頭、比 p 長的規則的最小權重。
+        # 跨列下界（distance.md 第 4 節）：target 的每個非空真前綴 p → 以 p 開頭、比 p 長的規則的最小權重。
         # 多字元規則可以從較早的列直接跳到較深的列，越過中間的列，所以只看目前這一列的最小值不是下界。
         self.jump, self.jump_cross = {}, {}
         for r in self.rules:
@@ -196,7 +196,7 @@ def root_cost(t: str) -> float:
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# 3. 一列 DP（bcdp.md 第 3 節、fuzzy-search.md 第 1–3 節）
+# 3. 一列 DP（bcdp.md 第 3 節、distance.md 第 1–3 節）
 # ════════════════════════════════════════════════════════════════════════════
 #
 # D(x, j)：查詢前 x 個字元對齊底層前 j 個字元的最小成本。固定 j 時 (D(0, j) … D(n, j)) 是「一列」；

@@ -33,7 +33,7 @@ type Variant = FullExplanation['variants'][number]
 
 const EXAMPLES = site.lab.morph?.examples ?? []
 const FAILURES = site.lab.morph?.failures ?? []
-const DOCS = 'https://github.com/Babizu/babizu/blob/main/docs/'
+const DOCS = 'https://github.com/Babizu/babizu/blob/main/packages/bcdp/docs/'
 
 const q = ref(String(props.initial.q ?? EXAMPLES[0]?.[0] ?? ''))
 const term = ref(String(props.initial.t ?? (props.initial.q ? '' : (EXAMPLES[0]?.[1] ?? ''))))

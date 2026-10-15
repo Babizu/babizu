@@ -87,7 +87,7 @@ export interface LemmaAnalysis {
   stem: string
   /** 由外而內的構詞步驟 */
   steps: MorphStepHit[]
-  /** 總成本：構詞步驟＋整個詞的音變＋詞根音節數的成本（docs/bcdp.md 1.2、1.6 第 9 項） */
+  /** 總成本：構詞步驟＋整個詞的音變＋詞根音節數的成本（packages/bcdp/docs/bcdp.md 1.2、1.6 第 9 項） */
   cost: number
   /** 最後一層的詞根依音節數的成本（rootSyllableCost；0 時省略） */
   rootCost?: number

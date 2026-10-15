@@ -1,7 +1,7 @@
 /**
  * 構詞規格：去詞綴（同一個 BCDP 的字面開放詞幹，open-stems.js）、重疊模板與還原詞綴（generate）、規格檢查。
  * 規格是合成的，只用來驗證機制；真實語言的詞綴清單屬於各站台的語言設定檔。
- * 去詞綴的成本與窮舉參考實作逐一相同（bcdp-reference.test.js 的「開放詞幹」）；這裡是語意的固定案例。
+ * 去詞綴的成本與窮舉參考實作逐一相同（bcdp-reference.test.ts 的「開放詞幹」）；這裡是語意的固定案例。
  */
 
 import { describe, expect, it } from 'vitest'

@@ -54,7 +54,7 @@ export class SearchEngine {
   readonly text: TextTools
   readonly metric: ReturnType<TextTools['createSearchMetric']>
   readonly index: FuzzyIndex
-  /** 構詞搜尋 BCDP（語言設定檔有 morphology 時才有），見 @babizu/bcdp 的 morph-search.ts 與 docs/bcdp.md */
+  /** 構詞搜尋 BCDP（語言設定檔有 morphology 時才有），見 @babizu/bcdp 的 morph-search.ts 與 packages/bcdp/docs/bcdp.md */
   readonly morphSearch: MorphSearch | null
   /** 自動派生圖（查詞根找自動派生形，見 derivations.ts） */
   readonly derivations: DerivationGraph | null

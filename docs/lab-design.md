@@ -2,7 +2,7 @@
 
 > 像一本會動的演算法教科書：每一步只改變一件事，讀者隨時知道現在在看哪裡、為什麼是這個值。
 
-這份規格約束演算法實驗室（`/lab`）的三個分頁：動態規劃表、詞圖搜尋，以及 BCDP（構詞搜尋）。全站的設計語言見 [ui-guidelines.md](ui-guidelines.md)，這裡只寫實驗室特有的部分；兩者衝突時以 ui-guidelines.md 為準。演算法本身見 [fuzzy-search.md](fuzzy-search.md) 與 [bcdp.md](bcdp.md)。
+這份規格約束演算法實驗室（`/lab`）的三個分頁：動態規劃表、詞圖搜尋，以及 BCDP（構詞搜尋）。全站的設計語言見 [ui-guidelines.md](ui-guidelines.md)，這裡只寫實驗室特有的部分；兩者衝突時以 ui-guidelines.md 為準。演算法本身見 BCDP 套件的 [distance.md](../packages/bcdp/docs/distance.md) 與 [bcdp.md](../packages/bcdp/docs/bcdp.md)。
 
 ## 0. 設計判讀
 
@@ -54,7 +54,7 @@
 | 剪枝的節點、略過的切法 | `text-muted-foreground` ＋ 文字原因 | 不用紅色：剪枝不是錯誤 |
 | 詞綴段、詞幹段（BCDP） | 詞綴 `bg-muted`，詞幹 `bg-accent` | 最佳分析的詞幹改為實心主色 |
 
-**操作類型**（對齊條、候選轉移列表）以**符號為主、顏色為輔**，新增三個低彩度 token（淺色與深色各一組）：
+**操作類型**（對齊條、候選轉移列表）以**符號為主、顏色為輔**，用三個低彩度 token（淺色與深色各一組）：
 
 ```css
 :root {
@@ -128,20 +128,20 @@
 - 放在 `aria-live="polite"` 區域，播放時螢幕閱讀器逐步念出；連續播放時只念停下來的那一步。
 - 有對應的文件段落時，句尾附「為什麼？」連到 bcdp.md 的該節。
 
-### 動態規劃表 `DpMatrix`（改）
+### 動態規劃表 `DpMatrix`
 
-- 表格角色改為 ARIA grid：`role="grid"`、格子 `role="gridcell"`、列頭欄頭 `role="rowheader"`／`columnheader`。
+- 表格角色是 ARIA grid：`role="grid"`、格子 `role="gridcell"`、列頭欄頭 `role="rowheader"`／`columnheader`。
 - 單一 tab stop（roving tabindex），方向鍵在格子間移動，Home／End 到列首尾，Enter／Space 選取。
-- 選取的格：`ring-2 ring-inset ring-primary`（取代目前的 amber）。
-- 其餘（最佳路徑、熱度、規則色、格角箭頭）不變。
+- 選取的格：`ring-2 ring-inset ring-primary`。
+- 另外標出最佳路徑、熱度、規則色與格角箭頭。
 
-### 詞圖搜尋 `DawgExplorer`（改）
+### 詞圖搜尋 `DawgExplorer`
 
 - 每個走訪的節點一列：路徑前綴、這一列的最小值（下界）、上限、結果。
 - 剪枝的節點寫出原因：「下界 1.2 ＞ 上限 0.8，整個子樹略過」，不用紅色。
-- 接受的詞：`text-primary font-semibold`（取代 emerald）。
+- 接受的詞：`text-primary font-semibold`。
 - 逐步播放：每一步走訪一個節點，焦點列 `ring-primary`。
-- 手機（`< md`）改成縮排清單，不畫樹。
+- 手機（`< md`）是縮排清單，不畫樹。
 
 ### BCDP 分頁
 
@@ -247,7 +247,7 @@
 
 ## 8. 站台設定
 
-`lab` 區段新增 `morph`（選填）：
+`lab` 區段的 `morph`（選填）：
 
 ```js
 lab: {

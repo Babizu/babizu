@@ -6,7 +6,7 @@
  * - `generate(stem, steps)`：還原詞綴。把詞幹依 BCDP 命中的步驟加回詞綴，得到底層的詞形（測試用它檢查分析）。
  *
  * 去詞綴只有一套演算法：BCDP。詞根在詞庫中時走訪詞圖；詞根不在詞庫中（虛擬詞根）時，
- * 同一個 DP 的交界列直接給出「字面的開放詞幹」（docs/bcdp.md 10.5）。
+ * 同一個 DP 的交界列直接給出「字面的開放詞幹」（docs/bcdp.md 第 10 節）。
  * 規格是宣告式的純資料，概念上對應有限狀態構詞（FST）中的詞綴槽位、中綴、重疊與詞幹交替，但不編譯成轉錄器。
  *
  * ```json
@@ -332,7 +332,7 @@ function createTemplates(spec: Pick<AnalyzerSpec, 'vowels' | 'glides'>): Pick<An
    *
    * 不必逐一試每個 L：令 w ＝ reduplicant(pattern, rest)。w 只由 rest 開頭 |w| 個字元決定——模板在
    * 位置 |w| 停下，不論那裡是字串結尾還是另一類字元（元音串、輔音串在兩種情況下都結束）——所以
-   * L ≥ |w| 時 reduplicant(pattern, rest[0..L)) ＝ w（穩定引理，以 test/morphology.test.js 的
+   * L ≥ |w| 時 reduplicant(pattern, rest[0..L)) ＝ w（穩定引理，以 test/morphology.test.ts 的
    * 性質測試檢查）。只有 L < |w| 需要逐一計算；
    * w 為 null（沒有元音，或只有一個音節）時，較短的開頭也一定是 null；例外是 CGV、CVG：元音核有三個以上的元音時
    *   不適用，但截在第二個元音之後的開頭（L ＝ 第一個元音的位置 ＋ 2）元音核正好兩個，可能適用，另外檢查這一個長度。
