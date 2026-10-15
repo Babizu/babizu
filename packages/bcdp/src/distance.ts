@@ -7,6 +7,7 @@ import {
   advanceCrossing,
   CompiledRules,
   createCrossing,
+  crossingFrom,
   EDGE_JUNCTION,
   EDGE_NONE,
   EDGE_WORD,
@@ -266,21 +267,8 @@ export class WeightedEditDistance {
     const m = y.length
 
     const candidates: CellCandidate[][][] = Array.from({ length: n + 1 }, () => Array.from({ length: m + 1 }, () => []))
-    const rows = this._rows(this.compiled.compileQuery(x, this.costs, options), y, (t) => {
-      candidates[t.i][t.j].push({
-        op: t.op,
-        cost: roundCost(t.cost),
-        stepCost: roundCost(t.stepCost),
-        from: [t.fromI, t.fromJ],
-        rule: t.rule ? publicRule(t.rule) : null,
-      })
-    })
-
-    for (const row of candidates) {
-      for (const cell of row) {
-        cell.sort((a, b) => a.cost - b.cost || OP_PRIORITY[a.op] - OP_PRIORITY[b.op])
-      }
-    }
+    const rows = this._rows(this.compiled.compileQuery(x, this.costs, options), y, (t) => candidates[t.i][t.j].push(candidateOf(t)))
+    for (const row of candidates) for (const cell of row) cell.sort(byCost)
 
     const matrix = Array.from({ length: n + 1 }, (_, i) => Array.from({ length: m + 1 }, (_, j) => roundCost(rows[j][i])))
 
@@ -309,24 +297,17 @@ export class WeightedEditDistance {
     alignment.reverse()
     path.reverse()
 
-    const order: Array<[number, number]> = []
-    for (let jj = 0; jj <= m; jj++) for (let ii = 0; ii <= n; ii++) order.push([ii, jj])
-
     const distance = matrix[n][m]
     return {
       query: x,
       candidate: y,
       distance,
-      normalized: {
-        max: roundCost(resolveNormalization('max').score(distance, n, m)),
-        sum: roundCost(resolveNormalization('sum').score(distance, n, m)),
-        query: roundCost(resolveNormalization('query').score(distance, n, m)),
-      },
+      normalized: normalizedScores(distance, n, m),
       matrix,
       candidates,
       path,
       alignment,
-      order,
+      order: cellOrder(n, m),
       finalColumns: Array.from({ length: m + 1 }, (_, jj) => this._isWordEnd(y, jj)),
     }
   }
@@ -381,26 +362,12 @@ export class WeightedEditDistance {
       if (start) pin(start, enter)
       entry[offsets[k]] = enter
       const plan = compiled.compileQuery(x, this.costs, { start, junctions: true, lockBoundary: Boolean(seg.lock) })
-      const matcher = new PathMatcher(compiled)
       const startEdge = k === 0 ? (options.startEdge ?? EDGE_WORD) : EDGE_JUNCTION
-      const cross: Crossing[] = []
-      if (prevState && prevState.pending.length && !pinnedStart) {
-        const c0 = createCrossing(prevState.pending.length)
-        prevState.pending.forEach((p, q) => {
-          c0.nodes[q] = p.node
-          c0.rows[q] = p.row
-          c0.mins[q] = Math.min(...p.row)
-        })
-        c0.count = prevState.pending.length
-        cross[0] = c0
-      }
-      const rows: Float64Array[] = []
-      const rowAt = (r: number) => rows[r]
+      // 固定起點的段由查詢的固定位置進入，前一段的跨界規則不能延續進來
+      const walker = segmentWalker(compiled, plan, startEdge, prevState && !pinnedStart ? prevState.pending : null)
+      const rows = walker.rows
       for (let j = 0; j <= m; j++) {
-        if (j > 0) matcher.set(j, compiled.idOf(seg.chars[j - 1]))
-        let crossing = null
-        if (j > 0 && cross[j - 1]?.count) crossing = advanceCrossing(compiled, cross[j - 1], matcher.ids[j - 1], (cross[j] = createCrossing(cross[0].nodes.length)))
-        const column = prepareColumn(plan, compiled, matcher, j, rowAt, startEdge, crossing)
+        const column = walker.column(j, seg.chars[j - 1])
         // 段內：依下一個字元是不是邊界；段尾：交界列，或最後一段的詞尾
         const fin = j < m ? (compiled.isBoundary(seg.chars[j]) ? EDGE_WORD : EDGE_NONE) : last ? EDGE_WORD : EDGE_JUNCTION
         const row = new Float64Array(n + 1)
@@ -408,33 +375,18 @@ export class WeightedEditDistance {
         // 段尾的交界列放在 prev 層（後一段的第 0 列才是這一欄的 main 層）
         const toPrev = j === m && !last
         const target = toPrev ? prevCand : mainCand
-        fillRow(plan, compiled, column, fin, row, (t) => {
-          target[t.i][g].push({
-            op: t.op,
-            cost: roundCost(t.cost),
-            stepCost: roundCost(t.stepCost),
-            from: [t.fromI, offsets[k] + t.fromJ],
-            rule: t.rule ? publicRule(t.rule) : null,
-          })
-        })
+        fillRow(plan, compiled, column, fin, row, (t) => target[t.i][g].push(candidateOf(t, offsets[k])))
         rows.push(row)
         if (toPrev) prevCol[g] = row
         else mainCol[g] = row
       }
       // 最後一段固定詞尾：只接受在允許的位置結束
       if (last && options.pinEnd?.segment === k) pin(rows[m], (i) => (options.pinEnd as { allowed: Set<number> }).allowed.has(i))
-      const pending: Array<{ node: number; row: Float64Array }> = []
-      const base = m * matcher.cap
-      for (let q = 0; q < matcher.counts[m]; q++) {
-        const s = matcher.states[base + q]
-        if (compiled.trieJump[s] === Infinity) continue
-        pending.push({ node: s, row: rows[m - compiled.trieDepth[s]] })
-      }
+      const pending = walker.matcher.openStates(m).map((s) => ({ node: s, row: rows[m - compiled.trieDepth[s]] }))
       const pinnedEnd = options.pinEnd?.segment === k
       state = { row: rows[m], pending: pinnedEnd ? [] : pending }
     })
 
-    const byCost = (a: CellCandidate, b: CellCandidate) => a.cost - b.cost || OP_PRIORITY[a.op] - OP_PRIORITY[b.op]
     for (const layer of [mainCand, prevCand]) for (const row of layer) for (const cell of row) cell.sort(byCost)
     const matrix = Array.from({ length: n + 1 }, (_, i) => Array.from({ length: total + 1 }, (_, j) => roundCost(mainCol[j][i])))
     const alignment: AlignmentStep[] = []
@@ -467,8 +419,6 @@ export class WeightedEditDistance {
     const candidates = mainCand.map((row, i) => row.map((cell, j) => [...prevCand[i][j], ...cell].sort(byCost)))
     alignment.reverse()
     path.reverse()
-    const order: Array<[number, number]> = []
-    for (let jj = 0; jj <= total; jj++) for (let ii = 0; ii <= n; ii++) order.push([ii, jj])
     const distance = matrix[n][total]
     const segmentOf: number[] = []
     segments.forEach((s, k) => s.chars.forEach(() => segmentOf.push(k)))
@@ -476,16 +426,12 @@ export class WeightedEditDistance {
       query: x,
       candidate: y,
       distance,
-      normalized: {
-        max: roundCost(resolveNormalization('max').score(distance, n, total)),
-        sum: roundCost(resolveNormalization('sum').score(distance, n, total)),
-        query: roundCost(resolveNormalization('query').score(distance, n, total)),
-      },
+      normalized: normalizedScores(distance, n, total),
       matrix,
       candidates,
       path,
       alignment,
-      order,
+      order: cellOrder(n, total),
       finalColumns: Array.from({ length: total + 1 }, (_, jj) => jj === total || compiled.isBoundary(y[jj])),
       junctions: offsets.slice(1),
       segmentOf,
@@ -506,35 +452,18 @@ export class WeightedEditDistance {
     const m = y.length
     const from = o.from
     const plan = compiled.compileQuery(x, this.costs, { start: from?.row ?? null, junctions: true, lockBoundary: Boolean(o.lock) })
-    const matcher = new PathMatcher(compiled)
     const startEdge = o.startEdge ?? (from ? EDGE_JUNCTION : EDGE_WORD)
-    const cross: Crossing[] = []
-    if (from && from.pending.length) {
-      const c0 = createCrossing(from.pending.length)
-      from.pending.forEach((p, q) => {
-        c0.nodes[q] = p.node
-        c0.rows[q] = p.row
-        c0.mins[q] = Math.min(...p.row)
-      })
-      c0.count = from.pending.length
-      cross[0] = c0
-    }
-    const rows: Float64Array[] = []
+    const walker = segmentWalker(compiled, plan, startEdge, from ? from.pending : null)
+    const rows = walker.rows
     /** cand[j][i]（第 m 列另有 F 列與交界列兩份：candF、candJ） */
     const cand: CellCandidate[][][] = []
-    const rowAt = (r: number) => rows[r]
-    const tracer = (into: CellCandidate[][]) => (t: Transition) => {
-      into[t.i].push({ op: t.op, cost: roundCost(t.cost), stepCost: roundCost(t.stepCost), from: [t.fromI, t.fromJ], rule: t.rule ? publicRule(t.rule) : null })
-    }
+    const tracer = (into: CellCandidate[][]) => (t: Transition) => into[t.i].push(candidateOf(t))
     let rowF = new Float64Array(0)
     let rowJ = rowF
     let candF: CellCandidate[][] = []
     let candJ: CellCandidate[][] = []
     for (let j = 0; j <= m; j++) {
-      if (j > 0) matcher.set(j, compiled.idOf(y[j - 1]))
-      let crossing = null
-      if (j > 0 && cross[j - 1]?.count) crossing = advanceCrossing(compiled, cross[j - 1], matcher.ids[j - 1], (cross[j] = createCrossing(cross[0].nodes.length)))
-      const column = prepareColumn(plan, compiled, matcher, j, rowAt, startEdge, crossing)
+      const column = walker.column(j, y[j - 1])
       const blank = () => Array.from({ length: n + 1 }, (): CellCandidate[] => [])
       if (j < m) {
         const row = new Float64Array(n + 1)
@@ -554,7 +483,7 @@ export class WeightedEditDistance {
         cand.push(candF)
       }
     }
-    for (const c of [...cand, candJ]) for (const cell of c) cell.sort((a, b) => a.cost - b.cost || OP_PRIORITY[a.op] - OP_PRIORITY[b.op])
+    for (const c of [...cand, candJ]) for (const cell of c) cell.sort(byCost)
 
     // 出口：回溯的起點（列、格、用哪一份候選），以及跨界出口本身那一步
     let at: { j: number; i: number; cands: CellCandidate[][]; rowVal: Float64Array } = { j: m, i: n, cands: candF, rowVal: rowF }
@@ -594,10 +523,7 @@ export class WeightedEditDistance {
         }
       }
       // 跨界出口：規則 target ＝ 本段尾巴（trie 狀態 s）· 後一段開頭（tail）
-      const base = m * matcher.cap
-      for (let k = 0; k < matcher.counts[m]; k++) {
-        const s = matcher.states[base + k]
-        if (compiled.trieJump[s] === Infinity) continue
+      for (const s of walker.matcher.openStates(m)) {
         const d = compiled.trieDepth[s]
         to.pending.forEach((p, b) => {
           const node = compiled.trieWalk(s, p.tail)
@@ -751,6 +677,52 @@ export class WeightedEditDistance {
   private _isWordEnd(y: string[], j: number): boolean {
     return j === y.length || this.compiled.isBoundary(y[j])
   }
+}
+
+/**
+ * 一段（一個詞素）逐欄計算的共用步進（explainSegments、traceSegment）：路徑匹配器、由前一段延續的跨界狀態、
+ * 已算好的列（呼叫端把每一列放進 rows）。column(j, ch) 把第 j 個字元 ch ＝ Y[j-1] 送進匹配器、
+ * 推進跨界狀態，回傳第 j 欄的共用資料（交給 fillRow）。
+ * @param pending 前一段留下的跨界表（null：沒有規則能跨進這一段）
+ */
+function segmentWalker(compiled: CompiledRules, plan: QueryPlan, startEdge: number, pending: JunctionState['pending'] | null) {
+  const matcher = new PathMatcher(compiled)
+  const cross: Crossing[] = []
+  const c0 = pending ? crossingFrom(pending) : null
+  if (c0) cross[0] = c0
+  const rows: Float64Array[] = []
+  const rowAt = (r: number) => rows[r]
+  const column = (j: number, ch: string | undefined) => {
+    if (j > 0) matcher.set(j, compiled.idOf(ch as string))
+    let crossing = null
+    if (j > 0 && cross[j - 1]?.count) crossing = advanceCrossing(compiled, cross[j - 1], matcher.ids[j - 1], (cross[j] = createCrossing(cross[0].nodes.length)))
+    return prepareColumn(plan, compiled, matcher, j, rowAt, startEdge, crossing)
+  }
+  return { matcher, rows, column }
+}
+
+/** fillRow 回報的轉移 → 候選（offset 加在 Y 的位置上：explainSegments 把各段的欄接在一起） */
+function candidateOf(t: Transition, offset = 0): CellCandidate {
+  return { op: t.op, cost: roundCost(t.cost), stepCost: roundCost(t.stepCost), from: [t.fromI, offset + t.fromJ], rule: t.rule ? publicRule(t.rule) : null }
+}
+
+/** 同一格的候選依成本排序，同成本時依 OP_PRIORITY（第一個就是回溯要走的） */
+const byCost = (a: CellCandidate, b: CellCandidate) => a.cost - b.cost || OP_PRIORITY[a.op] - OP_PRIORITY[b.op]
+
+/** 三種正規化策略的分數（explain 顯示用） */
+function normalizedScores(distance: number, n: number, m: number): Record<string, number> {
+  return {
+    max: roundCost(resolveNormalization('max').score(distance, n, m)),
+    sum: roundCost(resolveNormalization('sum').score(distance, n, m)),
+    query: roundCost(resolveNormalization('query').score(distance, n, m)),
+  }
+}
+
+/** 計算順序（外層 j、內層 i），逐格動畫用 */
+function cellOrder(n: number, m: number): Array<[number, number]> {
+  const order: Array<[number, number]> = []
+  for (let j = 0; j <= m; j++) for (let i = 0; i <= n; i++) order.push([i, j])
+  return order
 }
 
 /** 只保留規則的公開欄位，避免把內部索引資訊暴露給呼叫端。 */

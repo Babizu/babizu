@@ -562,6 +562,20 @@ export class PathMatcher {
     }
     counts[j] = count
   }
+
+  /**
+   * 第 j 層的狀態中還有更長的 target 經過的（依深度遞增）：這一段在第 j 個字元之後結束時，
+   * 可以跨進後一段的規則 target 的前半段（交界狀態的跨界表；docs/bcdp.md 第 4 節）。
+   */
+  openStates(j: number): number[] {
+    const out: number[] = []
+    const base = j * this.cap
+    for (let k = 0; k < this.counts[j]; k++) {
+      const s = this.states[base + k]
+      if (this.compiled.trieJump[s] !== Infinity) out.push(s)
+    }
+    return out
+  }
 }
 
 /**
@@ -710,6 +724,22 @@ function growColumn(ctx: ColumnContext, size: number): void {
 /** 建立跨界狀態的容器（容量 capacity）。 */
 export function createCrossing(capacity: number): Crossing {
   return { count: 0, nodes: new Int32Array(capacity), rows: new Array(capacity), mins: new Float64Array(capacity) }
+}
+
+/**
+ * 交界狀態的跨界表 → 第 0 層的跨界狀態（跨界表是空的時是 null）。
+ * @param pending 還沒走完的規則 target（trie 節點）與它起點那一列
+ */
+export function crossingFrom(pending: ReadonlyArray<{ node: number; row: Float64Array }>): Crossing | null {
+  if (!pending.length) return null
+  const c0 = createCrossing(pending.length)
+  pending.forEach((p, k) => {
+    c0.nodes[k] = p.node
+    c0.rows[k] = p.row
+    c0.mins[k] = Math.min(...p.row)
+  })
+  c0.count = pending.length
+  return c0
 }
 
 export type Operation = 'match' | 'substitute' | 'delete' | 'insert' | 'rule'

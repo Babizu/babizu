@@ -161,11 +161,25 @@ export function alternationRules(spec: Pick<MorphologySpec, 'alternations' | 'co
 }
 
 /**
- * 依規格建立構詞分析器。
+ * 依規格建立構詞分析器：正規化的規格（normalizeSpec），加上中綴位置與重疊模板（createTemplates）。
  * @param input 平面清單或構詞文法寫法的規格
  * @param normalize 詞綴與輸入的正規化（應與搜尋鍵相同）
  */
 export function createAnalyzer(input: MorphologySpec | GrammarSpec, normalize: (s: string) => string = (s) => s): Analyzer {
+  const spec = normalizeSpec(input, normalize)
+  const templates = createTemplates(spec)
+  return {
+    generate: (stem, steps) => generate(stem, steps, templates),
+    ...templates,
+    spec,
+  }
+}
+
+/**
+ * 檢查規格；構詞文法先展開成平面清單；再正規化：詞綴經過 normalize、補上預設值與成本、記下說明的順序（rank），
+ * 正規化後不足兩個部分的環綴去掉。結果深度凍結：BCDP（morph-search）直接使用這些陣列。
+ */
+function normalizeSpec(input: MorphologySpec | GrammarSpec, normalize: (s: string) => string): AnalyzerSpec {
   const errors = validateMorphology(input)
   if (errors.length) throw new TypeError(`構詞規格格式錯誤：\n- ${errors.join('\n- ')}`)
   // 構詞文法先展開成平面清單（每一項帶 parts 與 rank），之後與平面清單寫法完全相同
@@ -238,7 +252,31 @@ export function createAnalyzer(input: MorphologySpec | GrammarSpec, normalize: (
       cost: a.cost ?? cost,
     }),
   )
+  return Object.freeze({
+    cost,
+    minStem,
+    maxSteps,
+    lemmaSpread,
+    virtualRootLengthCost,
+    rootSyllableCost: Object.freeze({ entry: Object.freeze(rootSyllableCost.entry), other: Object.freeze(rootSyllableCost.other) }),
+    vowels: [...vowels].join(''),
+    glides: [...glides].join(''),
+    prefixes: Object.freeze(prefixes),
+    suffixes: Object.freeze(suffixes),
+    infixes: Object.freeze(infixes),
+    reduplication: Object.freeze(reduplication),
+    circumfixes: Object.freeze(circumfixes),
+    alternations: Object.freeze(alternations.map((a) => Object.freeze({ ...a }))),
+  })
+}
 
+/**
+ * 中綴位置與重疊模板：只依規格的元音與滑音（模板本身與語言無關，見 ReduplicationPattern）。
+ * @param spec 正規化後的規格
+ */
+function createTemplates(spec: Pick<AnalyzerSpec, 'vowels' | 'glides'>): Pick<Analyzer, 'onset' | 'reduplicant' | 'reduplicantStems'> {
+  const vowels = new Set(Array.from(spec.vowels))
+  const glides = new Set(Array.from(spec.glides))
   const len = (s: string) => Array.from(s).length
   /** 詞首的輔音（群）：第一個元音之前的所有字元 */
   const onset = (w: string) => {
@@ -322,59 +360,37 @@ export function createAnalyzer(input: MorphologySpec | GrammarSpec, normalize: (
     return out
   }
 
-  /**
-   * 還原詞綴，得到底層的詞形（構詞音變不在步驟裡：它是交界上的規則，在 BCDP 的對齊中）。
-   * 用來檢查 BCDP 的分析（測試由步驟重建底層字串，與詞形比對）。
-   *
-   * 步驟是 BCDP 命中的形狀：前綴（由外而內）、包覆單位（中綴、重疊或環綴，緊貼詞幹，至多一個）、後綴（由外而內）。
-   * 包覆單位一定是最內層，所以先套它（重疊的模板只看詞幹本身），再由內而外接上後綴與前綴。
-   */
-  function generate(stem: string, steps: MorphStep[]): string {
-    let w = stem
-    for (const s of steps) {
-      if (s.type === 'infix') {
-        const head = onset(w)
-        w = head + s.form + w.slice(head.length)
-      } else if (s.type === 'reduplication') {
-        w = (reduplicant(s.pattern as ReduplicationPattern, w) ?? '') + w
-      } else if (s.type === 'circumfix' && s.left) {
-        const l = s.left
-        if (l.type === 'prefix') w = l.form + w
-        else if (l.type === 'infix') {
-          const head = onset(w)
-          w = head + l.form + w.slice(head.length)
-        } else w = (reduplicant(l.pattern as ReduplicationPattern, w) ?? '') + w
-        w = (s.outer ?? '') + w + (s.suffix ?? '')
-      }
-    }
-    for (let i = steps.length - 1; i >= 0; i--) if (steps[i].type === 'suffix') w = w + steps[i].form
-    for (let i = steps.length - 1; i >= 0; i--) if (steps[i].type === 'prefix') w = steps[i].form + w
-    return w
-  }
+  return { onset, reduplicant, reduplicantStems }
+}
 
-  return {
-    generate,
-    onset,
-    reduplicant,
-    reduplicantStems,
-    // 深度凍結：BCDP（morph-search）直接使用這些陣列
-    spec: Object.freeze({
-      cost,
-      minStem,
-      maxSteps,
-      lemmaSpread,
-      virtualRootLengthCost,
-      rootSyllableCost: Object.freeze({ entry: Object.freeze(rootSyllableCost.entry), other: Object.freeze(rootSyllableCost.other) }),
-      vowels: [...vowels].join(''),
-      glides: [...glides].join(''),
-      prefixes: Object.freeze(prefixes),
-      suffixes: Object.freeze(suffixes),
-      infixes: Object.freeze(infixes),
-      reduplication: Object.freeze(reduplication),
-      circumfixes: Object.freeze(circumfixes),
-      alternations: Object.freeze(alternations.map((a) => Object.freeze({ ...a }))),
-    }),
+/**
+ * 還原詞綴，得到底層的詞形（構詞音變不在步驟裡：它是交界上的規則，在 BCDP 的對齊中）。
+ * 用來檢查 BCDP 的分析（測試由步驟重建底層字串，與詞形比對）。
+ *
+ * 步驟是 BCDP 命中的形狀：前綴（由外而內）、包覆單位（中綴、重疊或環綴，緊貼詞幹，至多一個）、後綴（由外而內）。
+ * 包覆單位一定是最內層，所以先套它（重疊的模板只看詞幹本身），再由內而外接上後綴與前綴。
+ */
+function generate(stem: string, steps: MorphStep[], { onset, reduplicant }: Pick<Analyzer, 'onset' | 'reduplicant'>): string {
+  let w = stem
+  for (const s of steps) {
+    if (s.type === 'infix') {
+      const head = onset(w)
+      w = head + s.form + w.slice(head.length)
+    } else if (s.type === 'reduplication') {
+      w = (reduplicant(s.pattern as ReduplicationPattern, w) ?? '') + w
+    } else if (s.type === 'circumfix' && s.left) {
+      const l = s.left
+      if (l.type === 'prefix') w = l.form + w
+      else if (l.type === 'infix') {
+        const head = onset(w)
+        w = head + l.form + w.slice(head.length)
+      } else w = (reduplicant(l.pattern as ReduplicationPattern, w) ?? '') + w
+      w = (s.outer ?? '') + w + (s.suffix ?? '')
+    }
   }
+  for (let i = steps.length - 1; i >= 0; i--) if (steps[i].type === 'suffix') w = w + steps[i].form
+  for (let i = steps.length - 1; i >= 0; i--) if (steps[i].type === 'prefix') w = steps[i].form + w
+  return w
 }
 
 /**
