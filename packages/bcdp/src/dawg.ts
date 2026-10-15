@@ -28,25 +28,50 @@
 /**
  * 依 code point 比較兩個字串（JS 預設的字串比較是依 UTF-16 code unit，
  * 對 BMP 以外的字元順序會和邊的字元順序不一致）。
- * @param {string[]} a
- * @param {string[]} b
  */
-function compareChars(a, b) {
+function compareChars(a: string[], b: string[]): number {
   const n = Math.min(a.length, b.length)
   for (let i = 0; i < n; i++) {
-    const x = /** @type {number} */ (a[i].codePointAt(0))
-    const y = /** @type {number} */ (b[i].codePointAt(0))
+    const x = a[i].codePointAt(0) as number
+    const y = b[i].codePointAt(0) as number
     if (x !== y) return x - y
   }
   return a.length - b.length
 }
 
+/** 建構期間的可變狀態 */
+interface BuildState {
+  children: Map<string, BuildState>
+  final: boolean
+  id: number
+}
+
+/** Dawg 的 CSR 陣列（建構子的參數） */
+export interface DawgParts {
+  root: number
+  edgeStart: Int32Array
+  edgeLabels: string[]
+  edgeTarget: Int32Array
+  final: Uint8Array
+}
+
 export class Dawg {
-  /**
-   * 通常不直接呼叫，請用 `Dawg.build()` 或 `Dawg.fromJSON()`。
-   * @param {{root: number, edgeStart: Int32Array, edgeLabels: string[], edgeTarget: Int32Array, final: Uint8Array}} parts
-   */
-  constructor({ root, edgeStart, edgeLabels, edgeTarget, final }) {
+  readonly root: number
+  readonly edgeStart: Int32Array
+  readonly edgeLabels: string[]
+  readonly edgeTarget: Int32Array
+  readonly final: Uint8Array
+  readonly nodeCount: number
+  readonly edgeCount: number
+  /** 子樹中的詞數 */
+  wordCount!: Int32Array
+  /** 子樹最長詞還有幾個字元 */
+  height!: Int32Array
+  /** 每條邊之前（字典序）有幾個詞 */
+  edgeWordsBefore!: Int32Array
+
+  /** 通常不直接呼叫，請用 `Dawg.build()` 或 `Dawg.fromJSON()`。 */
+  constructor({ root, edgeStart, edgeLabels, edgeTarget, final }: DawgParts) {
     this.root = root
     this.edgeStart = edgeStart
     this.edgeLabels = edgeLabels
@@ -59,34 +84,30 @@ export class Dawg {
 
   /**
    * 由一組詞建立 DAWG。
-   * @param {string[]} words 會自行排序與去重
-   * @returns {Dawg}
+   * @param words 會自行排序與去重
    */
-  static build(words) {
+  static build(words: Iterable<string>): Dawg {
     const sorted = [...new Set(words)]
       .map((word) => ({ word, chars: Array.from(word) }))
       .sort((a, b) => compareChars(a.chars, b.chars))
 
-    /** 建構期間的可變狀態 */
-    const makeState = () => ({ children: /** @type {Map<string, any>} */ (new Map()), final: false, id: -1 })
+    const makeState = (): BuildState => ({ children: new Map(), final: false, id: -1 })
     const root = makeState()
     /** 等價狀態登記表：簽章 → 狀態 */
-    const register = new Map()
+    const register = new Map<string, BuildState>()
     /** 已登記（不可再變動）的狀態，順序即節點編號 */
-    const frozen = []
+    const frozen: BuildState[] = []
 
     /**
      * 等價狀態的簽章：是否為詞尾 ＋ 每條出邊的（字元碼位, 目標節點編號）。
      * 字元一律寫成碼位數字並加分隔符號，任何字元都不會讓兩個不同的狀態撞號。
-     * @param {any} state
      */
-    const signatureOf = (state) => {
+    const signatureOf = (state: BuildState): string => {
       let key = state.final ? '1' : '0'
       for (const [ch, child] of state.children) key += `|${ch.codePointAt(0)}>${child.id}`
       return key
     }
-    /** @param {any} state */
-    const freeze = (state) => {
+    const freeze = (state: BuildState): BuildState => {
       const key = signatureOf(state)
       const existing = register.get(key)
       if (existing) return existing
@@ -97,9 +118,8 @@ export class Dawg {
     }
 
     /** 上一個詞的路徑（path[i] 是吃掉前 i 個字元後的狀態） */
-    let path = [root]
-    /** @type {string[]} */
-    let lastChars = []
+    const path: BuildState[] = [root]
+    let lastChars: string[] = []
 
     for (const { chars } of sorted) {
       let common = 0
@@ -135,7 +155,7 @@ export class Dawg {
     const edgeStart = new Int32Array(nodeCount + 1)
     for (let id = 0; id < nodeCount; id++) edgeStart[id + 1] = edgeStart[id] + frozen[id].children.size
     const edgeCount = edgeStart[nodeCount]
-    const edgeLabels = new Array(edgeCount)
+    const edgeLabels: string[] = new Array(edgeCount)
     const edgeTarget = new Int32Array(edgeCount)
     const final = new Uint8Array(nodeCount)
     for (let id = 0; id < nodeCount; id++) {
@@ -156,9 +176,8 @@ export class Dawg {
   /**
    * 計算每個節點的子樹詞數與高度，以及每條邊的「之前有幾個詞」。
    * 節點編號是拓撲序（子 < 父），所以遞增掃一遍就好。
-   * @private
    */
-  _computeCounts() {
+  private _computeCounts(): void {
     const { nodeCount, edgeStart, edgeTarget, final } = this
     const wordCount = new Int32Array(nodeCount)
     const height = new Int32Array(nodeCount)
@@ -181,53 +200,48 @@ export class Dawg {
   }
 
   /** 詞的總數 */
-  get size() {
+  get size(): number {
     return this.wordCount[this.root]
   }
 
-  /** 第 node 個節點的第一條邊 @param {number} node */
-  firstEdge(node) {
+  /** 第 node 個節點的第一條邊 */
+  firstEdge(node: number): number {
     return this.edgeStart[node]
   }
 
-  /** 第 node 個節點的最後一條邊（不含）@param {number} node */
-  endEdge(node) {
+  /** 第 node 個節點的最後一條邊（不含） */
+  endEdge(node: number): number {
     return this.edgeStart[node + 1]
   }
 
-  /** @param {number} edge */
-  label(edge) {
+  label(edge: number): string {
     return this.edgeLabels[edge]
   }
 
-  /** @param {number} edge */
-  target(edge) {
+  target(edge: number): number {
     return this.edgeTarget[edge]
   }
 
-  /** 這條邊之前（字典序）有幾個詞 @param {number} edge */
-  wordsBefore(edge) {
+  /** 這條邊之前（字典序）有幾個詞 */
+  wordsBefore(edge: number): number {
     return this.edgeWordsBefore[edge]
   }
 
-  /** @param {number} node */
-  isFinal(node) {
+  isFinal(node: number): boolean {
     return this.final[node] === 1
   }
 
   /**
    * 找出節點上標籤為 ch 的邊（邊依字元排序，用二分搜尋）。
-   * @param {number} node
-   * @param {string} ch
-   * @returns {number} 邊編號，找不到為 -1
+   * @returns 邊編號，找不到為 -1
    */
-  findEdge(node, ch) {
+  findEdge(node: number, ch: string): number {
     let lo = this.edgeStart[node]
     let hi = this.edgeStart[node + 1] - 1
-    const code = /** @type {number} */ (ch.codePointAt(0))
+    const code = ch.codePointAt(0) as number
     while (lo <= hi) {
       const mid = (lo + hi) >> 1
-      const midCode = /** @type {number} */ (this.edgeLabels[mid].codePointAt(0))
+      const midCode = this.edgeLabels[mid].codePointAt(0) as number
       if (midCode === code) return mid
       if (midCode < code) lo = mid + 1
       else hi = mid - 1
@@ -237,10 +251,9 @@ export class Dawg {
 
   /**
    * 詞 → 字典序名次（完美雜湊）。
-   * @param {string} word
-   * @returns {number} 名次（0 起算）；不存在為 -1
+   * @returns 名次（0 起算）；不存在為 -1
    */
-  lookup(word) {
+  lookup(word: string): number {
     let node = this.root
     let rank = 0
     for (const ch of word) {
@@ -252,12 +265,8 @@ export class Dawg {
     return this.final[node] ? rank : -1
   }
 
-  /**
-   * 字典序名次 → 詞（lookup 的反函式）。
-   * @param {number} index
-   * @returns {string | null}
-   */
-  wordAt(index) {
+  /** 字典序名次 → 詞（lookup 的反函式）。 */
+  wordAt(index: number): string | null {
     if (index < 0 || index >= this.size) return null
     let node = this.root
     let rank = index
@@ -283,17 +292,11 @@ export class Dawg {
     }
   }
 
-  /**
-   * 依字典序列出所有詞。
-   * @returns {string[]}
-   */
-  words() {
-    /** @type {string[]} */
-    const out = []
-    /** @type {string[]} */
-    const path = []
-    /** @param {number} node */
-    const walk = (node) => {
+  /** 依字典序列出所有詞。 */
+  words(): string[] {
+    const out: string[] = []
+    const path: string[] = []
+    const walk = (node: number): void => {
       if (this.final[node]) out.push(path.join(''))
       for (let k = this.edgeStart[node]; k < this.edgeStart[node + 1]; k++) {
         path.push(this.edgeLabels[k])
@@ -313,10 +316,10 @@ export class Dawg {
    * - 目標節點存「本節點編號 − 目標編號」：子節點一定比父節點早登記，差值中位數只有 7，
    *   比絕對編號省：47 KB → 30 KB
    */
-  toJSON() {
-    const degrees = new Array(this.nodeCount)
+  toJSON(): SerializedDawg {
+    const degrees: number[] = new Array(this.nodeCount)
     for (let node = 0; node < this.nodeCount; node++) degrees[node] = this.edgeStart[node + 1] - this.edgeStart[node]
-    const targetDeltas = new Array(this.edgeCount)
+    const targetDeltas: number[] = new Array(this.edgeCount)
     for (let node = 0; node < this.nodeCount; node++) {
       for (let k = this.edgeStart[node]; k < this.edgeStart[node + 1]; k++) targetDeltas[k] = node - this.edgeTarget[k]
     }
@@ -332,11 +335,7 @@ export class Dawg {
     }
   }
 
-  /**
-   * @param {SerializedDawg} data
-   * @returns {Dawg}
-   */
-  static fromJSON(data) {
+  static fromJSON(data: SerializedDawg): Dawg {
     if (data?.format !== DAWG_FORMAT) {
       throw new TypeError(`不是可辨識的序列化 DAWG（format 應為 ${DAWG_FORMAT}）`)
     }
@@ -361,28 +360,31 @@ export class Dawg {
   }
 }
 
+/**
+ * 序列化格式的識別字。名稱是這個函式庫最初為巴宰–噶哈巫語而寫時取的；改名會讓已建置的網站資料失效，
+ * 所以保留（它只是一個識別字，與語言無關）。
+ */
 export const DAWG_FORMAT = 'pazeh-fuzzy-dawg'
 export const DAWG_VERSION = 1
 
-/**
- * @typedef {object} SerializedDawg
- * @property {string} format
- * @property {number} version
- * @property {number} root
- * @property {number} nodeCount
- * @property {string} labels 所有邊的字元依序串成一個字串
- * @property {number[]} degrees 每個節點的出邊數
- * @property {number[]} targetDeltas 每條邊的「本節點編號 − 目標節點編號」
- * @property {number[]} finals 詞尾節點編號，差分編碼
- */
+export interface SerializedDawg {
+  format: string
+  version: number
+  root: number
+  nodeCount: number
+  /** 所有邊的字元依序串成一個字串 */
+  labels: string
+  /** 每個節點的出邊數 */
+  degrees: number[]
+  /** 每條邊的「本節點編號 − 目標節點編號」 */
+  targetDeltas: number[]
+  /** 詞尾節點編號，差分編碼 */
+  finals: number[]
+}
 
-/**
- * 詞尾節點的 bitmap → 差分編碼的節點編號清單。
- * @param {Uint8Array} final
- */
-function finalsToDelta(final) {
-  /** @type {number[]} */
-  const out = []
+/** 詞尾節點的 bitmap → 差分編碼的節點編號清單。 */
+function finalsToDelta(final: Uint8Array): number[] {
+  const out: number[] = []
   let previous = 0
   for (let node = 0; node < final.length; node++) {
     if (!final[node]) continue

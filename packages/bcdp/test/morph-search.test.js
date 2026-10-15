@@ -9,7 +9,7 @@
 
 import { describe, expect, it } from 'vitest'
 import { createAnalyzer, createMorphSearch, EPSILON, FuzzyIndex, RuleSet, WeightedEditDistance } from '../src/index.js'
-import { toForwardEnd } from '../src/junction.js'
+import { toForwardEnd } from '../src/junction.ts'
 import { alternationRules } from '../src/morphology.js'
 import { createRandom, pick, randomString } from './helpers.js'
 import { refJoint, refJointContext } from './reference/ref-joint.js'

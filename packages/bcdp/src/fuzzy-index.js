@@ -53,26 +53,13 @@
  * - 列的最小值由 `fillRow` 順便回傳。
  */
 
-import { Dawg } from './dawg.js'
+import { Dawg } from './dawg.ts'
 import { requireCost, requireLimit, requireString } from './guards.ts'
-import { advanceCrossing, createCrossing, EDGE_JUNCTION, EDGE_WORD, fillRow, jumpBound, PathMatcher, prepareColumn, roundCost, EPSILON } from './dp.js'
+import { advanceCrossing, createCrossing, EDGE_JUNCTION, EDGE_WORD, fillRow, jumpBound, PathMatcher, prepareColumn, roundCost, EPSILON } from './dp.ts'
 import { resolveNormalization } from './score-normalization.ts'
 
-/**
- * @typedef {object} JunctionState 詞素交界上的 DP 狀態（docs/bcdp.md 第 4 節）
- * @property {Float64Array} row 交界列 R：R[x] ＝ 對齊走到（查詢位置 x, 這個交界）的最小成本
- * @property {Array<{node: number, row: Float64Array}>} pending 跨界表：還沒走完的規則 target
- *   （target trie 的節點）與它起點那一列。交界之後的每個轉移只讀這兩樣，所以它們就是整個「過去」
- */
-
-/**
- * @typedef {object} JunctionEnd 詞尾要耦合的後一段（後綴鏈），由反方向算好、換回正向座標
- * @property {Float64Array | null} row 後一段從查詢位置 x 開始的最小成本
- * @property {Array<{tail: string[], row: Float64Array}>} pending 後一段開頭、跨界規則 target 的後半段
- *   （tail）與它之後那一列：規則 target ＝ 這一段的尾巴 · tail
- * @property {Float64Array | null} [word] 也接受「這一段就是詞尾」：這一段在查詢位置 x 結束時，
- *   詞尾（F 列）之後還要付的成本（通常只有 word[n] ＝ 0；固定交界的變體另有限制）
- */
+/** @typedef {import('./junction.ts').JunctionState} JunctionState 詞素交界上的 DP 狀態（定義在 junction.ts） */
+/** @typedef {import('./junction.ts').JunctionEnd} JunctionEnd 詞尾要耦合的後一段（定義在 junction.ts） */
 
 /**
  * @typedef {object} SearchOptions
@@ -142,7 +129,7 @@ import { resolveNormalization } from './score-normalization.ts'
  * @typedef {object} SerializedIndex
  * @property {string} format
  * @property {number} version
- * @property {import('./dawg.js').SerializedDawg} dawg
+ * @property {import('./dawg.ts').SerializedDawg} dawg
  * @property {unknown[][]} payloads 依詞的字典序排列
  */
 
@@ -367,7 +354,7 @@ export class FuzzyIndex {
     /**
      * 查詢端的編譯結果依（查詢、交界、鎖住空白）共用：通道之間只差在起點列。複本共用成本表的快取與
      * 暫存（ColumnContext、ruleMin）；每個節點上一個通道的列算完才換下一個通道，所以暫存不會互相覆寫
-     * @type {Map<string, import('./dp.js').QueryPlan>}
+     * @type {Map<string, import('./dp.ts').QueryPlan>}
      */
     const plans = new Map()
     /** @param {string[]} x @param {Float64Array | null} start @param {boolean} junctions @param {boolean} lockBoundary */
@@ -415,7 +402,7 @@ export class FuzzyIndex {
         for (let x = n - 1; x >= 0; x--) if (e[x + 1] < e[x]) e[x] = e[x + 1]
         if (e.some((v) => v > 0)) pot = e
       }
-      /** @type {import('./dp.js').Crossing[]} 第 j 層的跨界狀態（來自 from.pending，只在淺層） */
+      /** @type {import('./dp.ts').Crossing[]} 第 j 層的跨界狀態（來自 from.pending，只在淺層） */
       const cross = []
       const c0 = from ? crossingOf(from.pending) : null
       if (c0) cross[0] = c0
@@ -470,7 +457,7 @@ export class FuzzyIndex {
               lowerBound: Infinity,
             }
           : null,
-        /** @type {{rowN: Float64Array, rowF: Float64Array, minN: number, minF: number, cross: import('./dp.js').Crossing | null, lowerBound: number} | null} */
+        /** @type {{rowN: Float64Array, rowF: Float64Array, minN: number, minF: number, cross: import('./dp.ts').Crossing | null, lowerBound: number} | null} */
         base0: null,
         bound0: Infinity,
         plan: planFor(x, from?.row ?? null, junctions, lockBoundary),
@@ -525,7 +512,7 @@ export class FuzzyIndex {
         const { n, plan, rowsN, rowsF, bufF, minN, minF } = ch
         // 跨界狀態：第 j 層由第 j − 1 層沿 Y[j-1] 往下走（只在還有狀態的淺層）。第 0 層的狀態是
         // 「在交界剛好結束」的 target，已經在前一段的交界列算過，所以只用在剪枝的下界
-        /** @type {import('./dp.js').Crossing | null} */
+        /** @type {import('./dp.ts').Crossing | null} */
         let crossing = null
         if (ch.cross.length) {
           if (j === 0) crossing = ch.cross[0]
@@ -804,7 +791,7 @@ export class FuzzyIndex {
   /**
    * 詞圖每條邊的字元編號與邊界旗標。字元編號屬於某一組規則（CompiledRules），
    * 所以快取時記下是哪一組；詞圖重建（freeze）或規則替換（setRules）後自動重算。
-   * @param {import('./dp.js').CompiledRules} compiled
+   * @param {import('./dp.ts').CompiledRules} compiled
    * @returns {{codes: Int32Array, boundary: Uint8Array}}
    * @private
    */
@@ -853,7 +840,7 @@ export class FuzzyIndex {
 /**
  * 交界狀態的跨界表 → 第 0 層的跨界狀態（沒有時是 null）。
  * @param {JunctionState['pending']} pending
- * @returns {import('./dp.js').Crossing | null}
+ * @returns {import('./dp.ts').Crossing | null}
  */
 function crossingOf(pending) {
   if (!pending.length) return null

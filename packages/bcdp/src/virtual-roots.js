@@ -10,7 +10,7 @@
  * - **形狀像一個詞根**（isVirtualRootShape）：至少兩個元音、比 minStem 長，太短的詞幹容易巧合相同。
  */
 
-import { EPSILON, roundCost } from './dp.js'
+import { EPSILON, roundCost } from './dp.ts'
 import { rootCostOf } from './morphology.js'
 
 /** @typedef {ReturnType<typeof import('./morph-search.js').createMorphSearch>} MorphSearch */

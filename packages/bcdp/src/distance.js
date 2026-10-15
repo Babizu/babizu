@@ -3,7 +3,7 @@
  */
 
 import { CostModel } from './costs.ts'
-import { advanceCrossing, CompiledRules, createCrossing, EDGE_JUNCTION, EDGE_NONE, EDGE_WORD, fillRow, jumpBound, PathMatcher, prepareColumn, roundCost, EPSILON } from './dp.js'
+import { advanceCrossing, CompiledRules, createCrossing, EDGE_JUNCTION, EDGE_NONE, EDGE_WORD, fillRow, jumpBound, PathMatcher, prepareColumn, roundCost, EPSILON } from './dp.ts'
 import { requireString } from './guards.ts'
 import { createNormalizer } from './text-normalize.ts'
 import { resolveNormalization } from './score-normalization.ts'
@@ -19,7 +19,7 @@ import { RuleSet } from './rules.ts'
 
 /**
  * @typedef {object} AlignmentStep 對齊路徑中的一步
- * @property {import('./dp.js').Operation} op
+ * @property {import('./dp.ts').Operation} op
  * @property {string} source X 側片段（刪除／規則脫落時可能是空字串）
  * @property {string} target Y 側片段
  * @property {number} cost 這一步的成本
@@ -30,7 +30,7 @@ import { RuleSet } from './rules.ts'
 
 /**
  * @typedef {object} CellCandidate 某一格的候選轉移
- * @property {import('./dp.js').Operation} op
+ * @property {import('./dp.ts').Operation} op
  * @property {number} cost 經由此轉移到達該格的總成本
  * @property {number} stepCost
  * @property {[number, number]} from
@@ -152,7 +152,7 @@ export class WeightedEditDistance {
    * 只算一次成本表與規則表，之後以 `distancePrepared` 逐一計算。
    * 與 `distance` 不同，這裡不做正規化：x 與 y 必須已經是 `prepare()` 的結果。
    * @param {string[]} x 已正規化的查詢字元
-   * @returns {import('./dp.js').QueryPlan}
+   * @returns {import('./dp.ts').QueryPlan}
    */
   prepareQuery(x) {
     return this.compiled.compileQuery(x, this.costs)
@@ -161,7 +161,7 @@ export class WeightedEditDistance {
   /**
    * 以預先編譯的查詢計算距離。`distancePrepared(prepareQuery(prepare(q)), prepare(c))`
    * 與 `distance(q, c)` 逐位元相同。
-   * @param {import('./dp.js').QueryPlan} plan `prepareQuery` 的結果（須在同一組規則與成本下編譯）
+   * @param {import('./dp.ts').QueryPlan} plan `prepareQuery` 的結果（須在同一組規則與成本下編譯）
    * @param {string[]} y 已正規化的候選字元
    * @returns {number}
    */
@@ -200,7 +200,7 @@ export class WeightedEditDistance {
    * start 取代第 0 列的起點成本（交界列；docs/bcdp.md 第 4 節）。
    * @param {string[]} x
    * @param {string[]} y
-   * @param {import('./dp.js').QueryOptions} [options]
+   * @param {import('./dp.ts').QueryOptions} [options]
    * @returns {Explanation}
    */
   explainChars(x, y, options = {}) {
@@ -339,7 +339,7 @@ export class WeightedEditDistance {
       const plan = compiled.compileQuery(x, this.costs, { start, junctions: true, lockBoundary: Boolean(seg.lock) })
       const matcher = new PathMatcher(compiled)
       const startEdge = k === 0 ? (options.startEdge ?? EDGE_WORD) : EDGE_JUNCTION
-      /** @type {import('./dp.js').Crossing[]} */
+      /** @type {import('./dp.ts').Crossing[]} */
       const cross = []
       if (state && state.pending.length && !pinnedStart) {
         const c0 = createCrossing(state.pending.length)
@@ -483,7 +483,7 @@ export class WeightedEditDistance {
     const plan = compiled.compileQuery(x, this.costs, { start: from?.row ?? null, junctions: true, lockBoundary: Boolean(o.lock) })
     const matcher = new PathMatcher(compiled)
     const startEdge = o.startEdge ?? (from ? EDGE_JUNCTION : EDGE_WORD)
-    /** @type {import('./dp.js').Crossing[]} */
+    /** @type {import('./dp.ts').Crossing[]} */
     const cross = []
     if (from && from.pending.length) {
       const c0 = createCrossing(from.pending.length)
@@ -501,7 +501,7 @@ export class WeightedEditDistance {
     const cand = []
     const rowAt = (/** @type {number} */ r) => rows[r]
     /** @param {CellCandidate[][]} into */
-    const tracer = (into) => (/** @type {import('./dp.js').Transition} */ t) => {
+    const tracer = (into) => (/** @type {import('./dp.ts').Transition} */ t) => {
       into[t.i].push({ op: t.op, cost: roundCost(t.cost), stepCost: roundCost(t.stepCost), from: [t.fromI, t.fromJ], rule: t.rule ? publicRule(t.rule) : null })
     }
     let rowF = /** @type {Float64Array} */ (new Float64Array(0))
@@ -660,9 +660,9 @@ export class WeightedEditDistance {
     const fromI = new Int32Array(size).fill(-1)
     const fromJ = new Int32Array(size)
     const stepCost = new Float64Array(size)
-    /** @type {Array<import('./dp.js').Operation>} */
+    /** @type {Array<import('./dp.ts').Operation>} */
     const ops = new Array(size)
-    /** @type {Array<import('./dp.js').CompiledRule | null>} */
+    /** @type {Array<import('./dp.ts').CompiledRule | null>} */
     const rules = new Array(size)
     const rows = this._matrix(x, y, (t) => {
       const at = t.i * (m + 1) + t.j
@@ -709,7 +709,7 @@ export class WeightedEditDistance {
    * 回傳 rows[j][i]（外層為 j，與詞圖逐層往下的方向一致）。
    * @param {string[]} x
    * @param {string[]} y
-   * @param {((t: import('./dp.js').Transition) => void) | null} trace
+   * @param {((t: import('./dp.ts').Transition) => void) | null} trace
    * @returns {Float64Array[]}
    * @private
    */
@@ -720,9 +720,9 @@ export class WeightedEditDistance {
   /**
    * 以已編譯的查詢逐列計算整張表。候選字串 Y 的字元逐一送進路徑匹配器
    * （與詞圖搜尋相同的程式路徑，只是路徑只有一條）。
-   * @param {import('./dp.js').QueryPlan} plan
+   * @param {import('./dp.ts').QueryPlan} plan
    * @param {string[]} y
-   * @param {((t: import('./dp.js').Transition) => void) | null} trace
+   * @param {((t: import('./dp.ts').Transition) => void) | null} trace
    * @returns {Float64Array[]}
    * @private
    */
@@ -762,7 +762,7 @@ export class WeightedEditDistance {
 
 /**
  * 只保留規則的公開欄位，避免把內部索引資訊暴露給呼叫端。
- * @param {import('./dp.js').CompiledRule} rule
+ * @param {import('./dp.ts').CompiledRule} rule
  */
 function publicRule(rule) {
   const { source, target, weight, position, category, label, reversed } = rule

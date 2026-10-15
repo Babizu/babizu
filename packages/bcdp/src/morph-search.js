@@ -29,10 +29,10 @@
  * 成本直接由兩側的交界列讀出（openStems）。去詞綴只有這一套演算法。
  */
 
-import { EDGE_JUNCTION, EDGE_WORD, EPSILON, roundCost } from './dp.js'
+import { EDGE_JUNCTION, EDGE_WORD, EPSILON, roundCost } from './dp.ts'
 import { FuzzyIndex } from './fuzzy-index.js'
 import { requireCost, requireString } from './guards.ts'
-import { copyTagged, emptyEnd, emptyJunction, isReachable, mergeEndInto, mergeInto, mergeTagged, minOf, toForwardEnd } from './junction.js'
+import { copyTagged, emptyEnd, emptyJunction, isReachable, mergeEndInto, mergeInto, mergeTagged, minOf, toForwardEnd } from './junction.ts'
 import { circumfixStep, rootCostOf } from './morphology.js'
 
 /** @typedef {import('./fuzzy-index.js').JunctionState} JunctionState */

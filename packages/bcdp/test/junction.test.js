@@ -9,7 +9,7 @@
 
 import { describe, expect, it } from 'vitest'
 import { EPSILON, FuzzyIndex, RuleSet, WeightedEditDistance } from '../src/index.js'
-import { emptyJunction, mergeInto, toForwardEnd } from '../src/junction.js'
+import { emptyJunction, mergeInto, toForwardEnd } from '../src/junction.ts'
 import { createRandom, pick, randomString } from './helpers.js'
 import { refJoint, refJointContext } from './reference/ref-joint.js'
 

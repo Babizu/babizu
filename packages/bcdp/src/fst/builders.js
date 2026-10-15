@@ -16,7 +16,7 @@
  * 這是評估用的參考實作，不追求速度：狀態以字串為鍵、以雜湊表記錄。
  */
 
-import { roundCost } from '../dp.js'
+import { roundCost } from '../dp.ts'
 import { compose, EPS, shortestDistance, stringAcceptor } from './wfst.js'
 
 /**
@@ -127,7 +127,7 @@ function buildTrie(affixes) {
  * 表面詞形接受器 S：前綴鏈 · 詞幹 · 後綴鏈（輸入＝輸出），權重為構詞步驟的成本。
  *
  * @param {object} options
- * @param {import('../dawg.js').Dawg} options.dawg 詞幹的詞圖
+ * @param {import('../dawg.ts').Dawg} options.dawg 詞幹的詞圖
  * @param {(base: number) => boolean} [options.accept] 詞幹（依詞圖名次）是否可用，例如只收詞條身分的詞
  * @param {import('../morphology.js').Analyzer['spec']} options.spec 已正規化的構詞規格
  * @param {boolean} [options.requireStep=true] 至少要有一個構詞步驟（沒有步驟的是普通模糊命中）

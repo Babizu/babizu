@@ -24,13 +24,13 @@ export { CostModel, DEFAULT_COSTS } from './costs.ts'
 export { RuleSet } from './rules.ts'
 export { WeightedEditDistance } from './distance.js'
 export { NORMALIZATIONS, resolveNormalization } from './score-normalization.ts'
-export { Dawg, DAWG_FORMAT, DAWG_VERSION } from './dawg.js'
+export { Dawg, DAWG_FORMAT, DAWG_VERSION } from './dawg.ts'
 export { FuzzyIndex, INDEX_FORMAT, INDEX_VERSION } from './fuzzy-index.js'
 export { alternationRules, ALTERNATION_CATEGORY, circumfixStep, createAnalyzer, GLIDE_PATTERNS, REDUPLICATION_PATTERNS, rootCostOf, validateMorphology } from './morphology.js'
 export { createMorphSearch } from './morph-search.js'
 export { DERIVATION_MAX_COST, isVirtualRootShape, lexicalEdgeCost, soundOf, virtualRootCost, virtualRoots } from './virtual-roots.js'
 export { expandGrammar, isGrammarSpec, validateGrammar } from './grammar.js'
-export { roundCost, EPSILON } from './dp.js'
+export { roundCost, EPSILON } from './dp.ts'
 export {
   PROFILE_FORMAT,
   PROFILE_VERSION,

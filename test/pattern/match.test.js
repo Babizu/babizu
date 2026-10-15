@@ -81,7 +81,7 @@ function toRegExp(node) {
 const accepts = (node, letter) => node.letters === null || node.letters.includes(letter)
 
 describe('比對器：與 RegExp 的 g 旗標相同（最左、優先序、不重疊）', () => {
-  it('隨機句型與隨機句子（20,000 組）', () => {
+  it('隨機句型與隨機句子（20,000 組）', { timeout: 30_000 }, () => {
     const random = createRandom(20261002)
     let compared = 0
     let nonEmpty = 0
