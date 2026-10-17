@@ -14,7 +14,10 @@
 
 ## 1. 啟用
 
-站台設定（[site-config.md](site-config.md)）：
+**預設不啟用**：站台設定沒有 `csr`（或是 `false`）時，網站沒有對應組檢索，設定選單也沒有「模糊搜尋」這一項。
+巴宰–噶哈巫語數位辭典目前也不啟用（模型照樣產生、更新）；框架的示範站台有啟用，用來測試介面。
+
+要啟用時，站台設定（[site-config.md](site-config.md)）：
 
 ```js
 export default defineSite({
