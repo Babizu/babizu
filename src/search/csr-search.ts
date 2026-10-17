@@ -86,5 +86,6 @@ export function correspondenceMatches(index: CorrespondenceIndex, key: string, f
 /** 命中的對齊說明（每一步的成本也換算成 BCDP 的刻度） */
 export function correspondenceSteps(index: CorrespondenceIndex, csr: CsrExplanation): CsrStep[] {
   const scale = index.search.params.scoreScale
-  return index.search.explain(csr).map((s) => ({ ...s, cost: Math.round(s.cost * scale * 1000) / 1000 }))
+  const scaled = (s: CsrStep): CsrStep => ({ ...s, cost: Math.round(s.cost * scale * 1000) / 1000, ...(s.parts ? { parts: s.parts.map(scaled) } : {}) })
+  return index.search.explain(csr).map(scaled)
 }

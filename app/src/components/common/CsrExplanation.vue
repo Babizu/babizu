@@ -4,14 +4,16 @@
  * - 相近拼寫：「≈ 距離」加前兩個不同處（與 MatchExplanation 相同）；
  * - 自動拆解、自動派生、自動同根：命中方式加詞的結構（與 MorphologyExplanation 相同）。
  * 點開才是對應組檢索自己的說明：把查詢當成哪個方言的詞、兩邊剝了哪些詞綴、詞幹的每個不同處是學到的語音對應
- * 還是沒見過的差異、各自的成本（已換算成與 BCDP 同一個刻度）。
+ * （單一音段的，或依前後文的一整段）還是沒見過的差異、各自的成本（已換算成與 BCDP 同一個刻度）。
+ * 依前後文的一整段另外列「拆開來看」：逐音段比對時的各步與合計，對照合在一起時便宜多少。
+ * 最後一段說明出處：語音對應全部由資料學出；詞綴清單與構詞音變來自語言設定檔（人寫的）。
  */
 import type { CsrExplanation } from '@babizu/search/index.ts'
 import { computed, type PropType } from 'vue'
 import { Badge } from '@/components/ui/badge'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { t } from '@/i18n.ts'
-import { csrStepLabel, dialectLabel, formatAffix, formatDistance, formatStep, matchTypeLabel } from '@/lib/labels.ts'
+import { csrStepLabel, dialectLabel, formatAffix, formatDistance, formatStep, matchTypeLabel, positionLabel } from '@/lib/labels.ts'
 
 const props = defineProps({
   csr: { type: Object as PropType<CsrExplanation>, required: true },
@@ -37,7 +39,8 @@ const summary = computed(() => {
   return differences.value.slice(0, 2).map((s) => formatStep(s)).join(t('、'))
 })
 /** 全部是學到的對應（沒有沒見過的差異）時，相近拼寫的按鈕用較明顯的樣式（與方言規則的相近拼寫一致） */
-const allLearned = computed(() => differences.value.length > 0 && differences.value.every((s) => s.kind === 'correspondence'))
+const allLearned = computed(() => differences.value.length > 0 && differences.value.every((s) => s.kind === 'correspondence' || s.kind === 'context'))
+const partsCost = (parts: NonNullable<CsrExplanation['steps']>) => parts.reduce((sum, p) => sum + p.cost, 0)
 const title = computed(() =>
   props.matchType === 'lemma' ? t('自動拆解的說明') : props.matchType === 'derived' ? t('自動派生的說明') : props.matchType === 'sibling' ? t('自動同根的說明') : t('為什麼算相近？'),
 )
@@ -98,12 +101,20 @@ const title = computed(() =>
         </li>
       </ul>
       <ul v-if="csr.steps" class="mt-2 space-y-1.5">
-        <li v-for="(step, k) in differences" :key="k" class="flex items-baseline justify-between gap-3">
-          <span class="flex items-baseline gap-2">
-            <code class="bg-muted native-text rounded px-1 font-mono text-xs">{{ formatStep(step) }}</code>
-            <span class="text-muted-foreground text-xs">{{ csrStepLabel(step.kind) }}</span>
-          </span>
-          <span class="text-muted-foreground font-mono text-xs tabular-nums">+{{ formatDistance(step.cost) }}</span>
+        <li v-for="(step, k) in differences" :key="k">
+          <div class="flex items-baseline justify-between gap-3">
+            <span class="flex items-baseline gap-2">
+              <code class="bg-muted native-text rounded px-1 font-mono text-xs">{{ formatStep(step) }}</code>
+              <span class="text-muted-foreground text-xs">
+                {{ csrStepLabel(step.kind) }}<template v-if="step.position">{{ t('（{position}）', { position: positionLabel(step.position) }) }}</template>
+              </span>
+            </span>
+            <span class="text-muted-foreground font-mono text-xs tabular-nums">+{{ formatDistance(step.cost) }}</span>
+          </div>
+          <!-- 依前後文的一整段：逐音段比對時要多少 -->
+          <p v-if="step.parts?.length" class="text-muted-foreground mt-0.5 pl-2 text-xs">
+            {{ t('拆開來看：{parts}，合計 +{cost}', { parts: step.parts.map((p) => formatStep(p)).join(t('、')), cost: formatDistance(partsCost(step.parts)) }) }}
+          </p>
         </li>
         <li class="text-muted-foreground flex items-baseline justify-between gap-3 text-xs">
           <span>{{ t('其餘相同的音段') }}</span>
@@ -111,7 +122,12 @@ const title = computed(() =>
         </li>
       </ul>
       <p class="text-muted-foreground mt-3 text-xs leading-relaxed">
-        {{ t('分數 {score}。成本由辭典資料中學到的語音對應換算，越常見越便宜；每剝一個詞綴另外加分。對應組檢索是實驗性的比對方式。', { score: formatDistance(csr.score) }) }}
+        {{
+          t(
+            '分數 {score}。語音對應全部由辭典資料學出（沒有手寫的規則），越常見越便宜；依前後文的對應只在前後的音也相符時成立。詞綴清單與構詞音變來自語言設定檔（人工撰寫），每剝一個詞綴另外加分。對應組檢索是實驗性的比對方式。',
+            { score: formatDistance(csr.score) },
+          )
+        }}
       </p>
     </PopoverContent>
   </Popover>

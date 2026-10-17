@@ -1,19 +1,24 @@
 /**
- * 對應組檢索（實驗性；src/search/csr）：模型檢查、成本公式、去詞綴、搜尋與說明、經過搜尋引擎。
+ * 對應組檢索（實驗性；src/search/csr）：模型檢查、成本公式、前後文單位、學習、去詞綴、搜尋與說明、經過搜尋引擎。
  * 模型與詞庫都是合成的，只用來驗證機制。
  */
 
 import { describe, expect, it } from 'vitest'
 import { createCitation, createRecord, createSense } from '../../src/schema/index.ts'
 import {
+  buildContextTables,
   buildCostTables,
   buildSearchIndex,
+  contextMatches,
   CorrespondenceSearch,
   createAffixStripper,
+  createAligner,
   inventoryOf,
+  learnCorrespondences,
   SearchEngine,
-  segmentEdits,
+  sukhotinVowels,
   validateCsrModel,
+  type CsrAlignedPair,
   type CsrModel,
 } from '../../src/search/index.ts'
 import type { LanguageProfile } from '../../packages/bcdp/src/index.ts'
@@ -38,6 +43,18 @@ const MODEL: CsrModel = {
     { reflexes: { north: 'm', south: 'm' }, sites: 5 },
     { reflexes: { north: 'x', south: 'y' }, sites: 1 },
   ],
+}
+
+/** 加上兩個前後文單位：北部的 ura 對到南部的 owa、詞尾的 l 對到 n（ki → ke 只有 1 次，不用） */
+const CONTEXT_MODEL: CsrModel = {
+  ...MODEL,
+  patterns: [
+    ...MODEL.patterns,
+    { reflexes: { north: 'ura', south: 'owa' }, sites: 3 },
+    { reflexes: { north: 'l', south: 'n' }, sites: 4, position: 'final' },
+    { reflexes: { north: 'ki', south: 'ke' }, sites: 1 },
+  ],
+  occurrences: { north: { ura: 4, 'l$': 5, ki: 9 }, south: { owa: 3, 'n$': 6, ke: 2 } },
 }
 
 const PROFILE: LanguageProfile = {
@@ -78,13 +95,21 @@ describe('模型檢查', () => {
     )
     expect(validateCsrModel(null)).toEqual(['模型必須是物件'])
   })
+
+  it('前後文單位：position 只能是 initial、final；每一邊都要有出現次數；手寫規則的先驗（priorSites）已經沒有了', () => {
+    expect(validateCsrModel(CONTEXT_MODEL)).toEqual([])
+    const missing = validateCsrModel({ ...CONTEXT_MODEL, occurrences: { north: { ura: 4 } } })
+    expect(missing).toEqual(expect.arrayContaining(['patterns[11] 是前後文單位，occurrences.south 要有「owa」的出現次數（或在 of 中給分母）', 'patterns[12] 是前後文單位，occurrences.north 要有「l$」的出現次數（或在 of 中給分母）']))
+    expect(validateCsrModel({ ...MODEL, patterns: [{ reflexes: { north: 'l', south: 'n' }, sites: 3, position: 'end' }] })).toEqual(['patterns[0].position 只能是 initial 或 final'])
+    expect(validateCsrModel({ ...MODEL, params: { priorSites: 2 } })).toEqual(['params.priorSites 是未知的參數'])
+  })
 })
 
 describe('成本表', () => {
   const inventory = inventoryOf(MODEL.segments)
   const F = inventory.F
   const id = (s: string) => inventory.id.get(s) as number
-  const tables = buildCostTables({ dialects: MODEL.dialects, inventory, patterns: MODEL.patterns, rules: [], minSites: 2, beta: 1, priorSites: 0 })
+  const tables = buildCostTables({ dialects: MODEL.dialects, inventory, patterns: MODEL.patterns, minSites: 2, beta: 1 })
 
   it('−log P(w | s)：r 在 A → B 的三種對應（β ＝ 1 加在兩邊相同上）；不到 minSites 的對應組不用', () => {
     const ab = tables[0 * 2 + 1]
@@ -103,12 +128,123 @@ describe('成本表', () => {
     expect(aa[id('r') * F + id('l')]).toBe(Infinity)
   })
 
-  it('手寫規則當先驗：段層級的編輯兩個方向各加 priorSites 欄', () => {
-    expect(segmentEdits(['a', 'r', 'u'], ['a', 'w'])).toEqual([['r', ''], ['u', 'w']])
-    const withPrior = buildCostTables({ dialects: MODEL.dialects, inventory, patterns: MODEL.patterns, rules: [{ source: 'k', target: 'ts' }], minSites: 2, beta: 1, priorSites: 2 })
-    // k 這一列：k 10（＋β）、ts 2（先驗）
-    expect(withPrior[1][id('k') * F + id('ts')]).toBeCloseTo(-Math.log(2 / 13))
-    expect(withPrior[1][id('ts') * F + id('k')]).toBeLessThan(Infinity)
+  it('前後文單位不進單一音段的表', () => {
+    const t = buildCostTables({ dialects: MODEL.dialects, inventory, patterns: CONTEXT_MODEL.patterns, minSites: 2, beta: 1 })
+    expect(t[1]).toEqual(tables[1])
+  })
+})
+
+describe('前後文單位', () => {
+  const dialects = CONTEXT_MODEL.dialects
+  const inventory = inventoryOf([...CONTEXT_MODEL.segments, 'o', 'n', 'b', 'e'])
+  const tables = buildCostTables({ dialects, inventory, patterns: CONTEXT_MODEL.patterns, minSites: 2, beta: 1 })
+  const context = buildContextTables({ dialects, segments: new Set(inventory.forms), patterns: CONTEXT_MODEL.patterns, occurrences: CONTEXT_MODEL.occurrences, minSites: 2, normalize: (s) => s })
+  const aligner = createAligner(inventory)
+  const side = (s: string) => ({ lattice: inventory.tokenize(s), chars: Array.from(s) })
+  /** 北 → 南的距離；withContext false 時不用前後文單位 */
+  const dist = (q: string, e: string, withContext = true) => aligner.distance(side(q), side(e), tables[1], 4, Infinity, withContext ? contextMatches(Array.from(q), context[1]) : null)
+
+  it('成本 −log(次數 ／ 來源字串的出現次數)，兩個方向各用自己的分母；不到 minSites 的不用', () => {
+    expect(context[1].byFirst.get('u')?.find((u) => u.source === 'ura')?.cost).toBeCloseTo(-Math.log(3 / 4))
+    expect(context[2].byFirst.get('o')?.find((u) => u.source === 'owa')?.cost).toBeCloseTo(0)
+    expect(context[1].byFirst.get('l')?.find((u) => u.source === 'l')).toMatchObject({ target: 'n', position: 'final' })
+    expect(context[1].size).toBe(2) // ki → ke 只有 1 次
+    expect(context[0].size + context[3].size).toBe(0) // 同一個方言沒有前後文單位
+  })
+
+  it('兩邊都符合前後文時才便宜：kurak → kowak 用 ura → owa；kirak → kiwak（r 前不是 u）、kurak → kuwak（u 沒變）照舊', () => {
+    expect(dist('kurak', 'kowak')).toBeLessThan(dist('kurak', 'kowak', false) - 4)
+    expect(dist('kirak', 'kiwak')).toBe(dist('kirak', 'kiwak', false))
+    expect(dist('kurak', 'kuwak')).toBe(dist('kurak', 'kuwak', false))
+  })
+
+  it('有位置的單位只在詞尾：bintul → bintun 便宜，lima → nima 照舊', () => {
+    expect(dist('bintul', 'bintun')).toBeLessThan(dist('bintul', 'bintun', false))
+    expect(dist('lima', 'nima')).toBe(dist('lima', 'nima', false))
+  })
+
+  it('說明：前後文單位是一步（kind context，附位置）', () => {
+    const steps = aligner.align('kurak', 'kowak', tables[1], 4, context[1])
+    expect(steps.map((x) => `${x.source}>${x.target}:${x.kind}`)).toEqual(['k>k:match', 'ura>owa:context', 'k>k:match'])
+    expect(aligner.align('bintul', 'bintun', tables[1], 4, context[1]).at(-1)).toMatchObject({ source: 'l', target: 'n', kind: 'context', position: 'final' })
+  })
+
+  it('CorrespondenceSearch.explain 為前後文單位附「拆開來看」：逐音段比對的各步，合計比整段貴', () => {
+    const csr = new CorrespondenceSearch({ model: CONTEXT_MODEL, profile: PROFILE, entries: [{ key: 'kowak', dialect: 'south' }] })
+    const step = csr.explain({ queryStem: 'kurak', entryStem: 'kowak', queryDialect: 'north', entryDialect: 'south' }).find((x) => x.kind === 'context')
+    expect(step?.parts?.length).toBeGreaterThan(0)
+    expect(step?.parts?.every((p) => p.kind !== 'match')).toBe(true)
+    expect((step?.parts ?? []).reduce((n, p) => n + p.cost, 0)).toBeGreaterThan(step?.cost ?? Infinity)
+  })
+})
+
+describe('學習（只用資料）', () => {
+  /** 'm a t u r a y' 與 'm a t o w a y'：同樣多的音段，- 是缺口 */
+  const pair = (a: string, b: string): CsrAlignedPair => {
+    const x = a.split(' '), y = b.split(' ')
+    return { forms: [x.filter((t) => t !== '-').join(''), y.filter((t) => t !== '-').join('')], cols: x.map((t, k) => [t, y[k]] as [string, string]) }
+  }
+  // 北部的 r 在 u 之後對到南部的 w（u 也變 o）；其他地方的 r 保留、脫落或變 l；詞尾的 l 在南部是 n
+  const PAIRS = [
+    pair('m a t u r a y', 'm a t o w a y'),
+    pair('k u r a n', 'k o w a n'),
+    pair('b u r a s', 'b o w a s'),
+    pair('t u r a k', 't o w a k'),
+    pair('p i r a t', 'p i w a t'), // 單獨一個詞：i 之後的 r : w
+    pair('a r i k', 'a r i k'),
+    pair('s i r a m', 's i r a m'),
+    pair('k a r i', 'k a - i'),
+    pair('s a r u', 's a - u'),
+    pair('t u r i', 't u l i'),
+    pair('k u m u', 'k u m u'),
+    pair('s u l a t', 's u l a t'),
+    pair('b i n t u l', 'b i n t u n'),
+    pair('k a w a l', 'k a w a n'),
+    pair('s a p e l', 's a p e n'),
+    pair('l i m a', 'l i m a'),
+    pair('p i l a', 'p i l a'),
+  ]
+  const L = learnCorrespondences(['north', 'south'], PAIRS, { penalty: 2 })
+  const find = (n: string, s: string, position?: string) => L.patterns.find((p) => p.reflexes.north === n && p.reflexes.south === s && p.position === position)
+
+  it('r : w 在 u 之後的四個詞歸給前後文單位，剩下的 r : w 只有一欄（不到 minSites，不再是不看前後文的對應）', () => {
+    const unit = L.units.find((u) => u.reflexes.north.includes('ur') && u.reflexes.south.includes('ow'))
+    expect(unit).toBeDefined()
+    expect(unit?.sites).toBe(4)
+    expect(find('r', 'w')?.sites).toBe(1)
+    expect(find('u', 'o')).toBeUndefined()
+  })
+
+  it('詞尾的 l → n 學成有位置的單位；出現次數記在 occurrences', () => {
+    expect(find('l', 'n', 'final')).toMatchObject({ sites: 3 })
+    expect(L.occurrences.north['l$']).toBe(3)
+    expect(L.occurrences.south['n$']).toBe(4) // kowan 也是 n 結尾
+  })
+
+  it('一個詞造不出單位：兩個北部的詞對到同一個南部的詞時支持度只有 1', () => {
+    const one = learnCorrespondences(['north', 'south'], [pair('m a t u r a y', 'm a t o w a y'), pair('p a t u r a y', 'm a t o w a y'), ...PAIRS.slice(5)], { penalty: 2 })
+    expect(one.units.some((u) => u.reflexes.south.includes('ow'))).toBe(false)
+    expect(one.patterns.find((p) => p.reflexes.north === 'r' && p.reflexes.south === 'w')?.sites).toBe(2)
+  })
+
+  it('元音類合併（poolVowels）：ura、ara 各只有一個詞對到 owa，合起來兩個詞才成為家族 ?ra → owa；元音由 Sukhotin 演算法從分布分出', () => {
+    const pooled = [pair('m a t u r a y', 'm a t o w a y'), pair('r u h a r a t', 'r o h o w a t'), ...PAIRS.slice(5)]
+    expect(learnCorrespondences(['north', 'south'], pooled, { penalty: 2 }).units.some((u) => u.reflexes.south === 'owa')).toBe(false)
+    const P = learnCorrespondences(['north', 'south'], pooled, { penalty: 2, poolVowels: true })
+    expect(P.vowels).toEqual(['a', 'e', 'i', 'o', 'u'])
+    expect(P.units[0]).toMatchObject({ reflexes: { north: '?ra', south: 'owa' }, sites: 2, support: 2 })
+    // 家族的每個成員各寫一條，sites 與分母（of）是整個家族的；r : w 全部被解釋掉
+    expect(P.patterns.filter((p) => p.of).map((p) => p.reflexes.north).sort()).toEqual(['ara', 'ura'])
+    expect(P.patterns.find((p) => p.reflexes.north === 'r' && p.reflexes.south === 'w')).toBeUndefined()
+    expect(sukhotinVowels([['p', 'a', 't', 'a'], ['k', 'i', 't', 'u'], ['s', 'e', 'n', 'a']])).toEqual(new Set(['a', 'e', 'i', 'u']))
+  })
+
+  it('學到的模型通過檢查，搜尋時 maturay → matoway 用學到的前後文單位', () => {
+    const model: CsrModel = { format: 'babizu-csr-model', version: 1, dialects: ['north', 'south'], segments: ['a', 'b', 'e', 'i', 'k', 'l', 'm', 'n', 'o', 'p', 'r', 's', 't', 'u', 'w', 'y'], patterns: L.patterns, occurrences: L.occurrences }
+    expect(validateCsrModel(model)).toEqual([])
+    const csr = new CorrespondenceSearch({ model, profile: PROFILE, entries: [{ key: 'matoway', dialect: 'south' }] })
+    const hit = csr.search('maturay', { fuzziness: 'loose' })[0]
+    expect(csr.explain(hit).filter((x) => x.kind !== 'match').map((x) => x.kind)).toEqual(['context'])
   })
 })
 
@@ -121,10 +257,11 @@ describe('去詞綴', () => {
     expect(of('mutuan')).not.toHaveProperty('tu')
   })
 
-  it('構詞音變還原（kabad-an → kabat）、前綴末的構詞音變（ma ＋ \' → ma\'）、詞首增生的規則（\'an）', () => {
+  it('構詞音變還原（kabad-an → kabat）、前綴末的構詞音變（ma ＋ \' → ma\'）；方言規則（詞首的 \' → ∅）不參與', () => {
     expect(of('kabadan')).toHaveProperty('kabat', 'suffix:an')
     expect(of("ma'akux")).toHaveProperty('akux', 'prefix:ma')
-    expect(of("kiput'an")).toHaveProperty('kiput', 'suffix:an')
+    expect(of("kiput'an")).toHaveProperty("kiput'", 'suffix:an')
+    expect(of("kiput'an")).not.toHaveProperty('kiput')
   })
 
   it('兩個字元以上的中綴；一個字元的不用；CV 重疊', () => {
@@ -178,6 +315,11 @@ describe('搜尋', () => {
     const steps = csr.explain(hit as NonNullable<typeof hit>)
     expect(steps.map((s) => `${s.source}>${s.target}:${s.kind}`)).toEqual(['t>t:match', 'u>u:match', 'r>:correspondence', 'u>u:match'])
     expect(steps.reduce((s, x) => s + x.cost, 0)).toBeCloseTo(hit?.score ?? NaN)
+  })
+
+  it('語言設定檔的方言規則不參與：加了 r → w、ura → owa 的規則，結果完全相同', () => {
+    const withRules = new CorrespondenceSearch({ model: MODEL, profile: { ...PROFILE, rules: [...(PROFILE.rules ?? []), { category: '假的', rules: [['r', 'w', 0.1], ['ura', 'owa', 0.1]] }] }, entries })
+    for (const q of ['turu', 'kawas', 'turuk']) expect(withRules.search(q, { fuzziness: 'loose' })).toEqual(csr.search(q, { fuzziness: 'loose' }))
   })
 
   it('accept 篩掉的詞不回傳', () => {

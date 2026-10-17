@@ -4,7 +4,7 @@
  * 1. 詞庫的每個詞（詞形, 方言）以設定檔的詞綴去詞綴，每個（詞, 詞幹）是一個單位；詞幹以學出的音類切成鍵，
  *    相鄰兩個鍵的二元組建倒排索引；
  * 2. 查詢也去詞綴；每個殘餘以二元組取共有最多的前 topM 個單位；
- * 3. 每個（殘餘, 單位）以成本表做加權 DP：查詢的方言未知，對每個假設的查詢方言取最好的
+ * 3. 每個（殘餘, 單位）以成本表與前後文單位做加權 DP：查詢的方言未知，對每個假設的查詢方言取最好的
  *    （與詞條同一個方言時用「只有兩邊相同」的表）；方言未知的詞條，詞條的方言也一併假設；
  * 4. 分數 ＝ 距離 ＋ λ ×（兩邊剝掉的詞綴數），每個詞取最好的分析；依寬鬆程度的門檻篩選、排序。
  */
@@ -12,7 +12,7 @@
 import { createTextTools } from '../text.ts'
 import type { LanguageProfile } from '#bcdp'
 import { createAffixStripper, type CsrAffix } from './affixes.ts'
-import { buildCostTables, createAligner, inventoryOf, soundClasses, type CsrStep } from './costs.ts'
+import { buildContextTables, buildCostTables, contextMatches, createAligner, inventoryOf, soundClasses, type ContextTable, type ContextUnit, type CsrStep } from './costs.ts'
 import { CSR_DEFAULT_LEVELS, CSR_DEFAULTS, type CsrLevel, type CsrModel, type CsrParams } from './model.ts'
 
 /** 詞庫中的一個詞：搜尋鍵與方言（null：方言未知） */
@@ -43,14 +43,15 @@ export class CorrespondenceSearch {
   readonly levels: { normal: CsrLevel; loose: CsrLevel }
   readonly dialects: string[]
   readonly entries: readonly CsrEntry[]
-  /** 單位數與建立耗時（ms） */
-  readonly stats: { units: number; classes: number; buildMs: number }
+  /** 單位數、音類數、前後文單位數（所有方言對的方向合計）與建立耗時（ms） */
+  readonly stats: { units: number; classes: number; contextUnits: number; buildMs: number }
   private readonly inventory: ReturnType<typeof inventoryOf>
   private readonly tables: Float64Array[]
+  private readonly context: ContextTable[]
   private readonly aligner: ReturnType<typeof createAligner>
   private readonly stripper: ReturnType<typeof createAffixStripper>
   private readonly classOf: Int32Array
-  private readonly units: Array<{ entry: number; b: number; stem: string; affixes: CsrAffix[]; t: Int32Array[] }> = []
+  private readonly units: Array<{ entry: number; b: number; stem: string; affixes: CsrAffix[]; side: { lattice: Int32Array[]; chars: string[] } }> = []
   private readonly postings = new Map<string, number[]>()
   private readonly counts: Int32Array
 
@@ -68,15 +69,15 @@ export class CorrespondenceSearch {
     const chars = new Set<string>()
     for (const e of entries) for (const c of Array.from(e.key)) chars.add(c)
     this.inventory = inventoryOf([...model.segments.map((s) => text.searchKey(s) || s), ...chars])
-    const rules = (profile.rules ?? []).flatMap((g) => g.rules.map((r) => (Array.isArray(r) ? { source: r[0], target: r[1] } : { source: r.source, target: r.target })))
-    this.tables = buildCostTables({
+    // 語音對應全部來自模型；語言設定檔的方言規則不參與（只用它的構詞規格去詞綴）
+    this.tables = buildCostTables({ dialects: this.dialects, inventory: this.inventory, patterns: model.patterns, minSites: this.params.minSites, beta: this.params.beta })
+    this.context = buildContextTables({
       dialects: this.dialects,
-      inventory: this.inventory,
+      segments: new Set(this.inventory.forms),
       patterns: model.patterns,
-      rules: rules.map((r) => ({ source: text.searchKey(r.source), target: text.searchKey(r.target) })),
+      occurrences: model.occurrences,
       minSites: this.params.minSites,
-      beta: this.params.beta,
-      priorSites: this.params.priorSites,
+      normalize: (s) => text.searchKey(s) || s,
     })
     const N = this.dialects.length, F = this.inventory.F
     this.classOf = soundClasses(this.tables, N, F, this.params.mergeProbability)
@@ -87,7 +88,7 @@ export class CorrespondenceSearch {
       const b = e.dialect === null ? -1 : (dIndex.get(e.dialect) ?? -1)
       for (const a of this.stripper.analyses(e.key).values()) {
         const idx = this.units.length
-        this.units.push({ entry, b, stem: a.stem, affixes: a.affixes, t: this.inventory.tokenize(a.stem) })
+        this.units.push({ entry, b, stem: a.stem, affixes: a.affixes, side: { lattice: this.inventory.tokenize(a.stem), chars: Array.from(a.stem) } })
         for (const g of this.bigrams(a.stem)) {
           let list = this.postings.get(g)
           if (!list) this.postings.set(g, (list = []))
@@ -96,7 +97,12 @@ export class CorrespondenceSearch {
       }
     })
     this.counts = new Int32Array(this.units.length)
-    this.stats = { units: this.units.length, classes: new Set(Array.from(this.classOf).slice(1)).size, buildMs: Math.round(now() - started) }
+    this.stats = {
+      units: this.units.length,
+      classes: new Set(Array.from(this.classOf).slice(1)).size,
+      contextUnits: this.context.reduce((n, t) => n + t.size, 0),
+      buildMs: Math.round(now() - started),
+    }
   }
 
   /** 詞幹的鍵：最長匹配切段 → 音類，前後加邊界，取相鄰兩個的二元組 */
@@ -153,7 +159,10 @@ export class CorrespondenceSearch {
     for (const q of this.stripper.analyses(query).values()) {
       const kq = q.affixes.length
       if (fuzziness === 'exact' && kq > 0) continue
-      const qt = this.inventory.tokenize(q.stem)
+      const qs = { lattice: this.inventory.tokenize(q.stem), chars: Array.from(q.stem) }
+      // 每對方言的前後文單位在查詢中的位置（每個詞幹只算一次）
+      const qc: Array<ContextUnit[][] | null | undefined> = []
+      const contextOf = (k: number) => (qc[k] === undefined ? (qc[k] = this.context[k].size ? contextMatches(qs.chars, this.context[k]) : null) : qc[k])
       // DP 算到這個上限就停（同一個詞幹的備忘都用同一個上限：詞條沒有剝詞綴時最寬）
       const bound = max - lambda * kq
       for (const ui of this.candidates(q.stem)) {
@@ -168,7 +177,7 @@ export class CorrespondenceSearch {
           for (const b of u.b >= 0 ? [u.b] : this.dialects.map((_, k) => k))
             for (let a = 0; a < N; a++) {
               if (a === b && !this.sameDialect) continue
-              const d = this.aligner.distance(qt, u.t, this.tables[a * N + b], typo, Math.min(bound, hit.d))
+              const d = this.aligner.distance(qs, u.side, this.tables[a * N + b], typo, Math.min(bound, hit.d), contextOf(a * N + b))
               if (d < hit.d) hit = { d, a, b }
             }
           memo.set(key, hit)
@@ -192,11 +201,17 @@ export class CorrespondenceSearch {
     return [...best.values()].sort((x, y) => x.score - y.score || (this.entries[x.entry].key < this.entries[y.entry].key ? -1 : 1))
   }
 
-  /** 命中的對齊：每一步是哪一對音段、成本多少（說明用） */
+  /**
+   * 命中的對齊：每一步是哪一對音段、成本多少（說明用）。
+   * 前後文單位另外附「拆開來看」：同一段只用單一音段的對應比對的各步（對照合在一起時便宜多少）
+   */
   explain(hit: Pick<CsrHit, 'queryStem' | 'entryStem' | 'queryDialect' | 'entryDialect'>): CsrStep[] {
     const N = this.dialects.length
     const a = this.dialects.indexOf(hit.queryDialect), b = this.dialects.indexOf(hit.entryDialect)
-    return this.aligner.align(hit.queryStem, hit.entryStem, this.tables[a * N + b], this.params.typo)
+    const cost = this.tables[a * N + b], typo = this.params.typo
+    return this.aligner.align(hit.queryStem, hit.entryStem, cost, typo, this.context[a * N + b]).map((s) =>
+      s.kind === 'context' ? { ...s, parts: this.aligner.align(s.source, s.target, cost, typo).filter((p) => p.kind !== 'match') } : s,
+    )
   }
 }
 

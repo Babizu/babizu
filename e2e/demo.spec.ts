@@ -46,7 +46,7 @@ test('語言變體：下層變體（海岸）在篩選上層（南部）時一�
   await expect(page.locator('article').filter({ hasText: 'alim' })).toHaveCount(0)
 })
 
-test('對應組檢索（實驗）：在設定選單切換模糊搜尋，選擇會記住；搜尋條件與標籤都與方言規則相同', async ({ page }) => {
+test('對應組檢索（實驗）：在設定選單切換模糊搜尋，選擇會記住；搜尋條件與標籤都與方言規則相同；詞尾的前後文單位', async ({ page }) => {
   await page.goto('./#/?q=ralan&f=native')
   const row = page.locator('article').filter({ hasText: 'lalan' }).first()
   await expect(row).toBeVisible()
@@ -62,6 +62,14 @@ test('對應組檢索（實驗）：在設定選單切換模糊搜尋，選擇�
   await expect(dialog.getByText('對應組檢索（實驗）')).toBeVisible()
   await expect(dialog.getByText('把查詢當成北部的詞，比對南部的詞。')).toBeVisible()
   await expect(dialog.getByText('語音對應', { exact: true }).first()).toBeVisible()
+  await page.keyboard.press('Escape')
+  // 只在詞尾成立的前後文單位：北部 bunan 的詞尾 n 對到南部的 ng；說明另列逐音段比對時的各步
+  await page.goto('./#/?q=bunan&f=native')
+  const bunang = page.locator('article').filter({ hasText: 'bunang' }).first()
+  await expect(bunang).toBeVisible()
+  await bunang.getByRole('button', { name: /^相近拼寫，距離/ }).first().click()
+  await expect(page.getByRole('dialog').getByText('依前後文的語音對應（詞尾）')).toBeVisible()
+  await expect(page.getByRole('dialog').getByText(/^拆開來看：/)).toBeVisible()
   await page.keyboard.press('Escape')
   // 搜尋條件不變：搜尋方法照常顯示（窄螢幕的在抽屜裡）
   const trigger = page.getByRole('button', { name: /^搜尋條件/ })

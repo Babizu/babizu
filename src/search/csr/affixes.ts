@@ -2,12 +2,13 @@
  * @file 對應組檢索的去詞綴：依語言設定檔的構詞規格，列出一個詞所有「剝掉詞綴」的分析（docs/csr.md 第 4.1 節）。
  *
  * 這裡刻意比 BCDP 的構詞搜尋簡單：對應組檢索只需要「可能的詞幹」與「剝了幾個詞綴」，排序交給加權 DP 與 λ。
+ * 注意：詞綴清單與構詞音變來自語言設定檔的構詞規格，是人寫的（對應組檢索的語音對應則全部由資料學出；docs/csr.md 第 6 節）。
+ * 語言設定檔的方言規則（rules）不用。
  * - 前綴、後綴：規格中所有的形式（構詞文法的 morphemes，或平面清單的 prefixes、suffixes）；
  * - 中綴：至少兩個字元的（插在第一個輔音之後）；一個字元的中綴幾乎任何詞都剝得掉，太容易誤剝，不用；
  * - 重疊：CV、CVV、Ca、CVCV、CVCVC 中規格有列的（其他型式不用）；
  * - 交界：構詞音變（alternations）還原——詞素末（final）的表面形式在剝掉後綴後換回底層形式（kabad-an → kabat），
- *   前綴本身也試它套上詞素末構詞音變的寫法（tau ＋ ' → tau'-alaw）；詞首（initial）的構詞音變反過來。
- *   位置為 initial、一邊是空字串的方言規則（例如喉塞音的有無）也當成交界的增生：剝前綴後的詞幹可以去掉它，後綴前面也可以多它；
+ *   前綴本身也試它套上詞素末構詞音變的寫法（tau ＋ ' → tau'-alaw）；詞首（initial）的構詞音變反過來；
  * - 至多兩步、每一種（前綴、後綴、中綴、重疊）至多一次，詞幹至少 minStem 個字元。
  */
 
@@ -58,17 +59,6 @@ export function createAffixStripper(profile: LanguageProfile, normalize: (s: str
   const alternations = (spec.alternations ?? []).map((a) => ({ underlying: normalize(a.underlying), surface: normalize(a.surface), position: a.position ?? 'final' }))
   const finals = alternations.filter((a) => a.position === 'final' || a.position === 'any')
   const initials = alternations.filter((a) => a.position === 'initial' || a.position === 'any')
-  // 交界的增生：位置為 initial、一邊是空字串的方言規則（例如 ' → ∅）
-  const epenthetic = uniq(
-    (profile.rules ?? []).flatMap((g) =>
-      g.rules.flatMap((r) => {
-        const o = Array.isArray(r) ? { source: r[0], target: r[1], position: undefined } : (r as { source: string; target: string; position?: string })
-        const position = o.position ?? g.position ?? 'any'
-        if (position !== 'initial') return []
-        return o.source === '' ? [o.target] : o.target === '' ? [o.source] : []
-      }),
-    ),
-  )
   const ok = (x: string) => Array.from(x).length >= minStem
   const isC = (c: string | undefined) => c !== undefined && !vowels.has(c)
 
@@ -77,10 +67,10 @@ export function createAffixStripper(profile: LanguageProfile, normalize: (s: str
     p,
     surfaces: [p, ...finals.filter((a) => a.underlying && p.endsWith(a.underlying)).map((a) => p.slice(0, p.length - a.underlying.length) + a.surface)],
   }))
-  /** 後綴的寫法：原形、詞首套上構詞音變的、前面多交界增生的 */
+  /** 後綴的寫法：原形、詞首套上構詞音變的 */
   const suffixForms = suffixes.map((s) => ({
     s,
-    surfaces: [s, ...initials.filter((a) => a.underlying && s.startsWith(a.underlying)).map((a) => a.surface + s.slice(a.underlying.length)), ...epenthetic.map((e) => e + s)],
+    surfaces: [s, ...initials.filter((a) => a.underlying && s.startsWith(a.underlying)).map((a) => a.surface + s.slice(a.underlying.length))],
   }))
 
   type Step = (x: string) => Array<[string, CsrAffix]>
@@ -90,7 +80,7 @@ export function createAffixStripper(profile: LanguageProfile, normalize: (s: str
       for (const sp of new Set(surfaces)) {
         if (!x.startsWith(sp)) continue
         const r = x.slice(sp.length)
-        const rs = [r, ...initials.filter((a) => a.surface && r.startsWith(a.surface)).map((a) => a.underlying + r.slice(a.surface.length)), ...epenthetic.filter((e) => r.startsWith(e)).map((e) => r.slice(e.length))]
+        const rs = [r, ...initials.filter((a) => a.surface && r.startsWith(a.surface)).map((a) => a.underlying + r.slice(a.surface.length))]
         for (const v of rs) if (ok(v)) out.push([v, { type: 'prefix', form: p }])
       }
     return out

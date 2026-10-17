@@ -619,9 +619,12 @@
   "這個詞剝掉": "Removed from this word",
   "詞綴": "Affixes",
   "其餘相同的音段": "Other, identical segments",
-  "分數 {score}。成本由辭典資料中學到的語音對應換算，越常見越便宜；每剝一個詞綴另外加分。對應組檢索是實驗性的比對方式。": "Score {score}. Costs come from sound correspondences learned from the dictionary data: the more common, the cheaper; each removed affix adds to the score. Correspondence-set search is experimental.",
   "模糊搜尋": "Fuzzy search",
   "依手寫的方言對應規則與構詞分析比對（預設）。": "Matches with the hand-written dialect correspondence rules and morphological analysis (default).",
   "依從辭典資料學到的方言語音對應比對。搜尋條件與結果的呈現都不變，只換了比對的核心。": "Matches with sound correspondences learned from the dictionary data. Search options and results look the same; only the matching core changes.",
-  "對應組檢索（實驗）": "Correspondence sets (experimental)"
+  "對應組檢索（實驗）": "Correspondence sets (experimental)",
+  "依前後文的語音對應": "Context-dependent correspondence",
+  "（{position}）": " ({position})",
+  "拆開來看：{parts}，合計 +{cost}": "Segment by segment: {parts}, total +{cost}",
+  "分數 {score}。語音對應全部由辭典資料學出（沒有手寫的規則），越常見越便宜；依前後文的對應只在前後的音也相符時成立。詞綴清單與構詞音變來自語言設定檔（人工撰寫），每剝一個詞綴另外加分。對應組檢索是實驗性的比對方式。": "Score {score}. All sound correspondences are learned from the dictionary data (no hand-written rules); the more common, the cheaper. Context-dependent correspondences apply only when the neighbouring sounds match too. The affix list and morphophonological alternations come from the language profile (written by people); each stripped affix adds to the score. Correspondence-set search is experimental."
 }

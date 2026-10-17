@@ -103,7 +103,7 @@ export const ALGORITHM_LABELS = {
 }
 
 /** 對應組檢索的對齊步驟 */
-export const CSR_STEP_LABELS = { correspondence: msg('語音對應'), edit: msg('沒見過的差異'), match: msg('相同') }
+export const CSR_STEP_LABELS = { correspondence: msg('語音對應'), context: msg('依前後文的語音對應'), edit: msg('沒見過的差異'), match: msg('相同') }
 export const csrStepLabel = (kind: string) => labelOf(CSR_STEP_LABELS, kind)
 
 /** 剝掉的詞綴的寫法：mu-、-an、<in>、ki~ */

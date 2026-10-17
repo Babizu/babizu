@@ -71,7 +71,8 @@
 
 站台設定了對應組檢索的模型時，`search(q, { algorithm: 'csr' })` 以它取代模糊比對與構詞搜尋（`TermMatcher.match` 的核心）：
 它的分析對到同樣的命中方式（沒剝詞綴是模糊、剝查詢的是自動拆解、剝詞庫詞的是自動派生、兩邊都剝是自動同根），
-開頭／結尾相符、包含、辭典的構詞關係、詞條與例句、搜尋方法都照舊。方言之間的語音對應由辭典資料學出，見 [csr.md](csr.md)。
+開頭／結尾相符、包含、辭典的構詞關係、詞條與例句、搜尋方法都照舊。方言之間的語音對應（含看前後文的單位）全部由辭典資料學出，
+不讀語言設定檔的方言規則，見 [csr.md](csr.md)。
 
 ## 2. 分數：詞條與例句同一套規則（`scoring.ts`）
 
@@ -279,4 +280,4 @@ engine.terms.lemmaHits('minudox', levelOf('normal')) // 只做自動拆解
 | `buildDerivationGraph`、`DerivationGraph` | 自動派生圖（[derivations.md](derivations.md)） |
 | `buildParseChart`、`ParseChart` | 拆解表（句型搜尋的構詞樣式用，[pattern-query.md](pattern-query.md)） |
 | `Checklist` | 檢查清單：例句中沒有辭典條目的詞、詞形完全相同的詞條、重複的例句、人工拆解與構詞樣式的對照 |
-| `CorrespondenceSearch`、`validateCsrModel` | 對應組檢索（實驗性，[csr.md](csr.md)）：模型檢查、成本、去詞綴、搜尋與說明 |
+| `CorrespondenceSearch`、`validateCsrModel`、`learnCorrespondences` | 對應組檢索（實驗性，[csr.md](csr.md)）：模型檢查、成本、去詞綴、搜尋與說明；由對齊的詞對學出對應組與前後文單位 |

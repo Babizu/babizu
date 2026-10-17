@@ -18,13 +18,18 @@
   { "reflexes": { "north": "t", "south": "t" }, "sites": 10 },
   { "reflexes": { "north": "x", "south": "x" }, "sites": 6 },
   { "reflexes": { "north": "z", "south": "z" }, "sites": 6 },
+  { "reflexes": { "north": "h", "south": "h" }, "sites": 3 },
   { "reflexes": { "north": "l", "south": "l" }, "sites": 4 },
   { "reflexes": { "north": "r", "south": "l" }, "sites": 12 },
   { "reflexes": { "north": "r", "south": "r" }, "sites": 2 },
-  { "reflexes": { "north": "n", "south": "ng" }, "sites": 5 },
   { "reflexes": { "north": "e", "south": "i" }, "sites": 5 },
-  { "reflexes": { "north": "h", "south": "-" }, "sites": 4 },
-  { "reflexes": { "north": "'", "south": "-" }, "sites": 4 }
+  { "reflexes": { "north": "'", "south": "-" }, "sites": 4 },
+  { "reflexes": { "north": "n", "south": "ng" }, "sites": 5, "position": "final" },
+  { "reflexes": { "north": "h", "south": "-" }, "sites": 4, "position": "final" }
  ],
- "provenance": { "note": "示範用的虛構模型：計數是手寫的，示範北部 r 對南部 l、詞尾 n 對 ng、e 對 i、詞尾 h 與喉塞音脫落（實際的模型由辭典資料學出，見 docs/csr.md）" }
+ "occurrences": {
+  "north": { "n$": 7, "h$": 5 },
+  "south": { "ng$": 5, "$": 40 }
+ },
+ "provenance": { "note": "示範用的虛構模型：計數是手寫的，示範北部 r 對南部 l、e 對 i、喉塞音脫落，以及只在詞尾成立的前後文單位（詞尾 n 對 ng、詞尾 h 脫落）。實際的模型由辭典資料學出，見 docs/csr.md" }
 }

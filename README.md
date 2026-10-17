@@ -42,7 +42,7 @@ npx babizu dev        # 在有 babizu.config.js 的目錄
 | [search.md](docs/search.md) | 搜尋引擎：命中方式、分數、辭典的構詞關係、例句、詞條家族與同形詞組 |
 | [derivations.md](docs/derivations.md) | 自動派生與自動同根：查詞根找衍生詞、虛擬詞根 |
 | [pattern-query.md](docs/pattern-query.md) | 句型搜尋：依詞序與構詞找例句的查詢寫法、語意、與 BCDP 的對稱 |
-| [csr.md](docs/csr.md) | 對應組檢索（實驗性）：由辭典資料學出方言語音對應的另一種比對方式；模型格式、演算法、製作模型的步驟 |
+| [csr.md](docs/csr.md) | 對應組檢索（實驗性）：由辭典資料學出方言語音對應（含看前後文的單位）的另一種比對方式，不用手寫規則；模型格式、演算法、學習、製作模型的步驟、哪些部分仍是人寫的 |
 | [ui-guidelines.md](docs/ui-guidelines.md) | 介面設計規範 |
 | [lab-design.md](docs/lab-design.md) | 演算法實驗室的設計規格 |
 | [deployment.md](docs/deployment.md) | 部署到 GitHub Pages 或其他靜態主機 |
