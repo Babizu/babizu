@@ -32,6 +32,11 @@ export interface CsrParams {
   minSites: number
   /** 手寫規則當先驗：規則的每個段層級編輯，兩個方向各加這麼多欄（0 時不加） */
   priorSites: number
+  /**
+   * 分數換算成 BCDP 的刻度（搜尋引擎中與開頭相符、包含、辭典的構詞關係放在一起排序）：
+   * 預設 0.2，打錯 4 → 0.8（BCDP 插入一個字元 0.8）、每剝一個詞綴 3 → 0.6（BCDP 的構詞命中約 0.5–0.7）
+   */
+  scoreScale: number
 }
 
 /** 寬鬆程度：回傳分數 ≤ a ＋ b × 查詢字元數的結果（與 BCDP 的模糊程度同一個形式，門檻隨詞長放寬） */
@@ -57,7 +62,7 @@ export interface CsrModel {
 }
 
 /** 預設參數：在巴宰–噶哈巫語的資料上選的（docs/csr.md） */
-export const CSR_DEFAULTS: Readonly<CsrParams> = Object.freeze({ lambda: 3, typo: 4, topM: 300, mergeProbability: 0.7, beta: 1, minSites: 2, priorSites: 2 })
+export const CSR_DEFAULTS: Readonly<CsrParams> = Object.freeze({ lambda: 3, typo: 4, topM: 300, mergeProbability: 0.7, beta: 1, minSites: 2, priorSites: 2, scoreScale: 0.2 })
 
 /** 預設的寬鬆程度（同上；成本的刻度改了要重新校準，見 docs/csr.md） */
 export const CSR_DEFAULT_LEVELS: Readonly<{ normal: CsrLevel; loose: CsrLevel }> = Object.freeze({ normal: { a: 4, b: 0.6 }, loose: { a: 5, b: 0.8 } })

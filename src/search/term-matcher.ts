@@ -7,16 +7,19 @@
  * - 自動拆解（lemma）：構詞搜尋 BCDP（@babizu/bcdp 的 morph-search.ts），與模糊搜尋共用一次詞圖走訪；
  * - 自動派生、自動同根（derived、sibling）：derived-terms.ts。
  * 同一個詞有好幾種命中方式時的取捨見 scoring.ts 的 mergeMorphMatch。
+ * 演算法 csr（對應組檢索，實驗性）時，模糊比對與構詞搜尋改由 csr-search.ts 做，開頭、結尾相符與包含照舊。
  */
 
 import type { FuzzyIndex, MorphSearch, Prepared, SearchResult } from '#bcdp'
+import { correspondenceMatches, correspondenceSteps, type CorrespondenceIndex } from './csr-search.ts'
+import type { CsrStep } from './csr/index.ts'
 import { DerivedTerms } from './derived-terms.ts'
 import type { DerivationGraph } from './derivations.ts'
 import { roundCost } from '#bcdp'
-import { fuzzyOptions, lemmaMax } from './fuzziness.ts'
+import { FUZZINESS, fuzzyOptions, lemmaMax } from './fuzziness.ts'
 import { MORPHOLOGY_BASE_SCORE, mergeMorphMatch, type MatchType } from './scoring.ts'
 import { SubstringIndex } from './substring-index.ts'
-import type { AlignmentNote, FuzzinessLevel, LemmaAnalysis, MorphNote, TermMatch } from './types.ts'
+import type { AlignmentNote, CsrExplanation, FuzzinessLevel, LemmaAnalysis, MorphNote, TermMatch } from './types.ts'
 
 /** 查詢的方言變體也拿來找自動派生形：只取距離這麼小、且全由方言規則構成的模糊命中 */
 const DIALECT_VARIANT_DISTANCE = 0.3
@@ -44,6 +47,8 @@ export interface TermMatcherDeps {
   virtualRootSearch: () => MorphSearch | null
   /** 兩個詞的對齊說明 */
   explainNotes: (query: string, term: string) => AlignmentNote[]
+  /** 對應組檢索（有模型時；第一次用到時才建立） */
+  correspondence?: () => CorrespondenceIndex | null
 }
 
 export class TermMatcher {
@@ -57,12 +62,14 @@ export class TermMatcher {
   private readonly lazyNotes = new WeakMap<LemmaAnalysis, () => MorphNote[]>()
   /** 構詞規格的 lemmaRulePenalty（自動拆解又要改寫詞幹時的排序加成） */
   private readonly lemmaRulePenalty: number
+  private readonly correspondence: () => CorrespondenceIndex | null
 
-  constructor({ index, morphSearch, derivations, virtualRootSearch, explainNotes }: TermMatcherDeps) {
+  constructor({ index, morphSearch, derivations, virtualRootSearch, explainNotes, correspondence = () => null }: TermMatcherDeps) {
     this.index = index
     this.morphSearch = morphSearch
     this.lemmaRulePenalty = morphSearch?.spec.lemmaRulePenalty ?? 0
     this.explainNotes = explainNotes
+    this.correspondence = correspondence
     this.substrings = new SubstringIndex(index)
     this.derived = new DerivedTerms({ index, graph: derivations, virtualRootSearch, explainNotes })
   }
@@ -79,8 +86,11 @@ export class TermMatcher {
    * @param key 已正規化的查詢詞（搜尋鍵）
    * @param stats 累加走訪統計
    * @param fuzzy 是否做模糊比對與構詞搜尋（中文查詢時關閉：加權編輯距離對中文沒有意義）
+   * @param algorithm 模糊比對與構詞搜尋的核心：bcdp 或 csr（對應組檢索；沒有模型、或查詢詞含空白時照常用 bcdp）
    */
-  match(key: string, level: FuzzinessLevel, stats: WalkStats, fuzzy = true): TermMatch[] {
+  match(key: string, level: FuzzinessLevel, stats: WalkStats, fuzzy = true, algorithm: 'bcdp' | 'csr' = 'bcdp'): TermMatch[] {
+    const csr = algorithm === 'csr' && fuzzy && !/\s/u.test(key) ? this.correspondence() : null
+    if (csr) return this.correspondenceMatch(csr, key, level)
     const matches = new Map<string, TermMatch>()
     const morphology = fuzzy && this.morphSearch !== null && level.maxDistance(Array.from(key).length) > 0
     let lemma: TermMatch[] = []
@@ -116,6 +126,23 @@ export class TermMatcher {
       }
     }
     return [...matches.values()]
+  }
+
+  /**
+   * 演算法 csr：對應組檢索的命中（模糊、自動拆解、自動派生、自動同根），再加上開頭、結尾相符與包含（沒有被找到的詞）。
+   * 模糊程度對到對應組檢索的寬鬆程度（精確只要寫法相同、沒有剝詞綴）。
+   */
+  private correspondenceMatch(csr: CorrespondenceIndex, key: string, level: FuzzinessLevel): TermMatch[] {
+    const fuzziness = level === FUZZINESS.exact || level.maxDistance(Array.from(key).length) === 0 ? 'exact' : level.derivedFromAll ? 'loose' : 'normal'
+    const matches = new Map(correspondenceMatches(csr, key, fuzziness).map((m) => [m.term, m]))
+    for (const m of this.substrings.matches(key)) if (!matches.has(m.term)) matches.set(m.term, m)
+    return [...matches.values()]
+  }
+
+  /** 對應組檢索命中的對齊說明（成本已換算成 BCDP 的刻度）；沒有模型時是空陣列 */
+  csrSteps(explanation: CsrExplanation): CsrStep[] {
+    const csr = this.correspondence()
+    return csr ? correspondenceSteps(csr, explanation) : []
   }
 
   /**

@@ -193,7 +193,7 @@ export class CorrespondenceSearch {
   }
 
   /** 命中的對齊：每一步是哪一對音段、成本多少（說明用） */
-  explain(hit: CsrHit): CsrStep[] {
+  explain(hit: Pick<CsrHit, 'queryStem' | 'entryStem' | 'queryDialect' | 'entryDialect'>): CsrStep[] {
     const N = this.dialects.length
     const a = this.dialects.indexOf(hit.queryDialect), b = this.dialects.indexOf(hit.entryDialect)
     return this.aligner.align(hit.queryStem, hit.entryStem, this.tables[a * N + b], this.params.typo)

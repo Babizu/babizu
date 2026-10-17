@@ -94,13 +94,12 @@ export const MATCH_TYPES = {
   lemma: { label: msg('自動拆解'), hint: msg('演算法自動去掉詞綴後得到這個詞；是推定的結果，不是確定的分析') },
   derived: { label: msg('自動派生'), hint: msg('演算法推定這個詞由你輸入的詞加上詞綴而來；是推定的結果，不是辭典的標註') },
   sibling: { label: msg('自動同根'), hint: msg('演算法推定這個詞與你輸入的詞來自同一個詞根；是推定的結果，不是辭典的標註') },
-  csr: { label: msg('對應組'), hint: msg('對應組檢索（實驗）：依從辭典資料學到的方言語音對應找到這個詞') },
 }
 
-/** 詞條的比對方式（搜尋選項 algorithm；csr 只在站台設定了對應組檢索時出現） */
+/** 模糊搜尋的核心演算法（設定選單；csr 只在站台設定了對應組檢索時出現） */
 export const ALGORITHM_LABELS = {
-  bcdp: { label: msg('方言規則'), hint: msg('依手寫的方言對應規則與構詞分析比對（預設）') },
-  csr: { label: msg('對應組檢索'), tag: msg('實驗'), hint: msg('依從辭典資料學到的方言語音對應比對詞條；例句與釋義的搜尋不變') },
+  bcdp: { label: msg('方言規則'), hint: msg('依手寫的方言對應規則與構詞分析比對（預設）。') },
+  csr: { label: msg('對應組檢索'), tag: msg('實驗'), hint: msg('依從辭典資料學到的方言語音對應比對。搜尋條件與結果的呈現都不變，只換了比對的核心。') },
 }
 
 /** 對應組檢索的對齊步驟 */

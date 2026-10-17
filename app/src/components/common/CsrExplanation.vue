@@ -1,10 +1,10 @@
 <script setup lang="ts">
 /**
- * 對應組檢索（實驗性）的命中說明：按鈕顯示「對應組」與前兩個差異（例如「r→∅、s→ts」），點開列出：
- * - 假設的方言（查詢被當成哪個方言的詞、比對哪個方言的詞）；
- * - 兩邊剝掉的詞綴與剩下的詞幹（每剝一個詞綴另外加分）；
- * - 詞幹的對齊：每個不同的地方是學到的語音對應還是沒見過的差異，各自的成本；兩邊相同的音段合計。
- * 成本是從辭典資料學到的對應機率換算的（越常見越便宜），不是手寫的規則；說明的末尾寫明這是實驗性的比對方式。
+ * 由對應組檢索（實驗性；設定選單選了它）找到的命中的說明。按鈕與 BCDP 的命中長得一樣，讀者看到的分類不變：
+ * - 相近拼寫：「≈ 距離」加前兩個不同處（與 MatchExplanation 相同）；
+ * - 自動拆解、自動派生、自動同根：命中方式加詞的結構（與 MorphologyExplanation 相同）。
+ * 點開才是對應組檢索自己的說明：把查詢當成哪個方言的詞、兩邊剝了哪些詞綴、詞幹的每個不同處是學到的語音對應
+ * 還是沒見過的差異、各自的成本（已換算成與 BCDP 同一個刻度）。
  */
 import type { CsrExplanation } from '@babizu/search/index.ts'
 import { computed, type PropType } from 'vue'
@@ -15,6 +15,9 @@ import { csrStepLabel, dialectLabel, formatAffix, formatDistance, formatStep, ma
 
 const props = defineProps({
   csr: { type: Object as PropType<CsrExplanation>, required: true },
+  /** 命中方式：fuzzy、lemma、derived、sibling */
+  matchType: { type: String, required: true },
+  distance: { type: Number, required: true },
   query: { type: String, default: '' },
   term: { type: String, default: '' },
 })
@@ -23,43 +26,64 @@ const steps = computed(() => props.csr.steps ?? [])
 /** 不同的地方（學到的對應、沒見過的差異） */
 const differences = computed(() => steps.value.filter((s) => s.kind !== 'match'))
 const matchCost = computed(() => steps.value.filter((s) => s.kind === 'match').reduce((sum, s) => sum + s.cost, 0))
-/** 詞綴的成本：分數扣掉對齊的成本（只在對齊算過時知道） */
-const affixCost = computed(() => (props.csr.steps ? props.csr.score - steps.value.reduce((sum, s) => sum + s.cost, 0) : null))
-const affixes = computed(() => [...props.csr.queryAffixes, ...props.csr.entryAffixes])
+const morphological = computed(() => props.matchType !== 'fuzzy')
+/** 詞的結構：前綴、重疊、中綴在詞幹前，後綴在後（mu- + tuu、tuu + -an） */
+const structure = (stem: string, affixes: CsrExplanation['queryAffixes']) =>
+  [...affixes.filter((a) => a.type !== 'suffix').map(formatAffix), stem, ...affixes.filter((a) => a.type === 'suffix').reverse().map(formatAffix)].join(' + ')
 const summary = computed(() => {
-  const parts = differences.value.slice(0, 2).map((s) => formatStep(s))
-  if (affixes.value.length) parts.unshift(affixes.value.map(formatAffix).join(' '))
-  return parts.join(t('、'))
+  if (props.matchType === 'lemma') return structure(props.csr.entryStem, props.csr.queryAffixes)
+  if (props.matchType === 'derived') return structure(props.csr.queryStem, props.csr.entryAffixes)
+  if (props.matchType === 'sibling') return props.csr.entryStem
+  return differences.value.slice(0, 2).map((s) => formatStep(s)).join(t('、'))
 })
+/** 全部是學到的對應（沒有沒見過的差異）時，相近拼寫的按鈕用較明顯的樣式（與方言規則的相近拼寫一致） */
+const allLearned = computed(() => differences.value.length > 0 && differences.value.every((s) => s.kind === 'correspondence'))
+const title = computed(() =>
+  props.matchType === 'lemma' ? t('自動拆解的說明') : props.matchType === 'derived' ? t('自動派生的說明') : props.matchType === 'sibling' ? t('自動同根的說明') : t('為什麼算相近？'),
+)
 </script>
 
 <template>
   <Popover>
     <PopoverTrigger as-child>
       <Badge
+        v-if="morphological"
         as="button"
         type="button"
         size="tag"
         variant="inferred"
         class="max-w-full cursor-pointer"
-        :aria-label="t('{label}，分數 {score}，查看說明', { label: matchTypeLabel('csr'), score: formatDistance(csr.score) })"
+        :aria-label="t('{label}：{summary}，查看說明', { label: matchTypeLabel(matchType), summary })"
         @click.stop.prevent
       >
-        <span>{{ matchTypeLabel('csr') }}</span>
-        <span class="tabular-nums font-normal">{{ formatDistance(csr.score) }}</span>
-        <span v-if="summary" class="native-text truncate font-normal">{{ summary }}</span>
+        <span>{{ matchTypeLabel(matchType) }}</span>
+        <span class="native-text truncate font-normal">{{ summary }}</span>
+        <span v-if="differences.length" class="text-accent-foreground/70 font-normal" aria-hidden="true">≈</span>
+      </Badge>
+      <Badge
+        v-else
+        as="button"
+        type="button"
+        size="tag"
+        :variant="allLearned ? 'soft' : 'quiet'"
+        class="max-w-full cursor-pointer"
+        :aria-label="t('相近拼寫，距離 {distance}，查看說明', { distance: formatDistance(distance) })"
+        @click.stop.prevent
+      >
+        <span class="tabular-nums">≈ {{ formatDistance(distance) }}</span>
+        <span v-if="summary" class="truncate font-normal">{{ summary }}</span>
       </Badge>
     </PopoverTrigger>
     <PopoverContent class="w-72 text-sm" align="start" @click.stop>
       <div class="flex items-center justify-between gap-2">
-        <p class="font-medium">{{ t('對應組檢索的說明') }}</p>
-        <Badge size="tag" variant="inferred" class="shrink-0">{{ t('實驗') }}</Badge>
+        <p class="font-medium">{{ title }}</p>
+        <Badge size="tag" variant="inferred" class="shrink-0">{{ t('對應組檢索（實驗）') }}</Badge>
       </div>
       <p class="native-text mt-1.5 text-base leading-tight">{{ csr.queryStem }} ↔ {{ csr.entryStem }}</p>
       <p class="text-muted-foreground mt-1 text-xs">
         {{ t('把查詢當成{query}的詞，比對{entry}的詞。', { query: dialectLabel(csr.queryDialect), entry: dialectLabel(csr.entryDialect) }) }}
       </p>
-      <ul v-if="affixes.length" class="mt-2 space-y-1 text-xs">
+      <ul v-if="csr.queryAffixes.length || csr.entryAffixes.length" class="mt-2 space-y-1 text-xs">
         <li v-if="csr.queryAffixes.length" class="flex items-baseline gap-2">
           <span class="text-muted-foreground">{{ t('查詢剝掉') }}</span>
           <code v-for="(a, k) in csr.queryAffixes" :key="k" class="bg-muted native-text rounded px-1">{{ formatAffix(a) }}</code>
@@ -68,9 +92,9 @@ const summary = computed(() => {
           <span class="text-muted-foreground">{{ t('這個詞剝掉') }}</span>
           <code v-for="(a, k) in csr.entryAffixes" :key="k" class="bg-muted native-text rounded px-1">{{ formatAffix(a) }}</code>
         </li>
-        <li v-if="affixCost !== null" class="text-muted-foreground flex justify-between">
+        <li class="text-muted-foreground flex justify-between">
           <span>{{ t('詞綴') }}</span>
-          <span class="font-mono tabular-nums">+{{ formatDistance(affixCost) }}</span>
+          <span class="font-mono tabular-nums">+{{ formatDistance(csr.affixCost) }}</span>
         </li>
       </ul>
       <ul v-if="csr.steps" class="mt-2 space-y-1.5">

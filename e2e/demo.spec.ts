@@ -46,28 +46,28 @@ test('語言變體：下層變體（海岸）在篩選上層（南部）時一�
   await expect(page.locator('article').filter({ hasText: 'alim' })).toHaveCount(0)
 })
 
-test('對應組檢索（實驗）：網址 alg=csr 改用它比對詞條，結果附對應組的說明', async ({ page }) => {
-  await page.goto('./#/?q=ralan&alg=csr&f=native')
+test('對應組檢索（實驗）：在設定選單切換模糊搜尋，選擇會記住；搜尋條件與標籤都與方言規則相同', async ({ page }) => {
+  await page.goto('./#/?q=ralan&f=native')
   const row = page.locator('article').filter({ hasText: 'lalan' }).first()
   await expect(row).toBeVisible()
-  const badge = row.getByRole('button', { name: /^對應組，分數/ }).first()
-  await expect(badge).toBeVisible()
+  await page.getByRole('button', { name: /^設定/ }).click()
+  await page.getByRole('dialog').getByText('對應組檢索', { exact: true }).click()
+  await page.keyboard.press('Escape')
+  // 重新整理之後仍是對應組檢索：lalan 的說明是學到的對應
+  await page.reload()
+  await expect(row).toBeVisible()
+  const badge = row.getByRole('button', { name: /^相近拼寫，距離/ }).first()
   await badge.click()
-  await expect(page.getByText('對應組檢索的說明')).toBeVisible()
-  await expect(page.getByText('把查詢當成北部的詞，比對南部的詞。')).toBeVisible()
-  await expect(page.getByRole('dialog').getByText('語音對應', { exact: true }).first()).toBeVisible()
+  const dialog = page.getByRole('dialog')
+  await expect(dialog.getByText('對應組檢索（實驗）')).toBeVisible()
+  await expect(dialog.getByText('把查詢當成北部的詞，比對南部的詞。')).toBeVisible()
+  await expect(dialog.getByText('語音對應', { exact: true }).first()).toBeVisible()
+  await page.keyboard.press('Escape')
+  // 搜尋條件不變：搜尋方法照常顯示（窄螢幕的在抽屜裡）
+  const trigger = page.getByRole('button', { name: /^搜尋條件/ })
+  if (await trigger.isVisible()) await trigger.click()
+  await expect(page.locator('fieldset').filter({ hasText: '搜尋方法' }).locator('visible=true').first()).toBeVisible()
   await expectNoHorizontalOverflow(page)
-})
-
-test('對應組檢索（實驗）：搜尋篩選的「比對方式」切換，網址跟著改', async ({ page }) => {
-  await page.goto('./#/?q=ralan&f=native')
-  await expect(page.locator('article').filter({ hasText: 'lalan' }).first()).toBeVisible()
-  // 窄螢幕的篩選在抽屜裡
-  const toggle = page.getByRole('button', { name: /^搜尋條件/ })
-  if (await toggle.isVisible()) await toggle.click()
-  await page.getByText('對應組檢索', { exact: true }).locator('visible=true').first().click()
-  await expect(page).toHaveURL(/alg=csr/)
-  await expect(page.getByText('對應組檢索不分搜尋方法；要依方法篩選，請改回「方言規則」。').locator('visible=true').first()).toBeVisible()
 })
 
 test('關於頁：站台 Markdown 與變體徽章', async ({ page }) => {

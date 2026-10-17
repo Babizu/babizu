@@ -1,32 +1,31 @@
 /**
- * @file 搜尋引擎中的對應組檢索（實驗性；docs/csr.md）：詞條改由對應組檢索比對，例句與釋義照舊。
+ * @file 對應組檢索（實驗性；docs/csr.md）當作詞形比對的核心：一個查詢詞在詞庫中找到哪些詞。
  *
- * 詞庫的「詞」取自詞圖：每個不含空白的詞（搜尋鍵），落在單位為 word 的記錄上、身分是詞形、其他寫法或變體的，
- * 依記錄的方言分成（詞, 方言）——記錄的方言代碼對到模型的方言（下層變體算上層的，例如愛蘭算巴宰），
- * 沒有方言標記的依模型的 sourceDialects 由來源推定，都推不出來的是方言未知。
+ * 搜尋選項 algorithm 'csr' 時，TermMatcher 以它取代 BCDP 的模糊比對與構詞搜尋（自動拆解、自動派生、自動同根），
+ * 其餘照舊：開頭、結尾相符與包含、辭典標註的構詞關係、詞條與例句、搜尋方法的篩選與筆數。
+ * 對應組檢索的分析對到既有的命中方式，讀者看到的分類與 BCDP 相同：
+ * - 兩邊都沒有剝詞綴 → 模糊（fuzzy；同一個詞是完全相符）
+ * - 只剝了查詢的詞綴 → 自動拆解（lemma）：查詢去詞綴後是這個詞
+ * - 只剝了詞庫詞的詞綴 → 自動派生（derived）：這個詞是查詢加上詞綴
+ * - 兩邊都剝 → 自動同根（sibling）：兩者推定來自同一個詞幹
+ * 分數乘上模型的 scoreScale 換算成 BCDP 的刻度（打錯 4 → 0.8、每剝一個詞綴 3 → 0.6），
+ * 與開頭相符、包含、辭典的構詞關係放在一起排序。
+ *
+ * 詞庫取自詞圖的每個詞（不含空白），方言由它出現的記錄決定：記錄的方言代碼對到模型的方言（下層變體算上層），
+ * 沒有標記的依模型的 sourceDialects 由來源推定，都推不出來的是方言未知。同一個詞出現在幾個方言時各算一個。
  */
 
-import { CorrespondenceSearch, type CsrEntry, type CsrFuzziness, type CsrModel } from './csr/index.ts'
-import { groupEntries } from './entry-search.ts'
-import { collectHits } from './family.ts'
-import { decodeDialects, decodePosting, type DocSummary, type MatchKind, type SearchDocs } from './format.ts'
-import { compareHits } from './scoring.ts'
-import type { TextTools } from './text.ts'
-import type { EntryHit, SearchResponse } from './types.ts'
+import { CorrespondenceSearch, type CsrEntry, type CsrFuzziness, type CsrHit, type CsrModel, type CsrStep } from './csr/index.ts'
+import { decodeDialects, decodePosting, type SearchDocs } from './format.ts'
+import type { MatchType } from './scoring.ts'
+import type { CsrExplanation, TermMatch } from './types.ts'
 import type { FuzzyIndex, LanguageProfile } from '#bcdp'
-
-/** 一個（詞, 方言）落在哪些記錄上 */
-interface Posting {
-  doc: number
-  kind: MatchKind
-}
-
-const LEXICAL_KINDS = new Set<MatchKind>(['head', 'alt', 'variant'])
 
 /** 對應組檢索與它的詞庫（第一次用到時由詞圖與記錄摘要建立） */
 export interface CorrespondenceIndex {
   search: CorrespondenceSearch
-  postings: Posting[][]
+  /** 詞庫的詞（搜尋鍵）在詞圖中的 posting */
+  lookup: (term: string) => unknown[]
 }
 
 export function buildCorrespondenceIndex(model: CsrModel, profile: LanguageProfile, docs: SearchDocs, index: FuzzyIndex): CorrespondenceIndex {
@@ -40,100 +39,52 @@ export function buildCorrespondenceIndex(model: CsrModel, profile: LanguageProfi
     return null
   }
   const entries: CsrEntry[] = []
-  const postings: Posting[][] = []
-  const terms = index.terms
   const payloads = index.payloads
-  terms.forEach((term, id) => {
+  index.terms.forEach((term, id) => {
     if (!term || /\s/u.test(term)) return
-    const byDialect = new Map<string | null, Posting[]>()
-    for (const code of (payloads[id] ?? []) as number[]) {
-      const { doc, kind } = decodePosting(code)
-      if (!LEXICAL_KINDS.has(kind) || docs.units[docs.unit[doc]] !== 'word') continue
-      const d = dialectOf(doc)
-      let list = byDialect.get(d)
-      if (!list) byDialect.set(d, (list = []))
-      list.push({ doc, kind })
-    }
-    for (const [dialect, list] of byDialect) {
-      entries.push({ key: term, dialect })
-      postings.push(list)
-    }
+    const dialects = new Set<string | null>()
+    for (const code of (payloads[id] ?? []) as number[]) dialects.add(dialectOf(decodePosting(code).doc))
+    for (const dialect of dialects) entries.push({ key: term, dialect })
   })
-  return { search: new CorrespondenceSearch({ model, profile, entries }), postings }
+  return { search: new CorrespondenceSearch({ model, profile, entries }), lookup: (term) => index.lookup(term) ?? [] }
 }
 
-/** 對應組檢索需要的搜尋引擎部分 */
-export interface CsrContext {
-  readonly correspondence: CorrespondenceIndex | null
-  readonly text: Pick<TextTools, 'searchKey'>
-  readonly docs: Pick<SearchDocs, 'parent'>
-  childrenOf: (k: number) => readonly number[]
-  doc(k: number): DocSummary
+/** 對應組檢索的分析 → 命中方式 */
+function matchTypeOf(h: CsrHit): MatchType {
+  const q = h.queryAffixes.length > 0, e = h.entryAffixes.length > 0
+  return q && e ? 'sibling' : q ? 'lemma' : e ? 'derived' : 'fuzzy'
 }
 
 /**
- * 以對應組檢索取代 response 的詞條（entries、entryGroups、terms）。
- * @returns 有沒有做（沒有模型、或查詢含空白時不做，詞條保留原本的方法）
+ * 一個查詢詞的命中（每個詞取最好的分析）；分數已換算成 BCDP 的刻度。
+ * @param key 已正規化、不含空白的查詢詞
  */
-export function searchCorrespondence(ctx: CsrContext, q: string, response: SearchResponse, { fuzziness, accept, explainLimit }: { fuzziness: CsrFuzziness; accept: (k: number) => boolean; explainLimit: number }): boolean {
-  const index = ctx.correspondence
-  const key = ctx.text.searchKey(q)
-  if (!index || !key || /\s/u.test(key)) return false
-  const { search, postings } = index
-  const hits = search.search(key, { fuzziness, accept: (e) => postings[e].some((p) => accept(p.doc)) })
-  const best = new Map<number, { hit: EntryHit; source: (typeof hits)[number] }>()
-  for (const h of hits) {
-    for (const p of postings[h.entry]) {
-      if (!accept(p.doc)) continue
-      const hit: EntryHit = {
-        doc: ctx.doc(p.doc),
-        term: search.entries[h.entry].key,
-        distance: h.score,
-        score: h.score,
-        matchType: 'csr',
-        kind: p.kind,
-        direct: true,
-        alignment: null,
-        analysis: null,
-        csr: {
-          score: h.score,
-          queryDialect: h.queryDialect,
-          entryDialect: h.entryDialect,
-          queryStem: h.queryStem,
-          queryAffixes: h.queryAffixes,
-          entryStem: h.entryStem,
-          entryAffixes: h.entryAffixes,
-          steps: null,
-        },
-      }
-      const prev = best.get(p.doc)
-      if (!prev || compareHits(hit, prev.hit) < 0) best.set(p.doc, { hit, source: h })
+export function correspondenceMatches(index: CorrespondenceIndex, key: string, fuzziness: CsrFuzziness): TermMatch[] {
+  const { search } = index
+  const scale = search.params.scoreScale
+  const best = new Map<string, TermMatch>()
+  for (const h of search.search(key, { fuzziness })) {
+    const term = search.entries[h.entry].key
+    const score = Math.round(h.score * scale * 1000) / 1000
+    if (best.has(term)) continue // 已依分數排序：第一個就是最好的
+    const csr: CsrExplanation = {
+      score,
+      queryDialect: h.queryDialect,
+      entryDialect: h.entryDialect,
+      queryStem: h.queryStem,
+      queryAffixes: h.queryAffixes,
+      entryStem: h.entryStem,
+      entryAffixes: h.entryAffixes,
+      affixCost: Math.round(search.params.lambda * (h.queryAffixes.length + h.entryAffixes.length) * scale * 1000) / 1000,
+      steps: null,
     }
+    best.set(term, { term, payloads: index.lookup(term), distance: score, score, matchType: matchTypeOf(h), csr })
   }
-  const sorted = [...best.values()].sort((a, b) => compareHits(a.hit, b.hit))
-  const sourceOf = new Map(sorted.map((x) => [x.hit, x.source]))
-  const explain = (hit: EntryHit) => {
-    const source = sourceOf.get(hit)
-    if (hit.csr && source && hit.csr.steps === null) hit.csr.steps = search.explain(source)
-  }
-  response.entries = sorted.map((x) => x.hit)
-  response.entryGroups = groupEntries(response.entries, {
-    parent: ctx.docs.parent,
-    children: ctx.childrenOf,
-    doc: (k) => ctx.doc(k),
-    key: (text) => ctx.text.searchKey(text),
-  })
-  // 說明（對齊）只為前幾筆計算：分數最好的幾筆，以及畫面上依家族排列時的前幾列（與一般搜尋相同）
-  for (const hit of response.entries.slice(0, explainLimit)) explain(hit)
-  let shown = 0
-  for (const group of response.entryGroups) {
-    for (const hit of group.spelling ? group.spelling.members.map((m) => m.hit) : collectHits(group.root)) {
-      if (shown++ >= explainLimit) break
-      explain(hit)
-    }
-    if (shown >= explainLimit) break
-  }
-  response.terms = hits.slice(0, 30).map((h) => ({ term: search.entries[h.entry].key, distance: h.score }))
-  response.algorithm = 'csr'
-  return true
+  return [...best.values()]
+}
+
+/** 命中的對齊說明（每一步的成本也換算成 BCDP 的刻度） */
+export function correspondenceSteps(index: CorrespondenceIndex, csr: CsrExplanation): CsrStep[] {
+  const scale = index.search.params.scoreScale
+  return index.search.explain(csr).map((s) => ({ ...s, cost: Math.round(s.cost * scale * 1000) / 1000 }))
 }

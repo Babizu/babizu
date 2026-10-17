@@ -52,8 +52,8 @@ export interface SearchOptions {
   /** 為前幾筆模糊詞條附上對齊說明（預設 40） */
   explainLimit?: number
   /**
-   * 詞條的比對方式：bcdp（預設；手寫的方言規則＋構詞搜尋）或 csr（對應組檢索，實驗性；
-   * 要有對應組檢索的模型，查詢不含空白；否則照常用 bcdp）。例句與釋義的搜尋不受影響
+   * 詞形比對的核心演算法：bcdp（預設；手寫的方言規則＋構詞搜尋）或 csr（對應組檢索，實驗性；要有模型）。
+   * 只換「一個查詢詞找到哪些詞庫詞」這一層，命中方式、搜尋方法、詞條與例句都照舊（csr-search.ts）
    */
   algorithm?: 'bcdp' | 'csr'
   /**
@@ -149,14 +149,16 @@ export interface EntryHit {
    * 自動派生（matchType 'derived'）時是命中詞的分析
    */
   analysis?: LemmaAnalysis | null
-  /** 對應組檢索（matchType 'csr'）的說明 */
+  /** 由對應組檢索找到時的說明（演算法 csr） */
   csr?: CsrExplanation
 }
 
-/** 對應組檢索的命中說明 */
+/** 對應組檢索的命中說明（成本都已換算成與 BCDP 同一個刻度） */
 export interface CsrExplanation {
   /** 分數 ＝ 距離 ＋ λ ×（兩邊剝掉的詞綴數） */
   score: number
+  /** 其中詞綴的部分 */
+  affixCost: number
   /** 假設的查詢方言（變體代碼） */
   queryDialect: string
   /** 詞條的方言（記錄沒有方言時是假設的） */
@@ -182,6 +184,8 @@ export interface TermMatch {
   others?: TermMatch[]
   /** 構詞命中（lemma 自動拆解、derived 自動派生）的分析 */
   analysis?: LemmaAnalysis
+  /** 由對應組檢索找到時的說明（演算法 csr） */
+  csr?: CsrExplanation
 }
 
 /** 例句中一個查詢詞的命中（欄位與 EntryHit 相同，介面共用同一套標籤） */
@@ -205,6 +209,8 @@ export interface OccurrenceMatch {
   alignment: AlignmentNote[] | null
   /** 構詞命中的分析 */
   analysis: LemmaAnalysis | null
+  /** 由對應組檢索找到時的說明（演算法 csr） */
+  csr?: CsrExplanation
 }
 
 export interface OccurrenceHit {
@@ -231,7 +237,7 @@ export interface GlossHit {
 export interface SearchResponse {
   query: string
   mode: 'zh' | 'latin'
-  /** 詞條實際用的比對方式（要求 csr 但不能用時是 bcdp） */
+  /** 實際用的詞形比對演算法（要求 csr 但沒有模型時是 bcdp） */
   algorithm?: 'bcdp' | 'csr'
   /** 模糊搜尋命中的詞庫詞 */
   terms: Array<{ term: string; distance: number }>

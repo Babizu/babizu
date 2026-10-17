@@ -33,6 +33,8 @@ export interface OccurrenceQuery {
   level: FuzzinessLevel
   /** 是否做模糊比對（TermMatcher.match 的 fuzzy） */
   fuzzy: boolean
+  /** 詞形比對的核心演算法（TermMatcher.match 的 algorithm） */
+  algorithm?: 'bcdp' | 'csr'
   /** 篩選條件 */
   accept: (k: number) => boolean
   /** 累加走訪統計 */
@@ -55,7 +57,7 @@ interface Combined {
  * 含有每個查詢詞的句子，依 compareOccurrences 排序。
  * 重複的查詢詞（例如 ma sa kau ma ngit 的 ma）只比對一次，走訪統計照樣累加，與逐次計算相同。
  */
-export function searchOccurrences(ctx: OccurrenceContext, { key, words, fullTerms, level, fuzzy, accept, stats, tally }: OccurrenceQuery): OccurrenceHit[] {
+export function searchOccurrences(ctx: OccurrenceContext, { key, words, fullTerms, level, fuzzy, algorithm = 'bcdp', accept, stats, tally }: OccurrenceQuery): OccurrenceHit[] {
   const seen = new Map<string, { terms: TermMatch[]; visited: number }>()
   const matchWord = (word: string) => {
     if (word === key) return fullTerms
@@ -65,7 +67,7 @@ export function searchOccurrences(ctx: OccurrenceContext, { key, words, fullTerm
       return prev.terms
     }
     const before = stats.visitedNodes
-    const terms = ctx.terms.match(word, level, stats, fuzzy)
+    const terms = ctx.terms.match(word, level, stats, fuzzy, algorithm)
     seen.set(word, { terms, visited: stats.visitedNodes - before })
     return terms
   }
@@ -125,7 +127,7 @@ function placeWord(ctx: OccurrenceContext, word: string, terms: TermMatch[], acc
     // 同一個詞的命中與被它取代的命中都放上去：被排除的方法在 place 裡略過，每句仍取剩下的最好的一種
     for (const c of alternativesOf(t)) {
       /** 同一個物件由含這個詞的各句共用：說明只算一次，每一句都看得到 */
-      const match: OccurrenceMatch = { word, term: c.term, token: c.term, kind: 'token', matchType: c.matchType, distance: c.distance, alignment: null, analysis: c.analysis ?? null }
+      const match: OccurrenceMatch = { word, term: c.term, token: c.term, kind: 'token', matchType: c.matchType, distance: c.distance, alignment: null, analysis: c.analysis ?? null, ...(c.csr ? { csr: c.csr } : {}) }
       place(c.payloads, recordScore(termScore(c, word)), match)
     }
     // 辭典標註的構詞關係只從「就是查詢那個詞」的詞條展開（搜尋鍵相同）。寫法相近的詞條已經是一層不確定

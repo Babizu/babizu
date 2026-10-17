@@ -52,6 +52,7 @@ export function collectEntries(ctx: EntryContext, key: string, terms: TermMatch[
         direct: kind !== 'root' || Boolean(prev?.direct),
         alignment: null,
         analysis: chosen.analysis ?? null,
+        ...(chosen.csr ? { csr: chosen.csr } : {}),
       }
       if (replacesRecordHit(hit, prev, compareHits)) entries.set(k, hit)
       else if (hit.direct && prev) prev.direct = true

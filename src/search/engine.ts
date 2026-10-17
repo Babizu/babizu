@@ -12,7 +12,7 @@
  * - 辭典標註的構詞關係（dictionary-relations.ts）
  * - 釋義搜尋（gloss-search.ts）：中文「單字 → 記錄」、英文／臺語羅馬字「詞 → 記錄」反向索引
  * - 句型搜尋（babizu/pattern）
- * - 對應組檢索（實驗性，csr-search.ts、docs/csr.md）：有模型時，搜尋選項 algorithm 'csr' 改用它比對詞條
+ * - 對應組檢索（實驗性，csr-search.ts、docs/csr.md）：有模型時，搜尋選項 algorithm 'csr' 以它當詞形比對的核心
  * 除了詞圖之外，其餘索引都在第一次用到時才建立（warmup 可以預先建立）。
  */
 
@@ -23,7 +23,7 @@ import { parsePattern } from '../pattern/parser.ts'
 import { PatternSearch, type PatternResponse, type PatternSearchOptions } from '../pattern/search.ts'
 import { createVirtualRootSearch, DerivationGraph, entryTest, type DerivationData } from './derivations.ts'
 import type { CsrModel } from './csr/index.ts'
-import { buildCorrespondenceIndex, searchCorrespondence, type CorrespondenceIndex } from './csr-search.ts'
+import { buildCorrespondenceIndex, type CorrespondenceIndex } from './csr-search.ts'
 import { DictionaryRelations } from './dictionary-relations.ts'
 import { childrenLookup } from './family.ts'
 import { createDocFilter } from './filters.ts'
@@ -105,6 +105,7 @@ export class SearchEngine {
       derivations: this.derivations,
       virtualRootSearch: () => this.virtualRootSearch,
       explainNotes: (query, term) => this.explainNotes(query, term),
+      correspondence: () => this.correspondence,
     })
     this.childrenOf = childrenLookup(docs.parent)
     this.relations = new DictionaryRelations(docs, this.index, this.text, this.childrenOf)
@@ -239,10 +240,9 @@ export class SearchEngine {
     if (fields.includes('native')) {
       // 中文查詢對族語欄位只做「包含」比對：族語欄位中可能夾雜中文註記（形如「族語詞 中文詞」），
       // 但加權編輯距離對中文沒有意義
-      searchNative(this, q, response, { level: levelOf(fuzziness), accept, explainLimit, fuzzy: mode === 'latin', exclude: new Set(exclude) })
-      response.algorithm = 'bcdp'
-      // 對應組檢索只取代詞條；例句仍是上面的結果
-      if (algorithm === 'csr' && mode === 'latin') searchCorrespondence(this, q, response, { fuzziness, accept, explainLimit })
+      const core = algorithm === 'csr' && this.csrModel ? 'csr' : 'bcdp'
+      searchNative(this, q, response, { level: levelOf(fuzziness), accept, explainLimit, fuzzy: mode === 'latin', exclude: new Set(exclude), algorithm: core })
+      response.algorithm = core
     }
     if (fields.includes('gloss')) {
       response.glosses = mode === 'zh' ? this.glosses.searchZh(q, accept) : this.glosses.searchLatin(q, accept)

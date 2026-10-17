@@ -7,10 +7,14 @@ import { MonitorIcon, MoonIcon, Settings2Icon, SunIcon } from '@lucide/vue'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import { useSearchAlgorithm } from '@/composables/useSearchAlgorithm.ts'
 import { useTheme } from '@/composables/useTheme.ts'
+import { ALGORITHM_LABELS } from '@/lib/labels.ts'
 import { msg, useI18n } from '@/i18n.ts'
 
 const { mode, setMode } = useTheme()
+const { algorithm, available: algorithmAvailable, setAlgorithm } = useSearchAlgorithm()
+const ALGORITHMS = ['bcdp', 'csr'] as const
 const { t, locale, locales, localeNames, setLocale } = useI18n()
 
 const THEMES = [
@@ -25,6 +29,9 @@ const onTheme = (value: unknown) => {
 }
 const onLocale = (value: unknown) => {
   if (value) setLocale(value as string)
+}
+const onAlgorithm = (value: unknown) => {
+  if (value === 'bcdp' || value === 'csr') setAlgorithm(value)
 }
 </script>
 
@@ -68,6 +75,18 @@ const onLocale = (value: unknown) => {
             {{ localeNames[l] }}
           </ToggleGroupItem>
         </ToggleGroup>
+      </section>
+
+      <!-- 模糊搜尋的核心演算法：站台設定了對應組檢索（實驗性）才有這一項 -->
+      <section v-if="algorithmAvailable" class="space-y-2" aria-labelledby="settings-algorithm">
+        <h2 id="settings-algorithm" class="text-muted-foreground text-xs font-medium">{{ t('模糊搜尋') }}</h2>
+        <ToggleGroup type="single" variant="outline" class="grid w-full grid-cols-2" :model-value="algorithm" :aria-label="t('模糊搜尋')" @update:model-value="onAlgorithm">
+          <ToggleGroupItem v-for="a in ALGORITHMS" :key="a" :value="a" class="h-auto min-h-11 flex-col gap-0 px-2 py-1 text-xs leading-tight">
+            <span>{{ t(ALGORITHM_LABELS[a].label) }}</span>
+            <span v-if="a === 'csr'" class="text-muted-foreground text-[10px] font-normal">{{ t(ALGORITHM_LABELS.csr.tag) }}</span>
+          </ToggleGroupItem>
+        </ToggleGroup>
+        <p class="text-muted-foreground text-xs leading-relaxed">{{ t(ALGORITHM_LABELS[algorithm].hint) }}</p>
       </section>
     </PopoverContent>
   </Popover>

@@ -30,6 +30,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useLatestRequest } from '@/composables/useLatestRequest.ts'
 import { useRecentSearches } from '@/composables/useRecentSearches.ts'
+import { useSearchAlgorithm } from '@/composables/useSearchAlgorithm.ts'
 import { useSearchIndex } from '@/composables/useSearchIndex.ts'
 import { useI18n } from '@/i18n.ts'
 import { formatCount, formatDistance, site } from '@/lib/labels.ts'
@@ -43,6 +44,8 @@ const router = useRouter()
 const { client, status: indexStatus, error: indexError, load, stats } = useSearchIndex()
 const { recent, remember, clear: clearRecent } = useRecentSearches()
 const { t, tr } = useI18n()
+/** 模糊搜尋的核心演算法（右上角的設定選單；站台沒有對應組檢索時一律是方言規則） */
+const { algorithm } = useSearchAlgorithm()
 
 /** 空狀態的範例查詢（站台設定 examples）：展示跨方言、跨書寫系統與跨語言的查法 */
 const EXAMPLES = site.examples
@@ -67,8 +70,6 @@ const filters = computed({
     dialects: list(route.query.dia),
     units: list(route.query.unit),
     exclude: list(route.query.x),
-    // 對應組檢索（實驗性）：站台設定了才有；網址上是 alg=csr
-    algorithm: (site.csr && route.query.alg === 'csr' ? 'csr' : 'bcdp') as 'bcdp' | 'csr',
   }),
   set: (f) =>
     updateQuery({
@@ -79,7 +80,6 @@ const filters = computed({
       dia: f.dialects.join(',') || undefined,
       unit: f.units.join(',') || undefined,
       x: f.exclude.join(',') || undefined,
-      alg: f.algorithm === 'csr' ? 'csr' : undefined,
     }),
 })
 /** 一般搜尋的分頁（網址上是句型搜尋的分頁時當成「全部」） */
@@ -153,7 +153,8 @@ const latest = useLatestRequest()
 // 監看的是會改變結果的參數，接成一個字串：只換分頁（tab、ks）時字串不變，不重新搜尋
 // （回傳陣列的話每次都是新的陣列，任何網址變動都會觸發）
 watch(
-  () => [route.query.q, route.query.fz, route.query.src, route.query.dia, route.query.unit, route.query.f, route.query.x, route.query.m].map((v) => String(v ?? '')).join('\u0000'),
+  // 設定選單的模糊搜尋演算法換了也重新搜尋
+  () => [route.query.q, route.query.fz, route.query.src, route.query.dia, route.query.unit, route.query.f, route.query.x, route.query.m, algorithm.value].map((v) => String(v ?? '')).join('\u0000'),
   async () => {
     const q = String(route.query.q ?? '').trim()
     limits.value = { entries: PAGE_SIZE, occurrences: PAGE_SIZE, glosses: PAGE_SIZE }
@@ -177,7 +178,7 @@ watch(
         }
       } else {
         // 網址上不認得的搜尋方法引擎會忽略
-        const result = await client.search(q, { fuzziness: f.fuzziness, fields: f.fields, filters: recordFilters, exclude: f.exclude as SearchMethod[], algorithm: f.algorithm })
+        const result = await client.search(q, { fuzziness: f.fuzziness, fields: f.fields, filters: recordFilters, exclude: f.exclude as SearchMethod[], algorithm: algorithm.value })
         if (isCurrent()) {
           response.value = result
           patternResponse.value = null

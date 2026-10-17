@@ -185,48 +185,71 @@ describe('搜尋', () => {
   })
 })
 
-describe('經過搜尋引擎', () => {
+describe('經過搜尋引擎：當作詞形比對的核心', () => {
   const rec = (localId: string, unit: Unit, text: string, zh: string, dialects: string[]): CorpusRecord =>
     createRecord({ source: 'dict', localId, unit, text, citation: createCitation(`dict ${localId}`) }, { senses: [createSense({ zh })], dialects })
   const records = [
     rec('turu', 'word', 'turu', '三', ['north']),
     rec('tuu', 'word', 'tuu', '三', ['south']),
     rec('tulu', 'word', 'tulu', '三', ['south']),
+    rec('mutuu', 'word', 'mutuu', '第三', ['south']),
     rec('unmarked', 'word', 'tuuk', '某詞', []),
-    rec('s1', 'sentence', 'turu ka tuu', '例句', ['north']),
+    rec('s1', 'sentence', 'turu ka sapi', '例句一', ['north']),
+    rec('s2', 'sentence', 'tulu ka sapi', '例句二', ['south']),
   ]
   const built = buildSearchIndex({ items: records.map((record) => ({ record, shard: 'all' })), groups: [], sourceIds: ['dict'], profile: PROFILE, varieties: [{ code: 'north' }, { code: 'south' }] })
   const data = JSON.parse(JSON.stringify(built))
   const withModel = new SearchEngine({ ...data, csr: { ...MODEL, sourceDialects: { dict: 'south' } } })
   const without = new SearchEngine(data)
+  const search = (q: string, options: Parameters<SearchEngine['search']>[1] = {}) => withModel.search(q, { fuzziness: 'loose', algorithm: 'csr', ...options })
+  const entry = (res: ReturnType<SearchEngine['search']>, id: string) => res.entries.find((h) => h.doc.id === `dict:${id}`)
 
-  it('algorithm csr：詞條是對應組檢索的命中，附說明；例句照舊', () => {
-    const res = withModel.search('turu', { fields: ['native'], algorithm: 'csr', fuzziness: 'loose' })
+  it('對應組檢索的分析對到既有的命中方式：沒剝詞綴是模糊（同一個詞是完全相符）、剝詞庫詞的是自動派生', () => {
+    const res = search('turu', { fields: ['native'] })
     expect(res.algorithm).toBe('csr')
-    expect(res.entries.every((h) => h.matchType === 'csr')).toBe(true)
-    expect(res.entries.map((h) => h.doc.id).slice(0, 3)).toEqual(['dict:turu', 'dict:tuu', 'dict:tulu'])
-    const tuu = res.entries.find((h) => h.doc.id === 'dict:tuu')
-    expect(tuu?.csr).toMatchObject({ queryDialect: 'north', entryDialect: 'south', queryStem: 'turu', entryStem: 'tuu' })
-    expect(tuu?.csr?.steps?.some((s) => s.kind === 'correspondence' && s.source === 'r' && s.target === '')).toBe(true)
-    expect(res.occurrences.map((o) => o.doc.id)).toEqual(['dict:s1'])
-    expect(res.entryGroups.length).toBeGreaterThan(0)
+    expect(entry(res, 'turu')).toMatchObject({ matchType: 'fuzzy', distance: 0 })
+    expect(entry(res, 'tuu')).toMatchObject({ matchType: 'fuzzy' })
+    expect(entry(res, 'mutuu')).toMatchObject({ matchType: 'derived' })
+    expect(entry(res, 'mutuu')?.csr?.entryAffixes).toEqual([{ type: 'prefix', form: 'mu' }])
+    // 剝查詢的詞綴是自動拆解
+    expect(entry(search('mutulu', { fields: ['native'] }), 'tulu')).toMatchObject({ matchType: 'lemma' })
   })
 
-  it('沒有方言標記的記錄依 sourceDialects 推定方言', () => {
-    const res = withModel.search('turuk', { fields: ['native'], algorithm: 'csr', fuzziness: 'loose' })
-    expect(res.entries.find((h) => h.doc.id === 'dict:unmarked')?.csr?.entryDialect).toBe('south')
+  it('分數換算成 BCDP 的刻度；說明的每一步也是，加起來是分數', () => {
+    const tuu = entry(search('turu', { fields: ['native'] }), 'tuu')
+    const csr = withModel.correspondence?.search as CorrespondenceSearch
+    const raw = csr.search('turu', { fuzziness: 'loose' }).find((h) => csr.entries[h.entry].key === 'tuu')
+    expect(tuu?.distance).toBeCloseTo((raw?.score ?? NaN) * csr.params.scoreScale, 2)
+    const steps = tuu?.csr?.steps ?? []
+    expect(steps.some((s) => s.kind === 'correspondence' && s.source === 'r' && s.target === '')).toBe(true)
+    expect(steps.reduce((s, x) => s + x.cost, 0)).toBeCloseTo(tuu?.distance ?? NaN, 2)
   })
 
-  it('篩選條件也套用在對應組檢索', () => {
-    const res = withModel.search('turu', { fields: ['native'], algorithm: 'csr', fuzziness: 'loose', filters: { dialects: ['south'] } })
-    expect(res.entries.map((h) => h.doc.id)).not.toContain('dict:turu')
+  it('例句也由對應組檢索比對：查 turu 找到含南部 tulu 的句子（方言規則找不到）', () => {
+    expect(search('turu').occurrences.map((o) => o.doc.id)).toEqual(expect.arrayContaining(['dict:s1', 'dict:s2']))
+    const s2 = search('turu').occurrences.find((o) => o.doc.id === 'dict:s2')
+    expect(s2?.matches[0]).toMatchObject({ term: 'tulu', matchType: 'fuzzy' })
+    expect(s2?.matches[0].csr).toBeDefined()
+    expect(without.search('turu', { fuzziness: 'normal' }).occurrences.map((o) => o.doc.id)).not.toContain('dict:s2')
   })
 
-  it('沒有模型、或查詢含空白時照常用 BCDP', () => {
-    expect(without.search('turu', { fields: ['native'], algorithm: 'csr' }).algorithm).toBe('bcdp')
+  it('搜尋方法的篩選與筆數照舊：排除自動派生就不列 mutuu', () => {
+    const res = search('turu', { fields: ['native'] })
+    expect(res.methods.derived).toBeGreaterThan(0)
+    expect(res.methods.exact).toBeGreaterThan(0)
+    expect(entry(search('turu', { fields: ['native'], exclude: ['derived'] }), 'mutuu')).toBeUndefined()
+  })
+
+  it('沒有方言標記的記錄依 sourceDialects 推定方言；篩選條件照常', () => {
+    expect(entry(search('turuk', { fields: ['native'] }), 'unmarked')?.csr?.entryDialect).toBe('south')
+    expect(search('turu', { fields: ['native'], filters: { dialects: ['south'] } }).entries.map((h) => h.doc.id)).not.toContain('dict:turu')
+  })
+
+  it('沒有模型、或整個查詢含空白時，那一部分照常用方言規則', () => {
+    expect(without.search('turu', { algorithm: 'csr' }).algorithm).toBe('bcdp')
     expect(without.correspondence).toBeNull()
-    const multi = withModel.search('turu ka', { fields: ['native'], algorithm: 'csr' })
-    expect(multi.algorithm).toBe('bcdp')
-    expect(multi.entries.every((h) => h.matchType !== 'csr')).toBe(true)
+    const multi = search('turu sapi')
+    expect(multi.algorithm).toBe('csr')
+    expect(multi.entries.every((h) => !h.csr)).toBe(true)
   })
 })

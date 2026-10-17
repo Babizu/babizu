@@ -34,14 +34,19 @@ defineProps({
     <BookOpenIcon v-if="DICTIONARY_KINDS.has(hit.kind)" class="size-3 shrink-0 opacity-70" aria-hidden="true" />
     {{ matchKindLabel(hit.kind) }} <span class="native-text font-medium">{{ hit.kind === 'sibling' ? (hit.via ?? hit.term) : hit.term }}</span>
   </MetaTag>
-  <span v-if="'csr' in hit && hit.csr" class="relative z-10 inline-flex min-w-0">
-    <CsrExplanation :csr="hit.csr" :query="query" :term="hit.term" />
-  </span>
-  <span v-else-if="hit.analysis" class="relative z-10 inline-flex min-w-0">
-    <MorphologyExplanation :analysis="hit.analysis" :match-type="hit.matchType" :query="query" :term="hit.term" />
-  </span>
-  <MatchTypeTag v-else :match-type="hit.matchType" :term="hit.term" />
-  <span v-if="hit.matchType === 'fuzzy' && hit.distance > 0" class="relative z-10 inline-flex">
-    <MatchExplanation :distance="hit.distance" :alignment="hit.alignment" :query="query" :term="hit.term" />
-  </span>
+  <!-- 由對應組檢索找到的（設定選單選了它）：標籤的樣子與方言規則的相同，點開才是它自己的說明 -->
+  <template v-if="hit.csr">
+    <span v-if="hit.matchType !== 'fuzzy' || hit.distance > 0" class="relative z-10 inline-flex min-w-0">
+      <CsrExplanation :csr="hit.csr" :match-type="hit.matchType" :distance="hit.distance" :query="query" :term="hit.term" />
+    </span>
+  </template>
+  <template v-else>
+    <span v-if="hit.analysis" class="relative z-10 inline-flex min-w-0">
+      <MorphologyExplanation :analysis="hit.analysis" :match-type="hit.matchType" :query="query" :term="hit.term" />
+    </span>
+    <MatchTypeTag v-else :match-type="hit.matchType" :term="hit.term" />
+    <span v-if="hit.matchType === 'fuzzy' && hit.distance > 0" class="relative z-10 inline-flex">
+      <MatchExplanation :distance="hit.distance" :alignment="hit.alignment" :query="query" :term="hit.term" />
+    </span>
+  </template>
 </template>
