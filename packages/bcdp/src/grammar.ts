@@ -77,7 +77,7 @@ export interface ConstructionSpec {
 }
 
 /** 與平面清單共用的欄位 */
-type SharedSpec = Pick<MorphologySpec, 'cost' | 'minStem' | 'maxSteps' | 'lemmaSpread' | 'virtualRootLengthCost' | 'rootSyllableCost' | 'vowels' | 'glides' | 'alternations'>
+type SharedSpec = Pick<MorphologySpec, 'cost' | 'minStem' | 'maxSteps' | 'lemmaSpread' | 'lemmaRulePenalty' | 'virtualRootLengthCost' | 'rootSyllableCost' | 'vowels' | 'glides' | 'alternations'>
 
 /** 語言設定檔的 `morphology` 區段（文法寫法） */
 export interface GrammarSpec extends SharedSpec {
@@ -119,7 +119,7 @@ export const MAX_EXPANDED = 5000
 const TYPES = new Set(['prefix', 'suffix', 'infix', 'reduplication'])
 /** 文法寫法的頂層欄位；與平面清單共用的欄位（cost、alternations…）由 validateFlatMorphology 檢查 */
 const GRAMMAR_KEYS = new Set(['morphemes', 'constructions'])
-const SHARED_KEYS = new Set<keyof SharedSpec>(['cost', 'minStem', 'maxSteps', 'lemmaSpread', 'virtualRootLengthCost', 'rootSyllableCost', 'vowels', 'glides', 'alternations'])
+const SHARED_KEYS = new Set<keyof SharedSpec>(['cost', 'minStem', 'maxSteps', 'lemmaSpread', 'lemmaRulePenalty', 'virtualRootLengthCost', 'rootSyllableCost', 'vowels', 'glides', 'alternations'])
 const MORPHEME_KEYS = new Set(['id', 'type', 'form', 'forms', 'pattern', 'gloss', 'cost', 'free', 'ref', 'note'])
 const CONSTRUCTION_KEYS = new Set(['id', 'sequence', 'gloss', 'cost', 'ref', 'note'])
 const hasSpace = (s: string) => /\s/u.test(s)

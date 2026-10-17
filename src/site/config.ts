@@ -25,6 +25,7 @@ import { pathToFileURL } from 'node:url'
 import { marked } from 'marked'
 import { validateProfile, type LanguageProfile } from '#bcdp'
 import { PatternError } from '../pattern/errors.ts'
+import { validateCsrModel, type CsrModel } from '../search/csr/model.ts'
 import { parsePattern } from '../pattern/parser.ts'
 import type { ClientSite, ColorPair, ResolvedVariety } from './client.ts'
 import { extractMessages } from './extract-messages.ts'
@@ -101,6 +102,11 @@ export interface SiteConfigInput {
   lab?: { pairs?: Array<[string, string]>; words?: string; morph?: { examples?: Array<[string, string]>; failures?: Array<[string, string]> } }
   /** 介面字串覆寫與額外語系的目錄，預設 `locales` */
   messages?: string
+  /**
+   * 對應組檢索（實驗性；docs/csr.md）：`model` 是模型檔的路徑（由辭典資料學出的方言語音對應）。
+   * 設定了才會在搜尋篩選中出現「比對方式」的選項，讀者可以改用它比對詞條；沒有設定（或 false）時網站與以前相同
+   */
+  csr?: { model: string } | false
 }
 
 /** 定義站台設定（只是回傳原物件，用來取得型別檢查）。 */
@@ -280,6 +286,20 @@ export async function loadSiteConfig(siteDir: string) {
     }
   }
 
+  // 對應組檢索的模型（實驗性）
+  let csrModel: CsrModel | null = null
+  if (input.csr) {
+    const file = typeof input.csr.model === 'string' ? join(root, input.csr.model) : null
+    if (!file) errors.push('csr.model 必須是模型檔的路徑')
+    else if (!existsSync(file)) errors.push(`找不到對應組檢索的模型 ${file}`)
+    else {
+      const model = JSON.parse(await readFile(file, 'utf8'))
+      const problems = validateCsrModel(model, varieties.map((v) => v.code))
+      for (const e of problems) errors.push(`對應組檢索的模型：${e}`)
+      if (problems.length === 0) csrModel = model
+    }
+  }
+
   const publicDir = join(root, input.publicDir ?? 'public')
   const icon = input.icon ?? 'icon.jpg'
 
@@ -313,6 +333,7 @@ export async function loadSiteConfig(siteDir: string) {
     messages,
     // 沒有語言設定檔時上面已經丟出錯誤
     profile: profile as LanguageProfile,
+    csr: csrModel !== null,
   }
 
   return {
@@ -322,6 +343,8 @@ export async function loadSiteConfig(siteDir: string) {
     dataDir: join(root, input.data ?? 'data'),
     publicDir,
     overrides,
+    /** 對應組檢索的模型（沒有設定時是 null）；建置時寫成 search/csr.json */
+    csrModel,
     /** 會送進瀏覽器的部分 */
     client,
   }

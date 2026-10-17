@@ -12,8 +12,9 @@
 import type { FuzzyIndex, MorphSearch, Prepared, SearchResult } from '#bcdp'
 import { DerivedTerms } from './derived-terms.ts'
 import type { DerivationGraph } from './derivations.ts'
+import { roundCost } from '#bcdp'
 import { fuzzyOptions, lemmaMax } from './fuzziness.ts'
-import { mergeMorphMatch, type MatchType } from './scoring.ts'
+import { MORPHOLOGY_BASE_SCORE, mergeMorphMatch, type MatchType } from './scoring.ts'
 import { SubstringIndex } from './substring-index.ts'
 import type { AlignmentNote, FuzzinessLevel, LemmaAnalysis, MorphNote, TermMatch } from './types.ts'
 
@@ -54,10 +55,13 @@ export class TermMatcher {
   private readonly substrings: SubstringIndex
   /** 自動拆解命中的音變說明（需要時才計算，notesOf） */
   private readonly lazyNotes = new WeakMap<LemmaAnalysis, () => MorphNote[]>()
+  /** 構詞規格的 lemmaRulePenalty（自動拆解又要改寫詞幹時的排序加成） */
+  private readonly lemmaRulePenalty: number
 
   constructor({ index, morphSearch, derivations, virtualRootSearch, explainNotes }: TermMatcherDeps) {
     this.index = index
     this.morphSearch = morphSearch
+    this.lemmaRulePenalty = morphSearch?.spec.lemmaRulePenalty ?? 0
     this.explainNotes = explainNotes
     this.substrings = new SubstringIndex(index)
     this.derived = new DerivedTerms({ index, graph: derivations, virtualRootSearch, explainNotes })
@@ -137,16 +141,26 @@ export class TermMatcher {
    * （ta-kita-aw → takitaw），詞首、詞尾規則與構詞音變在交界也適用（packages/bcdp/docs/bcdp.md）。
    * 總成本上限是 lemmaMax。音變說明在需要時才計算（notesOf）。
    *
+   * 構詞規格的 lemmaRulePenalty（κ，預設 0）大於 0 時，排序分數另加 κ ×（分析中的音變成本），
+   * 音變成本 ＝ 分析成本 − 構詞步驟 − 詞根音節數的成本：既剝詞綴又改寫詞幹的分析排在只做其中一件事的命中之後
+   * （研究紀錄見私有 repo 的 docs/research/explorations/p4-levels-bcdp.md）。回傳的命中與說明中的分析成本不變。
+   *
    * @param prepared 構詞搜尋的準備結果
    * @param results 各構詞通道的結果（fuzzy 的 morph）
    */
   lemma(key: string, level: FuzzinessLevel, prepared: Prepared | null, results: SearchResult[][]): TermMatch[] {
     if (!prepared) return []
     const search = this.morphSearch as MorphSearch
+    const penalty = this.lemmaRulePenalty
     return search.finish(prepared, results, lemmaMax(key, level)).map((h) => {
       const analysis: LemmaAnalysis = { stem: h.term, steps: h.steps, cost: h.distance, ...(h.rootCost ? { rootCost: h.rootCost } : {}) }
       this.lazyNotes.set(analysis, () => search.notesOf(prepared, h))
-      return { term: h.term, payloads: h.payloads, distance: h.distance, matchType: 'lemma' as MatchType, analysis }
+      const match: TermMatch = { term: h.term, payloads: h.payloads, distance: h.distance, matchType: 'lemma' as MatchType, analysis }
+      if (penalty > 0) {
+        const sound = h.distance - h.steps.reduce((s, x) => s + x.cost, 0) - (h.rootCost ?? 0)
+        if (sound > 0) match.score = roundCost(MORPHOLOGY_BASE_SCORE + h.distance + penalty * sound)
+      }
+      return match
     })
   }
 

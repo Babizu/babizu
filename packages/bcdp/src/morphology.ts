@@ -104,6 +104,8 @@ export interface AnalyzerSpec {
   readonly minStem: number
   readonly maxSteps: number
   readonly lemmaSpread: number
+  /** 自動拆解又要改寫詞幹時的加成倍數（只影響搜尋的排序，BCDP 本身不用；見 MorphologySpec） */
+  readonly lemmaRulePenalty: number
   readonly virtualRootLengthCost: number
   /** 兩種詞根各一張表：第 k 格是 k 個音節的成本，最後一格也套用到更多音節；沒有設定時是空表 */
   readonly rootSyllableCost: { readonly entry: readonly number[]; readonly other: readonly number[] }
@@ -188,6 +190,7 @@ function normalizeSpec(input: MorphologySpec | GrammarSpec, normalize: (s: strin
   const minStem = spec.minStem ?? DEFAULTS.minStem
   const maxSteps = spec.maxSteps ?? DEFAULTS.maxSteps
   const lemmaSpread = spec.lemmaSpread ?? DEFAULTS.lemmaSpread
+  const lemmaRulePenalty = spec.lemmaRulePenalty ?? DEFAULTS.lemmaRulePenalty
   const virtualRootLengthCost = spec.virtualRootLengthCost ?? DEFAULTS.virtualRootLengthCost
   const vowels = new Set(Array.from(normalize(spec.vowels ?? DEFAULTS.vowels)))
   // 音節數 → 成本的表：第 k 格是 k 個音節的成本，最後一格也套用到更多音節；沒有設定時是空表
@@ -257,6 +260,7 @@ function normalizeSpec(input: MorphologySpec | GrammarSpec, normalize: (s: strin
     minStem,
     maxSteps,
     lemmaSpread,
+    lemmaRulePenalty,
     virtualRootLengthCost,
     rootSyllableCost: Object.freeze({ entry: Object.freeze(rootSyllableCost.entry), other: Object.freeze(rootSyllableCost.other) }),
     vowels: [...vowels].join(''),

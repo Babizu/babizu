@@ -62,4 +62,6 @@ export interface ClientSite {
   messages: Record<string, Record<string, string>>
   /** 語言設定檔 */
   profile: LanguageProfile
+  /** 有沒有對應組檢索（實驗性；模型在網站資料的 search/csr.json） */
+  csr: boolean
 }

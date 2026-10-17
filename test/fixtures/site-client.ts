@@ -30,4 +30,5 @@ export default {
   // 中文是原文語系（程式裡直接寫中文），不需要譯文表
   messages: { 'zh-TW': {}, en },
   profile: PAZEH_PROFILE,
+  csr: false,
 }

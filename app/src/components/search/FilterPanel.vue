@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * 搜尋篩選：搜尋範圍、模糊程度、搜尋方法、來源、語言變體（方言）、語言單位。
+ * 搜尋篩選：搜尋範圍、比對方式（站台設定了對應組檢索時）、模糊程度、搜尋方法、來源、語言變體（方言）、語言單位。
  * 桌面放在側欄（窄），行動裝置放在底部抽屜（寬）——同一個元件。
  *
  * 版面依**容器**寬度而不是視窗寬度決定欄數（`@container` 加 `auto-fill`），
@@ -12,10 +12,11 @@ import { ChevronDownIcon } from '@lucide/vue'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Slider } from '@/components/ui/slider'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { UNIT_CODES } from '@babizu/schema/constants.ts'
 import { useSources } from '@/composables/useSources.ts'
 import { t } from '@/i18n.ts'
-import { dialectLabel, FIELD_LABELS, formatCount, fuzzinessLabel, orderedVarieties, SEARCH_METHOD_GROUPS, site, unitLabel } from '@/lib/labels.ts'
+import { ALGORITHM_LABELS, dialectLabel, FIELD_LABELS, formatCount, fuzzinessLabel, orderedVarieties, SEARCH_METHOD_GROUPS, site, unitLabel } from '@/lib/labels.ts'
 
 export interface FilterState {
   /** 搜尋範圍：native 族語、gloss 釋義（可複選） */
@@ -26,6 +27,8 @@ export interface FilterState {
   units: string[]
   /** 不要的搜尋方法（babizu/search 的 SEARCH_METHODS） */
   exclude: string[]
+  /** 詞條的比對方式：bcdp（預設）或 csr（對應組檢索，實驗性；站台設定了才有） */
+  algorithm: 'bcdp' | 'csr'
 }
 
 const model = defineModel<FilterState>({ required: true })
@@ -41,6 +44,14 @@ const { sources } = useSources()
 
 /** 顯示名稱在模板裡用 t() 查，切換語系時才會即時更新 */
 const FIELD_OPTIONS = ['native', 'gloss'] as const
+
+/** 比對方式（對應組檢索是實驗性的，站台設定了才顯示） */
+const ALGORITHMS = ['bcdp', 'csr'] as const
+const csrMode = computed(() => site.csr && model.value.algorithm === 'csr')
+/** ToggleGroup 再按一次同一項會送出空值：保持原選擇 */
+const onAlgorithm = (value: unknown) => {
+  if (value === 'bcdp' || value === 'csr') model.value = { ...model.value, algorithm: value }
+}
 
 /** 模糊程度由鬆到緊排成一條強度軸，索引即滑桿位置 */
 const FUZZINESS_STEPS = ['exact', 'normal', 'loose'] as const
@@ -126,6 +137,26 @@ function reset() {
       <p v-if="model.fields.length === 0" class="text-destructive mt-1 text-xs">{{ t('請至少選擇一個搜尋範圍。') }}</p>
     </fieldset>
 
+    <section v-if="site.csr && !props.pattern" aria-labelledby="filter-algorithm">
+      <h3 id="filter-algorithm" class="mb-2 font-medium">{{ t('比對方式') }}</h3>
+      <ToggleGroup
+        type="single"
+        variant="outline"
+        class="grid w-full grid-cols-2"
+        :model-value="model.algorithm"
+        :aria-label="t('比對方式')"
+        @update:model-value="onAlgorithm"
+      >
+        <ToggleGroupItem v-for="a in ALGORITHMS" :key="a" :value="a" class="h-auto min-h-11 flex-col gap-0 px-2 py-1 text-xs leading-tight" :title="t(ALGORITHM_LABELS[a].hint)">
+          <span>{{ t(ALGORITHM_LABELS[a].label) }}</span>
+          <span v-if="'tag' in ALGORITHM_LABELS[a]" class="text-muted-foreground text-[10px] font-normal">{{ t(ALGORITHM_LABELS.csr.tag) }}</span>
+        </ToggleGroupItem>
+      </ToggleGroup>
+      <p class="text-muted-foreground mt-1 text-xs leading-relaxed">
+        {{ csrMode ? t(ALGORITHM_LABELS.csr.hint) : t(ALGORITHM_LABELS.bcdp.hint) }}
+      </p>
+    </section>
+
     <section>
       <div class="mb-3 flex items-baseline justify-between">
         <h3 id="filter-fuzziness" class="font-medium">{{ t('模糊程度') }}</h3>
@@ -177,7 +208,10 @@ function reset() {
       搜尋方法：四組。每組一列（整組勾選、組名與來源、整組筆數、展開鈕），個別的方法收在底下，預設收合。
       筆數不受排除影響：排除掉的方法有多少仍看得到。
     -->
-    <fieldset v-if="!props.pattern">
+    <p v-if="csrMode && !props.pattern" class="text-muted-foreground text-xs leading-relaxed">
+      {{ t('對應組檢索不分搜尋方法；要依方法篩選，請改回「方言規則」。') }}
+    </p>
+    <fieldset v-if="!props.pattern && !csrMode">
       <legend class="mb-1 flex w-full items-baseline justify-between gap-2 font-medium">
         <span>{{ t('搜尋方法') }}</span>
         <button v-if="model.exclude.length" type="button" class="text-primary min-h-8 text-xs font-normal hover:underline" @click="setExclude([])">

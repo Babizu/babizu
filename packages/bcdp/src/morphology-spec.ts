@@ -120,6 +120,15 @@ export interface MorphologySpec {
   /** 構詞命中只保留成本在「最佳 ＋ lemmaSpread」之內的詞，控制候選數（預設 0.6） */
   lemmaSpread?: number
   /**
+   * 自動拆解又要改寫詞幹時的加成（預設 0，不加）：自動拆解的排序分數中，分析裡的方言規則與一般編輯的成本
+   * （分析成本減去構詞步驟與詞根音節數的成本）另外乘上這個倍數加回去。
+   * 「把一部分當成詞綴」又「假設這裡有方言差異」是兩層推論，比只做其中一件事的命中不可靠：
+   * 查 masizaw 時，masi- ＋ dau（詞幹要套 z → d、w → u）不該排在只差一個字母的 masezaw 前面；
+   * 詞幹與詞庫詞完全相同的分析（mudaux → daux）不受影響。只影響排序，不影響哪些詞回傳，也不改說明中的分析成本
+   * （babizu 的 docs/language-profile.md）
+   */
+  lemmaRulePenalty?: number
+  /**
    * 詞庫外的詞根（虛擬詞根）每個字元的成本（預設 0.03）：詞庫中的詞根只要指出是哪一個，
    * 詞庫外的要逐字寫出來，所以越長越貴（借用最小描述長度的直覺的長度懲罰，每個詞各自計算；docs/bcdp.md 第 10 節）。
    * 預設值以巴宰–噶哈巫語的資料校準
@@ -175,6 +184,7 @@ export const DEFAULTS = Object.freeze({
   minStem: 3,
   maxSteps: 3,
   lemmaSpread: 0.6,
+  lemmaRulePenalty: 0,
   virtualRootLengthCost: 0.03,
   vowels: 'aeiouéə',
 })
@@ -195,6 +205,7 @@ const SPEC_KEYS = new Set([
   'minStem',
   'maxSteps',
   'lemmaSpread',
+  'lemmaRulePenalty',
   'virtualRootLengthCost',
   'rootSyllableCost',
   'vowels',
@@ -238,7 +249,7 @@ export function validateFlatMorphology(s: Record<string, any>): string[] {
     if (key in REMOVED_KEYS) errors.push(`morphology.${key} ${REMOVED_KEYS[key]}`)
     else if (!SPEC_KEYS.has(key)) errors.push(`morphology.${key} 是未知的欄位`)
   }
-  for (const key of ['cost', 'lemmaSpread', 'virtualRootLengthCost']) {
+  for (const key of ['cost', 'lemmaSpread', 'lemmaRulePenalty', 'virtualRootLengthCost']) {
     if (s[key] !== undefined && !isCost(s[key])) errors.push(`morphology.${key} 必須是非負的有限數`)
   }
   if (s.minStem !== undefined && !(Number.isInteger(s.minStem) && s.minStem >= 1)) errors.push('morphology.minStem 必須是 ≥ 1 的整數')

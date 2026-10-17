@@ -24,11 +24,12 @@ import { EPSILON, roundCost } from '#bcdp'
  * - sibling：自動同根，詞庫的詞與查詢推定來自同一個詞庫外的詞根（查 binubuer → mabubuer，共同的虛擬詞根 bubuer）
  * - suffix：詞庫中的詞以查詢結尾（查 kita → mikita）；分數與包含相同，只是分開標示、可以分開篩選
  * - substring：詞庫中的詞包含查詢（查 k → 所有含 k 的詞與句子）
+ * - csr：對應組檢索（實驗性，搜尋選項 algorithm 'csr'；csr-search.ts）。只出現在詞條，不與其他命中方式混在同一次搜尋中
  * lemma、derived、sibling 只在語言設定檔有 `morphology` 時出現。
  */
-export const MATCH_TYPES = ['fuzzy', 'prefix', 'lemma', 'derived', 'sibling', 'suffix', 'substring'] as const
+export const MATCH_TYPES = ['fuzzy', 'prefix', 'lemma', 'derived', 'sibling', 'suffix', 'substring', 'csr'] as const
 export type MatchType = (typeof MATCH_TYPES)[number]
-export const MATCH_TYPE_RANK: Record<MatchType, number> = { fuzzy: 0, prefix: 1, lemma: 2, derived: 3, sibling: 4, suffix: 5, substring: 6 }
+export const MATCH_TYPE_RANK: Record<MatchType, number> = { fuzzy: 0, prefix: 1, lemma: 2, derived: 3, sibling: 4, suffix: 5, substring: 6, csr: 7 }
 
 /**
  * 命中的詞與記錄的關係（依重要性排序）：
@@ -74,7 +75,7 @@ export const EXTRA_CHAR_CAP = 12
  * @param extraLength 詞比查詢多出來的字元數
  */
 export function rankScore(matchType: MatchType, distance: number, extraLength: number): number {
-  if (matchType === 'fuzzy') return distance
+  if (matchType === 'fuzzy' || matchType === 'csr') return distance
   if (matchType === 'lemma' || matchType === 'derived' || matchType === 'sibling') return MORPHOLOGY_BASE_SCORE + distance
   // 結尾相符與包含同分，只是分開標示
   const base = matchType === 'prefix' ? PREFIX_BASE_SCORE : SUBSTRING_BASE_SCORE
@@ -172,6 +173,8 @@ export type SearchMethodGroup = keyof typeof SEARCH_METHOD_GROUPS
  * （查 mudaux 自動拆解到 daux，再列出辭典標註的 daux 的派生詞：算自動拆解，不看自動的就不該出現）。
  */
 export function methodOf(hit: { matchType: MatchType; distance: number; kind?: string }): SearchMethod {
+  // 對應組檢索不分方法（介面在這種模式下不顯示搜尋方法的篩選）；算成相近拼寫
+  if (hit.matchType === 'csr') return hit.distance > 0 ? 'fuzzy' : 'exact'
   if (hit.matchType === 'lemma' || hit.matchType === 'derived' || hit.matchType === 'sibling') return hit.matchType
   if (PARTIAL.has(hit.matchType)) return hit.matchType as SearchMethod
   if (hit.kind === 'root') return 'dictDerived'

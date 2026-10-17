@@ -123,6 +123,7 @@
 | `minStem`                         | 3         | 詞根（詞庫詞）的最短長度（code point），太短的詞根容易巧合命中；見[步數預算](#步數預算) |
 | `maxSteps`                        | 3         | 前綴、後綴各自最多幾個（見[步數預算](#步數預算)），整數 0–10                            |
 | `lemmaSpread`                     | 0.6       | 自動拆解只保留成本在「最佳 ＋ lemmaSpread」之內的詞幹，控制候選數                       |
+| `lemmaRulePenalty`                | 0         | 自動拆解又要改寫詞幹時的排序加成 κ：排序分數另加 κ ×（分析中的音變成本，也就是分析成本減去構詞步驟與詞根音節數的成本）。「把一部分當成詞綴」又「假設這裡有方言差異」是兩層推論，比只做其中一件事的命中不可靠：查 masizaw 時，masi- ＋ dau（詞幹要套 z → d、w → u）不該排在只差一個字母的 masezaw 前面；詞幹與詞庫詞完全相同的分析（mudaux → daux）不受影響。只改排序，不改哪些詞回傳，也不改說明中的分析成本。巴宰–噶哈巫語用 4（跨方言同義詞的 MRR ＋0.012，查衍生詞找詞根不變） |
 | `virtualRootLengthCost`           | 0.03      | 詞庫外的詞根（虛擬詞根）每個字元的成本：越長越貴，長的詞庫外詞幹常常是沒有認出的組合（[bcdp.md](../packages/bcdp/docs/bcdp.md) 第 10 節）。預設值以巴宰–噶哈巫語的資料校準 |
 | `rootSyllableCost`                | —         | 詞根依音節數另加的成本（詞根形狀的先驗）：`{"1": 0.1, "3": 0.1, "4": 0.2}` 是單音節 0.1、雙音節 0、三音節 0.1、四音節以上 0.2（沒列的是 0，最大的鍵也套用到更多音節）。值也可以寫成 `{"entry": 0, "other": 0.2}`，分辭典的詞條或標為詞根的（entry）與其他的（other：只出現在例句中的詞、虛擬詞根）。音節數是詞根中 `vowels` 的字母數。虛擬詞根在 `virtualRootLengthCost` 之外另加 other 的成本。只改名次與候選範圍，不讓分析因為它超過總成本上限，也不算音變（[bcdp.md](../packages/bcdp/docs/bcdp.md) 1.6 第 9 項） |
 | `vowels`                          | `aeiouéə` | 元音字母，決定首輔音、中綴的位置與重疊模板                                              |
@@ -265,7 +266,7 @@
 
 AF.PFV 的四個形式都有證據（m<in>-、m<in>u-、m<in>i-、m<in>e-），所以引用 AF；AF.IRR 只有 m<a>-…-ay，所以引用只有 m 的 AF.m（見[編寫技巧](#編寫技巧依-bcdp-的運作原理)）。
 
-文法寫法與平面清單寫法（`prefixes`…`circumfixes`）二選一；`cost`、`minStem`、`maxSteps`、`lemmaSpread`、`virtualRootLengthCost`、`rootSyllableCost`、`vowels`、`glides`、`alternations` 兩種共用。
+文法寫法與平面清單寫法（`prefixes`…`circumfixes`）二選一；`cost`、`minStem`、`maxSteps`、`lemmaSpread`、`lemmaRulePenalty`、`virtualRootLengthCost`、`rootSyllableCost`、`vowels`、`glides`、`alternations` 兩種共用。
 
 **怎麼寫**：
 

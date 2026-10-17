@@ -67,6 +67,8 @@ const filters = computed({
     dialects: list(route.query.dia),
     units: list(route.query.unit),
     exclude: list(route.query.x),
+    // 對應組檢索（實驗性）：站台設定了才有；網址上是 alg=csr
+    algorithm: (site.csr && route.query.alg === 'csr' ? 'csr' : 'bcdp') as 'bcdp' | 'csr',
   }),
   set: (f) =>
     updateQuery({
@@ -77,6 +79,7 @@ const filters = computed({
       dia: f.dialects.join(',') || undefined,
       unit: f.units.join(',') || undefined,
       x: f.exclude.join(',') || undefined,
+      alg: f.algorithm === 'csr' ? 'csr' : undefined,
     }),
 })
 /** 一般搜尋的分頁（網址上是句型搜尋的分頁時當成「全部」） */
@@ -174,7 +177,7 @@ watch(
         }
       } else {
         // 網址上不認得的搜尋方法引擎會忽略
-        const result = await client.search(q, { fuzziness: f.fuzziness, fields: f.fields, filters: recordFilters, exclude: f.exclude as SearchMethod[] })
+        const result = await client.search(q, { fuzziness: f.fuzziness, fields: f.fields, filters: recordFilters, exclude: f.exclude as SearchMethod[], algorithm: f.algorithm })
         if (isCurrent()) {
           response.value = result
           patternResponse.value = null

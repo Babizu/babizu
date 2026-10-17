@@ -3,6 +3,7 @@
  */
 
 import type { MorphStepHit } from '#bcdp'
+import type { CsrAffix, CsrStep } from './csr/index.ts'
 import type { EntryGroup } from './family.ts'
 import type { DocSummary, MatchKind } from './format.ts'
 import type { MatchType, SearchMethod, SearchMethodGroup } from './scoring.ts'
@@ -50,6 +51,11 @@ export interface SearchOptions {
   limit?: number
   /** 為前幾筆模糊詞條附上對齊說明（預設 40） */
   explainLimit?: number
+  /**
+   * 詞條的比對方式：bcdp（預設；手寫的方言規則＋構詞搜尋）或 csr（對應組檢索，實驗性；
+   * 要有對應組檢索的模型，查詢不含空白；否則照常用 bcdp）。例句與釋義的搜尋不受影響
+   */
+  algorithm?: 'bcdp' | 'csr'
   /**
    * 不要的搜尋方法（見 scoring.ts 的 SEARCH_METHODS）：
    * 每筆記錄只在剩下的方法中挑最好的命中，被排除的方法不會壓在其他方法底下
@@ -143,6 +149,25 @@ export interface EntryHit {
    * 自動派生（matchType 'derived'）時是命中詞的分析
    */
   analysis?: LemmaAnalysis | null
+  /** 對應組檢索（matchType 'csr'）的說明 */
+  csr?: CsrExplanation
+}
+
+/** 對應組檢索的命中說明 */
+export interface CsrExplanation {
+  /** 分數 ＝ 距離 ＋ λ ×（兩邊剝掉的詞綴數） */
+  score: number
+  /** 假設的查詢方言（變體代碼） */
+  queryDialect: string
+  /** 詞條的方言（記錄沒有方言時是假設的） */
+  entryDialect: string
+  /** 查詢剝掉詞綴後的詞幹與剝掉的詞綴（由外而內） */
+  queryStem: string
+  queryAffixes: CsrAffix[]
+  entryStem: string
+  entryAffixes: CsrAffix[]
+  /** 詞幹的對齊（每一步是哪一對音段、成本多少）；只為前幾筆計算，其餘是 null */
+  steps: CsrStep[] | null
 }
 
 /** 一個查詢詞在詞庫中的命中 */
@@ -206,6 +231,8 @@ export interface GlossHit {
 export interface SearchResponse {
   query: string
   mode: 'zh' | 'latin'
+  /** 詞條實際用的比對方式（要求 csr 但不能用時是 bcdp） */
+  algorithm?: 'bcdp' | 'csr'
   /** 模糊搜尋命中的詞庫詞 */
   terms: Array<{ term: string; distance: number }>
   /** 詞條命中，依分數排序 */

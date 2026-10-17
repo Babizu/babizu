@@ -72,6 +72,7 @@ export default defineSite({
 | `lab.morph.examples` | `[string, string][]` | `[]` | 構詞（BCDP）分頁的例子：[查詢, 詞根]，第一組是預設值。只有語言設定檔有 `morphology` 時才能設定 |
 | `lab.morph.failures` | `[string, string][]` | `[]` | 找不到的例子（例如需要框架不支援的構詞），分頁會說明原因 |
 | `messages` | string | `locales` | 介面字串目錄 |
+| `csr` | `{ model: string }` 或 `false` | — | 對應組檢索（實驗性）：`model` 是模型檔的路徑（由辭典資料學出的方言語音對應，見 [csr.md](csr.md)）。設定了才會在搜尋篩選中出現「比對方式」，讀者可以改用它比對詞條；建置時檢查模型並複製成 `data/search/csr.json`。沒有設定時網站與以前相同 |
 
 ## 語言變體 `varieties`
 

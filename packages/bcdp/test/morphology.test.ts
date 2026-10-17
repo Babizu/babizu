@@ -271,6 +271,14 @@ describe('規格檢查', () => {
     expect(validateMorphology(undefined)).toEqual([])
   })
 
+  it('lemmaRulePenalty：非負的有限數，兩種寫法都接受；預設 0', () => {
+    expect(validateMorphology({ lemmaRulePenalty: 4 })).toEqual([])
+    expect(validateMorphology({ lemmaRulePenalty: 4, morphemes: [{ id: 'AF', type: 'prefix', form: 'mu' }] })).toEqual([])
+    expect(validateMorphology({ lemmaRulePenalty: -1 })).toEqual(['morphology.lemmaRulePenalty 必須是非負的有限數'])
+    expect(createAnalyzer({ prefixes: [{ form: 'mu' }] }).spec.lemmaRulePenalty).toBe(0)
+    expect(createAnalyzer({ prefixes: [{ form: 'mu' }], lemmaRulePenalty: 3 }).spec.lemmaRulePenalty).toBe(3)
+  })
+
   it('rootSyllableCost：鍵是音節數、值是非負的成本；rootCostOf 依元音字母數，沒列的是 0，最大的鍵也套用到更多音節', () => {
     expect(validateMorphology({ rootSyllableCost: { 1: 0.1, 3: 0.1, 4: 0.2 } })).toEqual([])
     expect(validateMorphology({ rootSyllableCost: { 0: 0.1, x: 0.1, 2: -1 } })).toHaveLength(3)

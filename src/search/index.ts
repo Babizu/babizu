@@ -33,3 +33,4 @@ export { buildEntryGroups, collectHits, computeParents, mergeSpellings, spelling
 export { Checklist, classify, SEGMENTATION_FILTERS, type DuplicateGroup, type GroupPageOptions, type SegmentationFilter, type TokenKind, type UntreatedToken } from './checklist.ts'
 export { collectSegmentations, compareSegmentations, parseSegmentation, SEGMENTATIONS_FORMAT_VERSION, type SegmentationData } from './segmentation.ts'
 export { MATCH_TYPES, SEARCH_METHODS, SEARCH_METHOD_GROUPS, type MatchType, type SearchMethod, type SearchMethodGroup } from './scoring.ts'
+export * from './csr/index.ts'

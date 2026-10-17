@@ -76,12 +76,14 @@ describe('golden：框架的輸出與基準逐位元相同', () => {
     await record('messages', () => [...extractMessages()].sort())
 
     const read = (p: string) => JSON.parse(readFileSync(join(data, p), 'utf8'))
-    const engine = new SearchEngine({ docs: read('search/docs.json'), lexicon: read('search/lexicon.json'), profile: read('search/language.json'), derivations: read('search/derivations.json') })
+    const engine = new SearchEngine({ docs: read('search/docs.json'), lexicon: read('search/lexicon.json'), profile: read('search/language.json'), derivations: read('search/derivations.json'), csr: read('search/csr.json') })
     const words = new Set<string>()
     for (let k = 0; k < engine.size; k++) for (const w of String(engine.doc(k).text).split(/\s+/)) if (w.length >= 3) words.add(w)
     const queries = [...words].sort().slice(0, 150)
     queries.push('火', 'water', 'ralan', 'bunan', 'ʔa', 'zzzz')
     for (const q of queries) for (const fuzziness of LEVELS) await record(`minimal:search:${fuzziness}:${q}`, () => engine.search(q, { fuzziness }))
+    // 對應組檢索（實驗性；示範站台設定了模型）
+    for (const q of queries) for (const fuzziness of LEVELS) await record(`minimal:csr:${fuzziness}:${q}`, () => engine.search(q, { fuzziness, algorithm: 'csr', fields: ['native'] }))
     for (const q of ['_ ka _', '^ sapi', 'lalan $', 'sapi & !ka', '_* lalan', '"ralan"', '(']) for (const f of LEVELS) await record(`minimal:pattern:${f}:${q}`, () => pattern(engine, q, f))
     for (let k = 0; k < engine.size; k += 7) await record(`minimal:neighbors:${engine.doc(k).id}`, () => engine.neighbors(engine.doc(k).id))
     for (const sort of ['text', 'source']) await record(`minimal:list:${sort}`, () => engine.list({ sort: sort as any, limit: 100 }))

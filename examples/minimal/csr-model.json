@@ -1,0 +1,30 @@
+{
+ "format": "babizu-csr-model",
+ "version": 1,
+ "dialects": ["north", "south"],
+ "segments": ["'", "a", "b", "e", "h", "i", "k", "l", "m", "n", "ng", "o", "p", "r", "s", "t", "u", "x", "z"],
+ "patterns": [
+  { "reflexes": { "north": "a", "south": "a" }, "sites": 40 },
+  { "reflexes": { "north": "i", "south": "i" }, "sites": 20 },
+  { "reflexes": { "north": "u", "south": "u" }, "sites": 20 },
+  { "reflexes": { "north": "e", "south": "e" }, "sites": 6 },
+  { "reflexes": { "north": "o", "south": "o" }, "sites": 8 },
+  { "reflexes": { "north": "b", "south": "b" }, "sites": 10 },
+  { "reflexes": { "north": "k", "south": "k" }, "sites": 10 },
+  { "reflexes": { "north": "m", "south": "m" }, "sites": 10 },
+  { "reflexes": { "north": "n", "south": "n" }, "sites": 12 },
+  { "reflexes": { "north": "p", "south": "p" }, "sites": 10 },
+  { "reflexes": { "north": "s", "south": "s" }, "sites": 10 },
+  { "reflexes": { "north": "t", "south": "t" }, "sites": 10 },
+  { "reflexes": { "north": "x", "south": "x" }, "sites": 6 },
+  { "reflexes": { "north": "z", "south": "z" }, "sites": 6 },
+  { "reflexes": { "north": "l", "south": "l" }, "sites": 4 },
+  { "reflexes": { "north": "r", "south": "l" }, "sites": 12 },
+  { "reflexes": { "north": "r", "south": "r" }, "sites": 2 },
+  { "reflexes": { "north": "n", "south": "ng" }, "sites": 5 },
+  { "reflexes": { "north": "e", "south": "i" }, "sites": 5 },
+  { "reflexes": { "north": "h", "south": "-" }, "sites": 4 },
+  { "reflexes": { "north": "'", "south": "-" }, "sites": 4 }
+ ],
+ "provenance": { "note": "示範用的虛構模型：計數是手寫的，示範北部 r 對南部 l、詞尾 n 對 ng、e 對 i、詞尾 h 與喉塞音脫落（實際的模型由辭典資料學出，見 docs/csr.md）" }
+}

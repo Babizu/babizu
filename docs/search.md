@@ -64,6 +64,14 @@
 
 介面標「自動拆解」「自動派生」「自動同根」；辭典標註的構詞關係另外標「確定拆解」「確定派生」「確定同根」（第 3 節）。
 
+自動拆解的排序分數是 0.4 ＋ 分析成本；語言設定檔的 `morphology.lemmaRulePenalty`（κ，預設 0）大於 0 時再加 κ ×（分析中的音變成本）：
+既剝詞綴又要改寫詞幹（套方言規則）的分析，排在只做其中一件事的命中之後（[language-profile.md](language-profile.md)）。
+
+### 對應組檢索（實驗性）
+
+站台設定了對應組檢索的模型時，`search(q, { algorithm: 'csr' })` 的**詞條**改由它比對（命中方式 `csr`），例句與釋義照舊；
+方言之間的語音對應由辭典資料學出，見 [csr.md](csr.md)。
+
 ## 2. 分數：詞條與例句同一套規則（`scoring.ts`）
 
 分數是「等效距離」，越小越前面，分兩層算：
@@ -254,6 +262,7 @@ import { buildSearchIndex, levelOf, SearchEngine } from 'babizu/search'
 const { docs, lexicon } = buildSearchIndex({ items, groups, sourceIds, profile, varieties }) // 建置端
 const engine = new SearchEngine({ docs, lexicon, profile, derivations }) // 瀏覽器（Web Worker）
 engine.search('bintul', { fuzziness: 'normal', filters: { dialects: ['pazeh'] }, exclude: ['substring'] })
+engine.search('turu', { fuzziness: 'loose', algorithm: 'csr' }) // 對應組檢索（有模型時；csr.md）
 engine.searchPattern('yaku ka _* isiw') // 句型搜尋（pattern-query.md）
 
 // 一個查詢詞在詞庫中的所有命中（評估工具、句型搜尋）
@@ -269,3 +278,4 @@ engine.terms.lemmaHits('minudox', levelOf('normal')) // 只做自動拆解
 | `buildDerivationGraph`、`DerivationGraph` | 自動派生圖（[derivations.md](derivations.md)） |
 | `buildParseChart`、`ParseChart` | 拆解表（句型搜尋的構詞樣式用，[pattern-query.md](pattern-query.md)） |
 | `Checklist` | 檢查清單：例句中沒有辭典條目的詞、詞形完全相同的詞條、重複的例句、人工拆解與構詞樣式的對照 |
+| `CorrespondenceSearch`、`validateCsrModel` | 對應組檢索（實驗性，[csr.md](csr.md)）：模型檢查、成本、去詞綴、搜尋與說明 |

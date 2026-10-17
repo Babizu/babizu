@@ -24,6 +24,8 @@ interface DataSource {
   dataBase: string
   /** 建置版本（加在網址上，避免讀到快取的舊檔） */
   version: string
+  /** 站台有沒有對應組檢索（有的話一併載入 search/csr.json；實驗性） */
+  csr?: boolean
 }
 
 /** 檢查清單的請求都帶著辭典來源 */
@@ -44,18 +46,20 @@ async function fetchJson({ dataBase, version }: DataSource, path: string) {
   return res.json()
 }
 
-async function init({ dataBase, version }: DataSource): Promise<{ records: number; terms: number }> {
+async function init({ dataBase, version, csr = false }: DataSource): Promise<{ records: number; terms: number }> {
   if (!loading) {
     source = { dataBase, version }
     const at = source
     loading = (async () => {
-      const [docs, lexicon, profile, derivations] = await Promise.all([
+      const [docs, lexicon, profile, derivations, model] = await Promise.all([
         fetchJson(at, 'search/docs.json'),
         fetchJson(at, 'search/lexicon.json'),
         fetchJson(at, 'search/language.json'),
         fetchJson(at, 'search/derivations.json'),
+        // 對應組檢索的模型載入失敗時照常運作（比對方式退回 BCDP）
+        csr ? fetchJson(at, 'search/csr.json').catch(() => null) : null,
       ])
-      engine = new SearchEngine({ docs, lexicon, profile, derivations })
+      engine = new SearchEngine({ docs, lexicon, profile, derivations, csr: model })
       engine.warmup()
       return engine
     })()

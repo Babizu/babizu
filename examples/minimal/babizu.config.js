@@ -44,4 +44,6 @@ export default defineSite({
     ],
     words: 'ralan lalan bunan bunang tamoh tamo keru kilu sapi arem alim',
   },
+  // 對應組檢索（實驗性，docs/csr.md）：搜尋篩選多一個「比對方式」。示範用的模型是手寫的計數
+  csr: { model: 'csr-model.json' },
 })

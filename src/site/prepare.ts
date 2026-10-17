@@ -13,6 +13,7 @@
  * data/search/derivations.json     自動派生圖（查詞根找到加綴變化；見 src/search/derivations.ts）
  * data/search/parses.json          拆解表（每個詞的所有拆法，句型搜尋的構詞樣式用；見 src/search/parses.ts）
  * data/search/segmentations.json   有人工拆解的記錄（檢查清單的人工拆解對照用；見 src/search/segmentation.ts）
+ * data/search/csr.json             對應組檢索的模型（站台設定了 csr 才有；實驗性，見 docs/csr.md）
  * data/media/…、data/scans/…        從資料集複製（增量；已不存在的會刪除）
  * <站台 public/ 的檔案>             站徽等
  * ```
@@ -87,6 +88,7 @@ export async function prepareSiteData(site: ResolvedSite, { log = console.log }:
   await writeJson('search/lexicon.json', index.lexicon)
   await writeJson('search/language.json', index.profile)
   await writeJson('search/segmentations.json', index.segmentations)
+  if (site.csrModel) await writeJson('search/csr.json', site.csrModel)
   log(
     `✓ 搜尋索引：${index.docs.count} 筆記錄、${index.stats.terms} 個詞、詞圖 ${index.stats.nodes} 節點／${index.stats.edges} 邊（${Date.now() - t1} ms）`,
   )

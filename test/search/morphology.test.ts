@@ -229,3 +229,37 @@ describe('同一個詞有多種命中方式：取排序分數較好的一種', (
     expect(hit).toMatchObject({ matchType: 'fuzzy', distance: 0 })
   })
 })
+
+describe('lemmaRulePenalty：既剝詞綴又改寫詞幹的自動拆解排在後面', () => {
+  // masizaw 可以拆成 masi- ＋ zaw，zaw 套 z → d、w → u 就是 dau（0.1 ＋ 0.2，排序分數 0.7）；
+  // 整詞只差一個沒有規則的 i → e 就是 masezaw（模糊 1.5）
+  const list = [rec('masezaw', 'word', 'masezaw', '某詞'), rec('dau', 'word', 'dau', '另一個詞'), rec('daux', 'word', 'daux', '喝')]
+  const engineFor = (lemmaRulePenalty?: number) => {
+    const morphology: MorphologySpec = { cost: 0.1, minStem: 3, prefixes: [{ form: 'masi' }, { form: 'mu' }], ...(lemmaRulePenalty === undefined ? {} : { lemmaRulePenalty }) }
+    const built = buildSearchIndex({ items: list.map((record) => ({ record, shard: 'all' })), groups: [], sourceIds: ['dict'], profile: { ...PAZEH_PROFILE, morphology } })
+    const data = JSON.parse(JSON.stringify(built))
+    return new SearchEngine({ ...data, derivations: buildDerivationGraph(data) })
+  }
+  const order = (engine: SearchEngine, q: string) => ids(engine.search(q, { fields: ['native'], fuzziness: 'loose' }).entries)
+
+  it('預設（0）時與以前相同：自動拆解的 dau 排在 masezaw 前面', () => {
+    expect(order(engineFor(), 'masizaw').slice(0, 2)).toEqual(['dict:dau', 'dict:masezaw'])
+  })
+
+  it('加成之後 masezaw 排在前面；dau 仍然回傳，說明中的分析成本不變', () => {
+    const engine = engineFor(5)
+    const res = engine.search('masizaw', { fields: ['native'], fuzziness: 'loose' })
+    expect(ids(res.entries).slice(0, 2)).toEqual(['dict:masezaw', 'dict:dau'])
+    const dau = res.entries.find((h) => h.doc.id === 'dict:dau')
+    expect(dau).toMatchObject({ matchType: 'lemma' })
+    expect(dau?.analysis?.cost).toBeCloseTo(0.3)
+    expect(dau?.score).toBeCloseTo(0.4 + 0.3 + 5 * 0.2)
+  })
+
+  it('詞幹與詞庫詞完全相同的分析不受影響', () => {
+    const plain = engineFor().search('mudaux', { fields: ['native'] }).entries.find((h) => h.doc.id === 'dict:daux')
+    const penalized = engineFor(5).search('mudaux', { fields: ['native'] }).entries.find((h) => h.doc.id === 'dict:daux')
+    expect(penalized).toMatchObject({ matchType: 'lemma' })
+    expect(penalized?.score).toBe(plain?.score)
+  })
+})
