@@ -12,6 +12,9 @@ import vue from '@vitejs/plugin-vue'
 import { defaultClientConditions, type InlineConfig, type Plugin } from 'vite'
 import type { ResolvedSite } from './config.ts'
 import { APP_DIR, FRAMEWORK_ROOT } from './paths.ts'
+import { varietyCss } from './varieties.ts'
+
+export { varietyCss } from './varieties.ts'
 
 /**
  * 前端用到的套件：開發伺服器只預先打包這些（optimizeDeps.include），並關掉自動探索（noDiscovery）。
@@ -44,17 +47,6 @@ const RESOLVED_SITE_MODULE = `\0${SITE_MODULE}`
 const HTML_ESCAPES: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }
 const escapeHtml = (s: string) => s.replace(/[&<>"]/gu, (c) => HTML_ESCAPES[c] ?? c)
 
-/** 語言變體的顏色：每個變體一個 class，淺色與深色模式各一組 CSS 變數。 */
-export function varietyCss(varieties: ResolvedSite['client']['varieties']): string {
-  return varieties
-    .map(
-      (v) =>
-        `.variety-${v.code}{--variety-fg:${v.colors.light.fg};--variety-bg:${v.colors.light.bg}}` +
-        `.dark .variety-${v.code}{--variety-fg:${v.colors.dark.fg};--variety-bg:${v.colors.dark.bg}}`,
-    )
-    .join('\n')
-}
-
 function babizuSitePlugin(site: ResolvedSite): Plugin {
   const c = site.client
   const lang = c.defaultLocale
@@ -64,7 +56,10 @@ function babizuSitePlugin(site: ResolvedSite): Plugin {
       return id === SITE_MODULE ? RESOLVED_SITE_MODULE : null
     },
     load(id) {
-      return id === RESOLVED_SITE_MODULE ? `export default ${JSON.stringify(c)}` : null
+      if (id !== RESOLVED_SITE_MODULE) return null
+      // 展示版：站台設定在載入時由瀏覽器裡的專案產生（top-level await：引用它的模組都等它完成才執行）
+      if (c.playground) return `import { loadPlaygroundSite } from '@/playground/runtime.ts'\nexport default await loadPlaygroundSite(${JSON.stringify(c)})`
+      return `export default ${JSON.stringify(c)}`
     },
     // 要在 Vite 處理 HTML 之前代入：Vite 會處理內嵌的 <style>，佔位符若放在 CSS 裡會先被刪掉
     transformIndexHtml: {
@@ -109,6 +104,8 @@ export function createViteConfig(site: ResolvedSite, { publicDir, port }: { publ
       // 同一個套件只能有一份（Vue 的 provide／inject、reka-ui 的元件 context 都靠模組實體相同）
       dedupe: ['vue', 'vue-router', 'reka-ui'],
     },
+    // 展示版以它判斷瀏覽器裡的建置結果是不是這一版程式做的（app/src/playground/builder.ts）
+    define: { __BABIZU_BUILD_ID__: JSON.stringify(Date.now().toString(36)) },
     optimizeDeps: { include: FRONTEND_DEPS, noDiscovery: true },
     worker: { format: 'es' },
     build: {

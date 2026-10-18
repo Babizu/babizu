@@ -23,19 +23,29 @@ import { createHash } from 'node:crypto'
 import { copyFile, mkdir, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname, join, relative } from 'node:path'
 import { readDataset, validateDataset } from '../dataset.ts'
-import { buildSearchIndex } from '../search/index.ts'
 import type { LanguageProfile } from '#bcdp'
 import type { ResolvedSite } from './config.ts'
 import { buildDerivations } from './derivations.ts'
+import { buildSiteData, siteManifest, versionInput } from './site-data.ts'
 
-/** 網站資料格式版本；前端讀到不同版本時會要求重新建置 */
-export const SITE_DATA_VERSION = 2
+export { SITE_DATA_VERSION } from './site-data.ts'
 
 /** 由站台的資料集產生網站用的靜態資料（輸出位置與檔案見檔頭）。 */
 export async function prepareSiteData(site: ResolvedSite, { log = console.log }: { log?: (message: string) => void } = {}): Promise<{ publicDir: string; records: number; terms: number }> {
   const t0 = Date.now()
   const outRoot = join(site.root, '.babizu', 'public')
   const out = join(outRoot, 'data')
+
+  // 展示版：沒有資料集，網站資料在瀏覽器裡由專案建置（docs/playground.md）；這裡只放範例專案與站台的靜態檔
+  if (site.playgroundSample) {
+    await rm(out, { recursive: true, force: true })
+    await mkdir(join(outRoot, 'playground'), { recursive: true })
+    await writeFile(join(outRoot, 'playground', 'sample.json'), JSON.stringify(site.playgroundSample))
+    await mirrorPublic(site.publicDir, outRoot)
+    await writeFile(join(outRoot, '.nojekyll'), '')
+    log(`✓ 展示版：範例專案 ${site.playgroundSample.words.length} 個詞、${site.playgroundSample.sentences.length} 個例句（網站資料在瀏覽器中建置）`)
+    return { publicDir: outRoot, records: site.playgroundSample.words.length + site.playgroundSample.sentences.length, terms: 0 }
+  }
 
   // 1. 讀取並驗證資料集
   const loaded = await readDataset(site.dataDir)
@@ -47,60 +57,36 @@ export async function prepareSiteData(site: ResolvedSite, { log = console.log }:
     throw new Error(`資料集驗證失敗（${errors.length} 個錯誤）：\n- ${errors.slice(0, 20).map((e) => `${e.source}：${e.message}`).join('\n- ')}`)
   }
 
-  // 2. 分片與來源（壓縮輸出）
+  // 2. 網站資料的內容（site-data.ts；展示版在瀏覽器用同一份程式），依序寫出（壓縮，無縮排）
   await rm(join(out, 'records'), { recursive: true, force: true })
   await rm(join(out, 'search'), { recursive: true, force: true })
+  const t1 = Date.now()
+  let t2 = t1
+  const data = await buildSiteData(
+    {
+      loaded,
+      // 站台設定檢查過語言設定檔（loadSiteConfig 在找不到或格式不對時丟出錯誤）
+      profile: site.client.profile as LanguageProfile,
+      varieties: site.client.varieties.map((v) => ({ code: v.code, parent: v.parent })),
+      csrModel: site.csrModel,
+    },
+    {
+      derive: (args) => buildDerivations({ ...args, cacheDir: join(site.root, '.babizu', 'cache') }),
+      onStep: (step) => {
+        if (step === 'derivations') t2 = Date.now()
+      },
+    },
+  )
   const fileHashes: Record<string, string> = {}
-  const shardIndex: Record<string, Array<{ key: string; label: string; records: number; groups: number }>> = {}
-  const writeJson = async (path: string, data: unknown) => {
-    const content = JSON.stringify(data)
+  for (const [path, content] of data.files) {
+    const text = JSON.stringify(content)
     const full = join(out, path)
     await mkdir(dirname(full), { recursive: true })
-    await writeFile(full, content)
-    fileHashes[path] = createHash('sha1').update(content).digest('hex').slice(0, 12)
+    await writeFile(full, text)
+    fileHashes[path] = createHash('sha1').update(text).digest('hex').slice(0, 12)
   }
-  for (const { source, shards } of loaded) {
-    shardIndex[source.id] = []
-    for (const shard of shards) {
-      await writeJson(`records/${source.id}/${shard.key}.json`, {
-        source: source.id,
-        shard: shard.key,
-        label: shard.label,
-        groups: shard.groups,
-        records: shard.records,
-      })
-      shardIndex[source.id].push({ key: shard.key, label: shard.label, records: shard.records.length, groups: shard.groups.length })
-    }
-  }
-  await writeJson('sources.json', loaded.map((l) => l.source))
-
-  // 3. 搜尋索引
-  const t1 = Date.now()
-  const index = buildSearchIndex({
-    items: loaded.flatMap(({ shards }) => shards.flatMap((shard) => shard.records.map((record) => ({ record, shard: shard.key })))),
-    groups: loaded.flatMap(({ shards }) => shards.flatMap((s) => s.groups)),
-    sourceIds: loaded.map((l) => l.source.id),
-    // 站台設定檢查過語言設定檔（loadSiteConfig 在找不到或格式不對時丟出錯誤）
-    profile: site.client.profile as LanguageProfile,
-    varieties: site.client.varieties.map((v) => ({ code: v.code, parent: v.parent })),
-  })
-  await writeJson('search/docs.json', index.docs)
-  await writeJson('search/lexicon.json', index.lexicon)
-  await writeJson('search/language.json', index.profile)
-  await writeJson('search/segmentations.json', index.segmentations)
-  if (site.csrModel) await writeJson('search/csr.json', site.csrModel)
-  log(
-    `✓ 搜尋索引：${index.docs.count} 筆記錄、${index.stats.terms} 個詞、詞圖 ${index.stats.nodes} 節點／${index.stats.edges} 邊（${Date.now() - t1} ms）`,
-  )
-  const t2 = Date.now()
-  const derivations = await buildDerivations({
-    lexicon: index.lexicon,
-    profile: index.profile,
-    count: index.stats.terms,
-    cacheDir: join(site.root, '.babizu', 'cache'),
-  })
-  await writeJson('search/derivations.json', derivations.data)
-  await writeJson('search/parses.json', derivations.parses)
+  const { index, derivations } = data
+  log(`✓ 搜尋索引：${data.counts.records} 筆記錄、${index.terms} 個詞、詞圖 ${index.nodes} 節點／${index.edges} 邊（${t2 - t1} ms）`)
   log(
     `✓ 自動派生圖：${derivations.data.edges.length / 3} 條邊、${derivations.data.analyses.length} 種分析；拆解表 ${derivations.parses.edges.length / 3} 種拆法（${derivations.cached ? '快取' : `${Date.now() - t2} ms`}）`,
   )
@@ -113,21 +99,10 @@ export async function prepareSiteData(site: ResolvedSite, { log = console.log }:
   await writeFile(join(outRoot, '.nojekyll'), '')
 
   // 5. manifest：版本是所有 JSON 內容的雜湊，資料一變瀏覽器就會取新檔
-  const version = createHash('sha1').update(Object.entries(fileHashes).sort().flat().join('\n')).digest('hex').slice(0, 12)
-  await writeFile(
-    join(out, 'manifest.json'),
-    JSON.stringify({
-      schemaVersion: SITE_DATA_VERSION,
-      version,
-      builtAt: new Date().toISOString(),
-      sources: loaded.map((l) => l.source.id),
-      counts: { records: index.docs.count, terms: index.stats.terms },
-      shards: shardIndex,
-      files: fileHashes,
-    }),
-  )
+  const version = createHash('sha1').update(versionInput(fileHashes)).digest('hex').slice(0, 12)
+  await writeFile(join(out, 'manifest.json'), JSON.stringify(siteManifest(data, { version, fileHashes, builtAt: new Date().toISOString() })))
   log(`✓ 網站資料：${loaded.length} 個來源、媒體更新 ${copied} 個檔案（共 ${Date.now() - t0} ms）→ ${relative(site.root, out)}`)
-  return { publicDir: outRoot, records: index.docs.count, terms: index.stats.terms }
+  return { publicDir: outRoot, records: data.counts.records, terms: data.counts.terms }
 }
 
 /** 列出目錄下所有檔案（相對路徑）。目錄不存在時回傳空陣列。 */

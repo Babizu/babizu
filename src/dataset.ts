@@ -22,48 +22,11 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { createValidators, formatErrors } from './schema/index.ts'
 import type { CorpusGroup, CorpusRecord, CorpusSource } from './schema/types.ts'
+import { computeStats, datasetFiles, DATASET_FORMAT, DATASET_VERSION, shardPath, type DatasetShard, type Issue, type LoadedSource } from './dataset-core.ts'
 
-export const DATASET_FORMAT = 'babizu-dataset'
-export const DATASET_VERSION = 1
+// 型別與純計算在 dataset-core.ts（瀏覽器也用：展示版在瀏覽器建置網站資料、匯出資料集）
+export { computeStats, datasetFiles, DATASET_FORMAT, DATASET_VERSION, shardPath, type DatasetShard, type Issue, type LoadedSource } from './dataset-core.ts'
 
-export interface DatasetShard {
-  /** 分片鍵（檔名） */
-  key: string
-  /** 顯示名稱 */
-  label: string
-  groups: CorpusGroup[]
-  records: CorpusRecord[]
-}
-
-export interface LoadedSource {
-  source: CorpusSource
-  shards: DatasetShard[]
-}
-
-export interface Issue {
-  level: 'warn' | 'error'
-  source: string
-  message: string
-}
-
-/** 分片檔的路徑（相對資料集根目錄）。 */
-export function shardPath(sourceId: string, shardKey: string): string {
-  return `records/${sourceId}/${shardKey}.json`
-}
-
-/** 各來源的統計（寫進 sources.json，網站的「資料來源」頁顯示）。 */
-export function computeStats(shards: DatasetShard[]): Record<string, number> {
-  const stats: Record<string, number> = { records: 0, groups: 0, shards: shards.length, audio: 0, affix: 0, word: 0, phrase: 0, sentence: 0 }
-  for (const shard of shards) {
-    stats.groups += shard.groups.length
-    for (const r of shard.records) {
-      stats.records++
-      stats[r.unit]++
-      if (r.media.some((m) => m.type === 'audio' && m.available)) stats.audio++
-    }
-  }
-  return stats
-}
 
 /**
  * 以 schema 驗證來源與分片，並做全域一致性檢查
@@ -119,8 +82,6 @@ export function validateDataset(loaded: LoadedSource[], { dialects }: { dialects
   return issues
 }
 
-const pretty = (data: unknown) => `${JSON.stringify(data, null, 2)}\n`
-
 /**
  * 寫出資料集的 JSON 部分（dataset.json、sources.json、records/）。媒體與掃描圖由 syncAssets 處理。
  * 會先清空 records/，所以移除的來源或分片不會殘留。
@@ -128,29 +89,11 @@ const pretty = (data: unknown) => `${JSON.stringify(data, null, 2)}\n`
  */
 export async function writeDataset(dir: string, loaded: LoadedSource[]): Promise<void> {
   await rm(join(dir, 'records'), { recursive: true, force: true })
-  for (const { source, shards } of loaded) {
-    for (const shard of shards) {
-      const path = join(dir, shardPath(source.id, shard.key))
-      await mkdir(dirname(path), { recursive: true })
-      await writeFile(
-        path,
-        pretty({ source: source.id, shard: shard.key, label: shard.label, groups: shard.groups, records: shard.records }),
-      )
-    }
+  for (const [path, text] of datasetFiles(loaded)) {
+    const full = join(dir, path)
+    await mkdir(dirname(full), { recursive: true })
+    await writeFile(full, text)
   }
-  const sources = loaded.map(({ source, shards }) => ({ ...source, stats: computeStats(shards) }))
-  await writeFile(join(dir, 'sources.json'), pretty(sources))
-  await writeFile(
-    join(dir, 'dataset.json'),
-    pretty({
-      format: DATASET_FORMAT,
-      version: DATASET_VERSION,
-      sources: loaded.map(({ source, shards }) => ({
-        id: source.id,
-        shards: shards.map((s) => ({ key: s.key, label: s.label, records: s.records.length, groups: s.groups.length })),
-      })),
-    }),
-  )
 }
 
 /** dataset.json 的內容 */

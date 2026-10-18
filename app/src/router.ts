@@ -10,6 +10,7 @@ import { createRouter, createWebHashHistory } from 'vue-router'
 import { msg } from './i18n.ts'
 import { pageTitle } from './composables/usePageTitle.ts'
 import SearchView from './views/SearchView.vue'
+import site from 'virtual:babizu/site'
 
 export const router = createRouter({
   history: createWebHashHistory(),
@@ -55,6 +56,14 @@ export const router = createRouter({
       name: 'lab',
       component: () => import('./views/LabView.vue'),
       meta: { titleKey: msg('演算法實驗室') },
+    },
+    {
+      // 展示版的工作台（docs/playground.md）；不是展示版時轉回首頁
+      path: '/studio',
+      name: 'studio',
+      component: () => import('./views/StudioView.vue'),
+      beforeEnter: () => (site.playground ? true : { name: 'search' }),
+      meta: { titleKey: msg('工作台') },
     },
     {
       path: '/about',

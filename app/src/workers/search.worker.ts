@@ -17,6 +17,7 @@
 import type { PatternSearchOptions } from '@babizu/pattern/search.ts'
 import { Checklist, SearchEngine, type Fuzziness, type GroupPageOptions, type ListOptions, type SearchOptions, type SegmentationData, type SegmentationFilter, type TokenKind } from '@babizu/search/index.ts'
 import { fetchWithRetry } from '../services/fetch-retry.ts'
+import { getFile } from '../playground/db.ts'
 
 /** 資料的位置 */
 interface DataSource {
@@ -26,6 +27,8 @@ interface DataSource {
   version: string
   /** 站台有沒有對應組檢索（有的話一併載入 search/csr.json；實驗性） */
   csr?: boolean
+  /** 展示版：資料在 IndexedDB（這個名稱的資料庫）裡，不用網址 */
+  playground?: string
 }
 
 /** 檢查清單的請求都帶著辭典來源 */
@@ -40,15 +43,20 @@ let source: DataSource | null = null
 /** 拆解表載入中 */
 let parsesLoading: Promise<void> | null = null
 
-async function fetchJson({ dataBase, version }: DataSource, path: string) {
+async function fetchJson({ dataBase, version, playground }: DataSource, path: string) {
+  if (playground) {
+    const content = await getFile(playground, version, path)
+    if (content === undefined) throw new Error(`Cannot load ${path} from the playground build`)
+    return content
+  }
   const res = await fetchWithRetry(`${dataBase}${path}?v=${version}`)
   if (!res.ok) throw new Error(`Cannot load ${path} (HTTP ${res.status})`)
   return res.json()
 }
 
-async function init({ dataBase, version, csr = false }: DataSource): Promise<{ records: number; terms: number }> {
+async function init({ dataBase, version, csr = false, playground }: DataSource): Promise<{ records: number; terms: number }> {
   if (!loading) {
-    source = { dataBase, version }
+    source = { dataBase, version, playground }
     const at = source
     loading = (async () => {
       const [docs, lexicon, profile, derivations, model] = await Promise.all([

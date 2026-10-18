@@ -1,4 +1,4 @@
-# 框架的持續整合：單元測試、建置示範站台、端對端測試。
+# 框架的持續整合：單元測試、建置示範站台與展示版、端對端測試。
 name: CI
 
 on:
@@ -27,5 +27,5 @@ jobs:
       - name: 安裝 Playwright 瀏覽器
         run: npx playwright install --with-deps chromium
 
-      - name: 建置示範站台並跑端對端測試
+      - name: 建置示範站台與展示版並跑端對端測試
         run: npm run test:e2e

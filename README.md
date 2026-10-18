@@ -46,6 +46,7 @@ npx babizu dev        # 在有 babizu.config.js 的目錄
 | [ui-guidelines.md](docs/ui-guidelines.md) | 介面設計規範 |
 | [lab-design.md](docs/lab-design.md) | 演算法實驗室的設計規格 |
 | [deployment.md](docs/deployment.md) | 部署到 GitHub Pages 或其他靜態主機 |
+| [playground.md](docs/playground.md) | 展示版：在瀏覽器裡上傳、編輯詞表與規則，即時建置成辭典（工作坊用，不必會程式）；運作方式與限制 |
 
 BCDP 套件（`packages/bcdp`）的文件：
 
@@ -83,9 +84,10 @@ BCDP 套件（`packages/bcdp`）的文件：
 ```bash
 npm install
 npm test                  # 單元測試（演算法、schema、搜尋引擎、資料管線、站台設定、前端元件、語系完整性）
-npm run test:e2e          # 建置示範站台並跑端對端測試（需要 npx playwright install chromium，
+npm run test:e2e          # 建置示範站台與展示版並跑端對端測試（需要 npx playwright install chromium，
                           #   或 PLAYWRIGHT_CHANNEL=msedge 使用本機的 Edge）
 npm run example:dev       # 示範站台的開發伺服器
+npm run playground        # 展示版的開發伺服器（docs/playground.md）
 npm run bench             # 模糊搜尋效能基準
 npm run zoo               # 錯誤解法動物園：每個具名突變都必須被某個測試殺掉（test/zoo/）
 ```
@@ -97,14 +99,16 @@ npm run zoo               # 錯誤解法動物園：每個具名突變都必須�
 │   ├── schema/        標準資料格式：JSON Schema、代碼表、型別、輔助函式
 │   ├── search/        搜尋鍵、索引建置、查詢引擎（建置端與瀏覽器共用）
 │   ├── pattern/       句型搜尋：剖析、比對器、構詞樣式（docs/pattern-query.md）
+│   ├── playground/    展示版：專案格式、匯入、在記憶體建置、匯出（docs/playground.md）
 │   ├── pipeline/      轉接器工具、exportDataset
 │   ├── site/          站台設定、網站資料準備、Vite 建置
 │   └── dataset.ts     資料集讀寫與驗證
 ├── app/               網站前端（Vue 3＋shadcn-vue＋Tailwind CSS v4）
 ├── locales/           介面譯文（en；中文是原文，寫在程式裡）
 ├── examples/minimal/  示範站台
+├── examples/playground/ 展示版（範例專案、關於頁）
 ├── test/              單元測試
-├── e2e/               端對端測試（示範站台）
+├── e2e/               端對端測試（示範站台、展示版）
 └── docs/              文件
 ```
 

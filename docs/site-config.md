@@ -73,6 +73,7 @@ export default defineSite({
 | `lab.morph.failures` | `[string, string][]` | `[]` | 找不到的例子（例如需要框架不支援的構詞），分頁會說明原因 |
 | `messages` | string | `locales` | 介面字串目錄 |
 | `csr` | `{ model: string }` 或 `false` | 不啟用 | 對應組檢索（實驗性）：`model` 是模型檔的路徑（由辭典資料學出的方言語音對應，見 [csr.md](csr.md)）。設定了才會在右上角的設定選單出現「模糊搜尋」，讀者可以改用它當模糊搜尋的核心（選擇記在瀏覽器裡；搜尋條件與結果的呈現不變）；建置時檢查模型並複製成 `data/search/csr.json`。沒有設定時網站與以前相同 |
+| `playground` | `{ sample: string }` | 不是展示版 | 展示版（[playground.md](playground.md)）：讀者在瀏覽器裡上傳、編輯詞表與規則，即時建置。`sample` 是第一次開啟時的範例專案（展示版的專案檔）。這時不讀資料集（`data`），語言設定檔（`language`）可以省略、用範例專案的；不能同時設定 `csr` |
 
 ## 語言變體 `varieties`
 

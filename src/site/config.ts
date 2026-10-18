@@ -27,28 +27,14 @@ import { validateProfile, type LanguageProfile } from '#bcdp'
 import { PatternError } from '../pattern/errors.ts'
 import { validateCsrModel, type CsrModel } from '../search/csr/model.ts'
 import { parsePattern } from '../pattern/parser.ts'
-import type { ClientSite, ColorPair, ResolvedVariety } from './client.ts'
+import type { ClientSite } from './client.ts'
 import { extractMessages } from './extract-messages.ts'
+import { CODE, localize, resolveVarieties, type Localized, type VarietyConfig } from './varieties.ts'
+import { validateProject, type PlaygroundProject } from '../playground/project.ts'
 import { BUILTIN_LOCALE_NAMES, BUILTIN_LOCALES, FRAMEWORK_ROOT, SOURCE_LOCALE, loadBuiltinMessages } from './paths.ts'
 
 export type { ClientSite, ColorPair, ResolvedVariety } from './client.ts'
-
-/** 可以依語系提供的文字：字串（所有語系共用）或 `{ 'zh-TW': …, en: … }`。 */
-export type Localized = string | Record<string, string>
-
-/** 語言變體（方言） */
-export interface VarietyConfig {
-  /** 代碼（小寫英數與連字號），記錄的 dialects 欄位使用 */
-  code: string
-  /** 顯示名稱 */
-  label: Localized
-  /** 所屬的上層變體；篩選上層時一併納入（例如愛蘭 ⊂ 巴宰） */
-  parent?: string | null
-  /** 色相（0–360）；未指定時繼承 parent 的色相，最上層預設依順序分配 */
-  hue?: number
-  /** 直接指定顏色（CSS 色值） */
-  colors?: { light?: ColorPair; dark?: ColorPair }
-}
+export { localize, varietyColors, type Localized, type VarietyConfig } from './varieties.ts'
 
 /** 一個搜尋範例 */
 export interface SearchExample {
@@ -107,21 +93,16 @@ export interface SiteConfigInput {
    * 設定了才會在搜尋篩選中出現「比對方式」的選項，讀者可以改用它比對詞條；沒有設定（或 false）時網站與以前相同
    */
   csr?: { model: string } | false
+  /**
+   * 展示版（docs/playground.md）：讀者在瀏覽器裡上傳、編輯詞表與規則，即時建置。
+   * `sample` 是第一次開啟時的範例專案（展示版的專案檔）。這時不讀資料集，語言設定檔也可以省略（用範例專案的）
+   */
+  playground?: { sample: string }
 }
 
 /** 定義站台設定（只是回傳原物件，用來取得型別檢查）。 */
 export function defineSite(config: SiteConfigInput): SiteConfigInput {
   return config
-}
-
-const CODE = /^[a-z][a-z0-9-]*$/
-
-/** 把 Localized 攤成每個語系都有值的物件（缺的語系回退到預設語系）。 */
-export function localize(value: Localized | undefined | null, locales: string[], fallbackLocale: string): Record<string, string> | null {
-  if (value === undefined || value === null) return null
-  if (typeof value === 'string') return Object.fromEntries(locales.map((l) => [l, value]))
-  const fallback = value[fallbackLocale] ?? Object.values(value)[0] ?? ''
-  return Object.fromEntries(locales.map((l) => [l, value[l] ?? fallback]))
 }
 
 /**
@@ -139,21 +120,6 @@ function checkMessages(table: unknown, file: string, errors: string[]): Record<s
     else errors.push(`${file}：「${k}」的譯文必須是字串（譯文檔是扁平的，鍵是中文原文）`)
   }
   return out
-}
-
-/**
- * 依序分配預設色相，讓沒指定顏色的變體也能彼此區分。
- * 選用在淺色背景上都夠清楚、彼此差距大的色相。
- */
-const DEFAULT_HUES = [55, 175, 265, 330, 115, 20, 215, 85]
-
-/** 語言變體的顏色（OKLCH）。從屬變體用同色相、較低彩度，表示「包含於上層」。 */
-export function varietyColors(hue: number, child: boolean): { light: ColorPair; dark: ColorPair } {
-  const c = child ? 0.45 : 1
-  return {
-    light: { fg: `oklch(${child ? 0.5 : 0.47} ${(0.1 * c).toFixed(3)} ${hue})`, bg: `oklch(0.955 ${(0.03 * c).toFixed(3)} ${hue})` },
-    dark: { fg: `oklch(${child ? 0.8 : 0.82} ${(0.09 * c).toFixed(3)} ${hue})`, bg: `oklch(${child ? 0.3 : 0.31} ${(0.04 * c).toFixed(3)} ${hue})` },
-  }
 }
 
 /**
@@ -195,10 +161,26 @@ export async function loadSiteConfig(siteDir: string) {
   }
   const localeNames = Object.fromEntries(locales.map((l) => [l, input.localeNames?.[l] ?? BUILTIN_LOCALE_NAMES[l] ?? l]))
 
+  // 展示版：範例專案（語言設定檔用它的）
+  let playgroundSample: PlaygroundProject | null = null
+  if (input.playground) {
+    const file = typeof input.playground.sample === 'string' ? join(root, input.playground.sample) : null
+    if (!file) errors.push('playground.sample 必須是範例專案的路徑')
+    else if (!existsSync(file)) errors.push(`找不到展示版的範例專案 ${file}`)
+    else {
+      const sample = JSON.parse(await readFile(file, 'utf8'))
+      const problems = validateProject(sample)
+      for (const e of problems) errors.push(`展示版的範例專案：${e.path ? `${e.path}：` : ''}${e.message}`)
+      if (problems.length === 0) playgroundSample = sample
+    }
+    if (input.csr) errors.push('展示版不提供對應組檢索（csr）')
+  }
+
   // 語言設定檔
   const languageFile = join(root, input.language ?? 'language.json')
   let profile: LanguageProfile | null = null
-  if (!existsSync(languageFile)) errors.push(`找不到語言設定檔 ${languageFile}`)
+  if (input.playground && !input.language) profile = playgroundSample?.profile ?? null
+  else if (!existsSync(languageFile)) errors.push(`找不到語言設定檔 ${languageFile}`)
   else {
     profile = JSON.parse(await readFile(languageFile, 'utf8'))
     for (const e of validateProfile(profile)) errors.push(`語言設定檔：${e}`)
@@ -230,46 +212,7 @@ export async function loadSiteConfig(siteDir: string) {
   }
 
   // 語言變體
-  const varietyInput = input.varieties ?? []
-  const codes = new Set<string>()
-  for (const v of varietyInput) {
-    if (!CODE.test(v.code ?? '')) errors.push(`變體代碼「${v.code}」格式不正確`)
-    if (codes.has(v.code)) errors.push(`變體代碼「${v.code}」重複`)
-    codes.add(v.code)
-  }
-  for (const v of varietyInput) {
-    if (v.parent && !codes.has(v.parent)) errors.push(`變體 ${v.code} 的 parent「${v.parent}」不存在`)
-  }
-  // 色相：最上層的變體先決定（沒指定就依序分配），下層變體沿用最上層祖先的色相，
-  // 這樣不論清單中的順序如何，從屬的變體都和上層同色系
-  const hues = new Map<string, number>()
-  let nextHue = 0
-  for (const v of varietyInput) {
-    if (!v.parent) hues.set(v.code, v.hue ?? DEFAULT_HUES[nextHue++ % DEFAULT_HUES.length])
-  }
-  const hueOf = (v: VarietyConfig): number => {
-    if (v.hue !== undefined) return v.hue
-    const seen = new Set<string>()
-    let cur = v
-    while (cur.parent && !seen.has(cur.code)) {
-      seen.add(cur.code)
-      const parent = varietyInput.find((p) => p.code === cur.parent)
-      if (!parent) break
-      if (parent.hue !== undefined) return parent.hue
-      cur = parent
-    }
-    return hues.get(cur.code) ?? DEFAULT_HUES[0]
-  }
-  const varieties: ResolvedVariety[] = varietyInput.map((v) => {
-    const hue = hueOf(v)
-    const derived = varietyColors(hue, !!v.parent)
-    return {
-      code: v.code,
-      parent: v.parent ?? null,
-      label: localize(v.label, locales, defaultLocale) ?? Object.fromEntries(locales.map((l) => [l, v.code])),
-      colors: { light: v.colors?.light ?? derived.light, dark: v.colors?.dark ?? derived.dark },
-    }
-  })
+  const varieties = resolveVarieties(input.varieties ?? [], locales, defaultLocale, errors)
 
   // 「關於」頁：Markdown → HTML（可以依語系分檔；缺的語系用預設語系的內容）
   const aboutPaths = localize(input.about, locales, defaultLocale)
@@ -334,6 +277,7 @@ export async function loadSiteConfig(siteDir: string) {
     // 沒有語言設定檔時上面已經丟出錯誤
     profile: profile as LanguageProfile,
     csr: csrModel !== null,
+    playground: !!input.playground,
   }
 
   return {
@@ -345,6 +289,8 @@ export async function loadSiteConfig(siteDir: string) {
     overrides,
     /** 對應組檢索的模型（沒有設定時是 null）；建置時寫成 search/csr.json */
     csrModel,
+    /** 展示版的範例專案（不是展示版時是 null）；建置時寫成 playground/sample.json */
+    playgroundSample,
     /** 會送進瀏覽器的部分 */
     client,
   }

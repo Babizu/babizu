@@ -1,0 +1,611 @@
+{
+  "format": "babizu-playground-project",
+  "version": 1,
+  "title": {
+    "zh-TW": "示範語（範例專案）",
+    "en": "Demo language (sample project)"
+  },
+  "description": {
+    "zh-TW": "虛構的小語言：北部、南部兩種方言與一種地方變體，有前綴、後綴、中綴與重疊。只用來展示 babizu，與任何真實的語言無關。",
+    "en": "A made-up little language with northern and southern dialects, one local variety, and prefixes, suffixes, an infix and reduplication. For showing babizu only; it is not a real language."
+  },
+  "varieties": [
+    {
+      "code": "north",
+      "label": {
+        "zh-TW": "北部",
+        "en": "Northern"
+      },
+      "hue": 265
+    },
+    {
+      "code": "south",
+      "label": {
+        "zh-TW": "南部",
+        "en": "Southern"
+      },
+      "hue": 150
+    },
+    {
+      "code": "coast",
+      "parent": "south",
+      "label": {
+        "zh-TW": "南部（海岸）",
+        "en": "Southern (coastal)"
+      }
+    }
+  ],
+  "profile": {
+    "format": "babizu-language-profile",
+    "version": 1,
+    "normalizer": {
+      "lowercase": true,
+      "charMap": {
+        "ʔ": "'"
+      },
+      "stripDiacritics": true
+    },
+    "costs": {
+      "substitute": 1.5,
+      "delete": 1,
+      "insert": 0.8,
+      "overrides": {
+        " ": {
+          "delete": 0.1,
+          "insert": 0.1
+        }
+      }
+    },
+    "rules": [
+      {
+        "category": "流音",
+        "label": {
+          "en": "Liquids"
+        },
+        "description": "北部說 r、南部說 l",
+        "rules": [
+          [
+            "r",
+            "l",
+            0.1
+          ]
+        ]
+      },
+      {
+        "category": "詞尾",
+        "label": {
+          "en": "Word-final"
+        },
+        "position": "final",
+        "rules": [
+          [
+            "n",
+            "ng",
+            0.1
+          ],
+          [
+            "h",
+            "",
+            0.1
+          ],
+          [
+            "'",
+            "",
+            0.1
+          ]
+        ]
+      },
+      {
+        "category": "元音",
+        "label": {
+          "en": "Vowels"
+        },
+        "rules": [
+          [
+            "e",
+            "i",
+            0.2
+          ],
+          [
+            "o",
+            "u",
+            0.2
+          ]
+        ]
+      }
+    ],
+    "morphology": {
+      "minStem": 3,
+      "prefixes": [
+        {
+          "form": "ma",
+          "gloss": "主事"
+        },
+        {
+          "form": "pa",
+          "gloss": "使動"
+        }
+      ],
+      "suffixes": [
+        {
+          "form": "an",
+          "gloss": "處所"
+        }
+      ],
+      "infixes": [
+        {
+          "form": "in",
+          "gloss": "完成"
+        }
+      ],
+      "reduplication": [
+        {
+          "pattern": "CV"
+        }
+      ]
+    }
+  },
+  "words": [
+    {
+      "id": "w1",
+      "text": "ralan",
+      "zh": "路",
+      "en": "road",
+      "dialects": [
+        "north"
+      ],
+      "pos": "n",
+      "alt": [],
+      "note": ""
+    },
+    {
+      "id": "w2",
+      "text": "lalan",
+      "zh": "路",
+      "en": "road",
+      "dialects": [
+        "south"
+      ],
+      "pos": "n",
+      "alt": [],
+      "note": ""
+    },
+    {
+      "id": "w3",
+      "text": "bunan",
+      "zh": "月亮",
+      "en": "moon",
+      "dialects": [
+        "north"
+      ],
+      "pos": "n",
+      "alt": [],
+      "note": ""
+    },
+    {
+      "id": "w4",
+      "text": "bunang",
+      "zh": "月亮",
+      "en": "moon",
+      "dialects": [
+        "south"
+      ],
+      "pos": "n",
+      "alt": [],
+      "note": ""
+    },
+    {
+      "id": "w5",
+      "text": "tamoh",
+      "zh": "水",
+      "en": "water",
+      "dialects": [
+        "north"
+      ],
+      "pos": "n",
+      "alt": [],
+      "note": ""
+    },
+    {
+      "id": "w6",
+      "text": "tamo",
+      "zh": "水",
+      "en": "water",
+      "dialects": [
+        "coast"
+      ],
+      "pos": "n",
+      "alt": [],
+      "note": ""
+    },
+    {
+      "id": "w7",
+      "text": "keru",
+      "zh": "石頭",
+      "en": "stone",
+      "dialects": [
+        "north"
+      ],
+      "pos": "n",
+      "alt": [],
+      "note": ""
+    },
+    {
+      "id": "w8",
+      "text": "kilu",
+      "zh": "石頭",
+      "en": "stone",
+      "dialects": [
+        "south"
+      ],
+      "pos": "n",
+      "alt": [],
+      "note": ""
+    },
+    {
+      "id": "w9",
+      "text": "sapi'",
+      "zh": "火",
+      "en": "fire",
+      "dialects": [
+        "north"
+      ],
+      "pos": "n",
+      "alt": [],
+      "note": ""
+    },
+    {
+      "id": "w10",
+      "text": "sapi",
+      "zh": "火",
+      "en": "fire",
+      "dialects": [
+        "south"
+      ],
+      "pos": "n",
+      "alt": [],
+      "note": ""
+    },
+    {
+      "id": "w11",
+      "text": "arem",
+      "zh": "夜晚",
+      "en": "night",
+      "dialects": [
+        "north"
+      ],
+      "pos": "n",
+      "alt": [],
+      "note": ""
+    },
+    {
+      "id": "w12",
+      "text": "alim",
+      "zh": "夜晚",
+      "en": "night",
+      "dialects": [
+        "coast"
+      ],
+      "pos": "n",
+      "alt": [],
+      "note": ""
+    },
+    {
+      "id": "w13",
+      "text": "bari",
+      "zh": "風",
+      "en": "wind",
+      "dialects": [
+        "north"
+      ],
+      "pos": "n",
+      "alt": [],
+      "note": ""
+    },
+    {
+      "id": "w14",
+      "text": "bali",
+      "zh": "風",
+      "en": "wind",
+      "dialects": [
+        "south"
+      ],
+      "pos": "n",
+      "alt": [],
+      "note": ""
+    },
+    {
+      "id": "w15",
+      "text": "asu",
+      "zh": "狗",
+      "en": "dog",
+      "dialects": [],
+      "pos": "n",
+      "alt": [],
+      "note": ""
+    },
+    {
+      "id": "w16",
+      "text": "tulu",
+      "zh": "三",
+      "en": "three",
+      "dialects": [],
+      "pos": "num",
+      "alt": [],
+      "note": ""
+    },
+    {
+      "id": "w17",
+      "text": "tutulu",
+      "zh": "三個（人）",
+      "en": "three (people)",
+      "dialects": [],
+      "pos": "num",
+      "alt": [],
+      "note": ""
+    },
+    {
+      "id": "w18",
+      "text": "ruza",
+      "zh": "跑",
+      "en": "run",
+      "dialects": [
+        "north"
+      ],
+      "pos": "v",
+      "alt": [],
+      "note": ""
+    },
+    {
+      "id": "w19",
+      "text": "luza",
+      "zh": "跑",
+      "en": "run",
+      "dialects": [
+        "south"
+      ],
+      "pos": "v",
+      "alt": [],
+      "note": ""
+    },
+    {
+      "id": "w20",
+      "text": "maruza",
+      "zh": "在跑",
+      "en": "to run",
+      "dialects": [
+        "north"
+      ],
+      "pos": "v",
+      "alt": [],
+      "note": ""
+    },
+    {
+      "id": "w21",
+      "text": "maluza",
+      "zh": "在跑",
+      "en": "to run",
+      "dialects": [
+        "south"
+      ],
+      "pos": "v",
+      "alt": [],
+      "note": ""
+    },
+    {
+      "id": "w22",
+      "text": "kan",
+      "zh": "吃",
+      "en": "eat",
+      "dialects": [],
+      "pos": "v",
+      "alt": [],
+      "note": ""
+    },
+    {
+      "id": "w23",
+      "text": "makan",
+      "zh": "在吃",
+      "en": "to eat",
+      "dialects": [],
+      "pos": "v",
+      "alt": [],
+      "note": ""
+    },
+    {
+      "id": "w24",
+      "text": "pakan",
+      "zh": "餵",
+      "en": "to feed",
+      "dialects": [],
+      "pos": "v",
+      "alt": [],
+      "note": ""
+    },
+    {
+      "id": "w25",
+      "text": "kanan",
+      "zh": "吃的地方",
+      "en": "place for eating",
+      "dialects": [],
+      "pos": "n",
+      "alt": [],
+      "note": ""
+    },
+    {
+      "id": "w26",
+      "text": "kinan",
+      "zh": "吃過了",
+      "en": "ate",
+      "dialects": [],
+      "pos": "v",
+      "alt": [],
+      "note": ""
+    },
+    {
+      "id": "w27",
+      "text": "raya",
+      "zh": "大",
+      "en": "big",
+      "dialects": [
+        "north"
+      ],
+      "pos": "adj",
+      "alt": [],
+      "note": ""
+    },
+    {
+      "id": "w28",
+      "text": "laya",
+      "zh": "大",
+      "en": "big",
+      "dialects": [
+        "south"
+      ],
+      "pos": "adj",
+      "alt": [],
+      "note": ""
+    },
+    {
+      "id": "w29",
+      "text": "maraya",
+      "zh": "變大",
+      "en": "to grow big",
+      "dialects": [
+        "north"
+      ],
+      "pos": "v",
+      "alt": [],
+      "note": ""
+    },
+    {
+      "id": "w30",
+      "text": "turu",
+      "zh": "看",
+      "en": "see",
+      "dialects": [
+        "north"
+      ],
+      "pos": "v",
+      "alt": [],
+      "note": ""
+    },
+    {
+      "id": "w31",
+      "text": "tulu-an",
+      "zh": "看的地方",
+      "en": "place to look from",
+      "dialects": [
+        "south"
+      ],
+      "pos": "n",
+      "alt": [],
+      "note": ""
+    }
+  ],
+  "sentences": [
+    {
+      "id": "s1",
+      "text": "maruza a tamoh",
+      "zh": "水在流",
+      "en": "The water flows.",
+      "dialects": [
+        "north"
+      ]
+    },
+    {
+      "id": "s2",
+      "text": "sapi ka alim",
+      "zh": "夜晚的火",
+      "en": "A fire at night.",
+      "dialects": [
+        "coast"
+      ]
+    },
+    {
+      "id": "s3",
+      "text": "bunang ka lalan",
+      "zh": "路上的月亮",
+      "en": "The moon over the road.",
+      "dialects": [
+        "south"
+      ]
+    },
+    {
+      "id": "s4",
+      "text": "makan a asu",
+      "zh": "狗在吃",
+      "en": "The dog is eating.",
+      "dialects": []
+    },
+    {
+      "id": "s5",
+      "text": "pakan ka asu",
+      "zh": "餵狗",
+      "en": "Feed the dog.",
+      "dialects": []
+    }
+  ],
+  "examples": [
+    {
+      "q": "ralan",
+      "note": {
+        "zh-TW": "也會找到南部的 lalan（r↔l）",
+        "en": "also finds southern lalan (r↔l)"
+      }
+    },
+    {
+      "q": "bunan",
+      "note": {
+        "zh-TW": "也會找到 bunang（詞尾 n↔ng）",
+        "en": "also finds bunang (final n↔ng)"
+      }
+    },
+    {
+      "q": "pakan",
+      "note": {
+        "zh-TW": "自動拆解出詞根 kan",
+        "en": "finds the root kan automatically"
+      }
+    },
+    {
+      "q": "火",
+      "note": {
+        "zh-TW": "以中文釋義搜尋",
+        "en": "search Chinese meanings"
+      }
+    }
+  ],
+  "lab": {
+    "pairs": [
+      [
+        "ralan",
+        "lalan"
+      ],
+      [
+        "bunan",
+        "bunang"
+      ],
+      [
+        "keru",
+        "kilu"
+      ]
+    ],
+    "morph": {
+      "examples": [
+        [
+          "pakan",
+          "kan"
+        ],
+        [
+          "tutulu",
+          "tulu"
+        ],
+        [
+          "maluza",
+          "ruza"
+        ]
+      ]
+    }
+  }
+}

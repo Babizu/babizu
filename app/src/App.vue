@@ -6,6 +6,7 @@
 import { onMounted } from 'vue'
 import AppHeader from '@/components/layout/AppHeader.vue'
 import MobileTabBar from '@/components/layout/MobileTabBar.vue'
+import BuildOverlay from '@/components/studio/BuildOverlay.vue'
 import { Toaster } from '@/components/ui/sonner'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { useDocumentTitle } from '@/composables/usePageTitle.ts'
@@ -33,6 +34,8 @@ onMounted(() => {
         {{ t('跳到主要內容') }}
       </a>
       <AppHeader />
+      <!-- 展示版：頁面載入時建置網站資料的進度 -->
+      <BuildOverlay v-if="site.playground" />
       <main id="main" class="flex-1 pb-20 md:pb-0">
         <RouterView />
       </main>

@@ -31,4 +31,5 @@ export default {
   messages: { 'zh-TW': {}, en },
   profile: PAZEH_PROFILE,
   csr: false,
+  playground: false,
 }

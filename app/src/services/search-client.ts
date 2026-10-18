@@ -8,6 +8,7 @@
 import type { DocSummary, SearchEngine } from '@babizu/search/index.ts'
 import type { WorkerMethods } from '../workers/search.worker.ts'
 import { absoluteDataBase, loadManifest } from './data.ts'
+import { DB } from '../playground/builder.ts'
 import site from 'virtual:babizu/site'
 
 export type SearchResponse = ReturnType<SearchEngine['search']>
@@ -72,7 +73,9 @@ export class SearchClient {
   /** 載入索引（可重複呼叫，只會載入一次）。 */
   ready(): Promise<{ records: number; terms: number }> {
     if (!this.loaded) {
-      const loaded = loadManifest().then((manifest) => this.call('init', { dataBase: absoluteDataBase(), version: manifest.version, csr: site.csr }))
+      const loaded = loadManifest().then((manifest) =>
+        this.call('init', { dataBase: absoluteDataBase(), version: manifest.version, csr: site.csr, ...(site.playground ? { playground: DB } : {}) }),
+      )
       loaded.catch(() => {
         if (this.loaded === loaded) this.loaded = null
       })

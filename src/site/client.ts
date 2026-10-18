@@ -64,4 +64,9 @@ export interface ClientSite {
   profile: LanguageProfile
   /** 有沒有對應組檢索（實驗性；模型在網站資料的 search/csr.json） */
   csr: boolean
+  /**
+   * 展示版（docs/playground.md）：資料不是建置好的檔案，而是瀏覽器裡的專案；
+   * 這時站台設定在載入時由專案產生（app/src/playground/runtime.ts），多一個「工作台」頁
+   */
+  playground: boolean
 }

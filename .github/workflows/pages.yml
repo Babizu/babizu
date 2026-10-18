@@ -1,0 +1,50 @@
+# 展示版（docs/playground.md）部署到這個 repo 的 GitHub Pages（https://babizu.github.io/babizu/）。
+# 發版標籤（v*）時部署，也可以在 Actions 頁手動執行。第一次要到 Settings → Pages → Source 選 GitHub Actions。
+name: Pages
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: 建置展示版
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: 安裝相依套件
+        run: npm ci
+
+      - name: 建置展示版
+        run: npm run playground:build
+
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: examples/playground/dist
+
+  deploy:
+    name: 部署
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

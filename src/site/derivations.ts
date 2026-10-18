@@ -16,12 +16,10 @@ import { extname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Worker } from 'node:worker_threads'
 import type { LanguageProfile, SerializedIndex } from '#bcdp'
-import { createDerivationAnalyzer, encodeDerivations, mergeEdges, type DerivationData, type RangeAnalysis } from '../search/derivations.ts'
-import { encodeParses, type ParseData } from '../search/parses.ts'
+import type { DerivationData, RangeAnalysis } from '../search/derivations.ts'
+import type { ParseData } from '../search/parses.ts'
 import { FRAMEWORK_ROOT } from './paths.ts'
-
-/** 每次領取的詞數：小塊讓各執行緒的工作量平均 */
-const CHUNK = 250
+import { computeDerivations, type AnalyzeChunks } from './site-data.ts'
 
 /** 這個模組的副檔名：框架目錄中直接執行原始碼時是 .ts，安裝後執行編譯結果時是 .js（worker 用同一種） */
 const EXT = extname(fileURLToPath(import.meta.url))
@@ -51,14 +49,7 @@ export async function buildDerivations({
   } catch {
     // 沒有快取
   }
-  // 第 1 階段（詞庫中的詞根、拆解表、虛擬詞根的候選）平行計算；第 2 階段要看全部的邊（詞本身是別的詞的詞根時不往上拆），
-  // 只過濾候選，在這裡做
-  const { edges, parses: all, bests, virtual: candidates } = profile.morphology
-    ? await analyzeParallel(lexicon, profile, count)
-    : { edges: [], parses: [], bests: [], virtual: [] }
-  const virtual = profile.morphology ? createDerivationAnalyzer({ lexicon, profile }).virtual(edges, candidates) : []
-  const data = encodeDerivations(mergeEdges(edges, virtual), count)
-  const parses = encodeParses(all, virtual, bests, count)
+  const { data, parses } = await computeDerivations({ lexicon, profile, count }, analyzeParallel)
   await mkdir(cacheDir, { recursive: true })
   for (const name of await readdir(cacheDir)) if (name.startsWith('derivations-')) await rm(join(cacheDir, name), { force: true })
   await writeFile(file, JSON.stringify({ derivations: data, parses }))
@@ -66,7 +57,7 @@ export async function buildDerivations({
 }
 
 /**
- * 分析結果取決於哪些程式（快取鍵的一部分）：BCDP 套件的模組，與搜尋層的 derivations、parses、text。
+ * 分析結果取決於哪些程式（快取鍵的一部分）：BCDP 套件的模組、搜尋層的 derivations、parses、text，與 site-data（兩個階段的合併）。
  * 原始碼與編譯結果（存在的）都算：不論執行的是哪一份，演算法改了快取就失效。
  */
 async function analysisSources(): Promise<string[]> {
@@ -80,12 +71,12 @@ async function analysisSources(): Promise<string[]> {
       if (existsSync(file)) files.push(file)
     }
   }
+  for (const file of [join(FRAMEWORK_ROOT, 'src', 'site', 'site-data.ts'), join(FRAMEWORK_ROOT, 'dist', 'site', 'site-data.js')]) if (existsSync(file)) files.push(file)
   return files
 }
 
-async function analyzeParallel(lexicon: SerializedIndex, profile: LanguageProfile, count: number): Promise<RangeAnalysis> {
-  const chunks: Array<{ from: number; to: number }> = []
-  for (let from = 0; from < count; from += CHUNK) chunks.push({ from, to: Math.min(count, from + CHUNK) })
+/** 以 worker_threads 平行分析（各執行緒輪流領取下一段；結果依段的順序，與單一執行緒相同） */
+const analyzeParallel: AnalyzeChunks = async ({ lexicon, profile, chunks }) => {
   const results: RangeAnalysis[] = new Array(chunks.length)
   let next = 0
   const threads = Math.max(1, Math.min(availableParallelism() - 1, chunks.length))
@@ -112,10 +103,5 @@ async function analyzeParallel(lexicon: SerializedIndex, profile: LanguageProfil
         }),
     ),
   )
-  return {
-    edges: results.flatMap((r) => r.edges),
-    parses: results.flatMap((r) => r.parses),
-    bests: results.flatMap((r) => r.bests),
-    virtual: results.flatMap((r) => r.virtual),
-  }
+  return results
 }
