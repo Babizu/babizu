@@ -71,6 +71,6 @@ describe('轉成專案的詞與例句', () => {
 
   it('例句：編號 s1、s2…，只取句子、中英文與方言', () => {
     const r = tableToSentences([['ma-ruza a tamoh', '水在流', 'north']], ['text', 'zh', 'dialect'], { hasHeader: false, varieties: VARIETIES })
-    expect(r.rows).toEqual([{ id: 's1', text: 'ma-ruza a tamoh', zh: '水在流', en: '', dialects: ['north'] }])
+    expect(r.rows).toEqual([{ id: 's1', text: 'ma-ruza a tamoh', zh: '水在流', en: '', dialects: ['north'], note: '' }])
   })
 })

@@ -3,11 +3,17 @@
 Babizu is a digital dictionary framework for languages with several dialects and little data. This playground lets you try it **without installing anything or writing code**, right in your browser:
 
 - import your own wordlist (Excel, CSV, or copy and paste from a spreadsheet);
-- write down the sound correspondences between dialects (for example "northern r is southern l") and the affixes;
+- write down the sound correspondences between dialects (for example "Pazeh r is Kaxabu l") and the affixes;
 - press "Build" to get a dictionary that searches across dialects and strips affixes automatically;
 - step through how a search is computed in the Algorithm Lab.
 
-The first time you open it you get a sample project: a made-up "demo language" with northern and southern dialects. It is not a real language.
+The first time you open it you get a sample project: a few dozen Pazeh and Kaxabu words and sentences.
+
+- They come from the Pazih Dictionary (Li & Tsuchida 2001), the Kaxabu classified dictionary, Pan Dexing’s wordlist and Lin Hongrui’s Kaxabu reference grammar; each word and sentence cites its source in its note.
+- The dialect rules come from the first sound-correspondence rules of the Pazeh–Kaxabu dictionary. For example, Pazeh turu "three" is tu'u in Kaxabu (r becomes a glottal stop), and bintul "star" is bintun (final l becomes n).
+- The morphology lists a few common, productive affixes, for example mu-baket "hit", m<in>u-baket "hit (perfective)" and saa-baket "used for hitting".
+
+The full dictionary is the [Pazeh–Kaxabu dictionary](https://babizu.github.io/pazeh-kaxabu/).
 
 ## How to use it
 

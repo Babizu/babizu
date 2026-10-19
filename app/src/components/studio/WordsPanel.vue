@@ -4,7 +4,7 @@
  * 方言欄是每個語言變體一個切換鈕；其他寫法以逗號分開。
  */
 import { ChevronLeftIcon, ChevronRightIcon, PlusIcon, Trash2Icon, UploadIcon } from '@lucide/vue'
-import { computed, ref, watch, reactive } from 'vue'
+import { computed, nextTick, ref, watch, reactive } from 'vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { t } from '@/i18n.ts'
@@ -52,9 +52,15 @@ function addRow() {
     draft.words.push({ id, text: '', zh: '', en: '', dialects: [], pos: '', alt: [], note: '' })
   } else {
     const id = nextId('s', draft.sentences.map((s) => s.id))()
-    draft.sentences.push({ id, text: '', zh: '', en: '', dialects: [] })
+    draft.sentences.push({ id, text: '', zh: '', en: '', dialects: [], note: '' })
   }
   page.value = pages.value - 1
+}
+/** 匯入之後：附加的列在最後一頁，取代的從第一頁看起（等清掉篩選的 watch 先把頁數歸零） */
+async function showImported(mode: 'append' | 'replace') {
+  filter.value = ''
+  await nextTick()
+  page.value = mode === 'append' ? pages.value - 1 : 0
 }
 function removeRow(k: number) {
   draft[kind.value].splice(k, 1)
@@ -98,8 +104,8 @@ function removeRow(k: number) {
             <template v-if="kind === 'words'">
               <th class="px-2 py-2 font-medium">{{ t('詞類') }}</th>
               <th class="px-2 py-2 font-medium">{{ t('其他寫法') }}</th>
-              <th class="px-2 py-2 font-medium">{{ t('備註') }}</th>
             </template>
+            <th class="px-2 py-2 font-medium">{{ t('備註') }}</th>
             <th class="w-10"><span class="sr-only">{{ t('刪除') }}</span></th>
           </tr>
         </thead>
@@ -134,8 +140,15 @@ function removeRow(k: number) {
                   @change="(e: Event) => (draft.words[k].alt = (e.target as HTMLInputElement).value.split(/[,，;；]/u).map((s) => s.trim()).filter(Boolean))"
                 />
               </td>
-              <td class="px-1.5 py-1"><Input v-model="draft.words[k].note" class="h-8" :aria-label="t('備註')" /></td>
             </template>
+            <td class="px-1.5 py-1">
+              <Input
+                class="h-8"
+                :model-value="draft[kind][k].note ?? ''"
+                :aria-label="t('備註')"
+                @update:model-value="(v: string | number) => (draft[kind][k].note = String(v))"
+              />
+            </td>
             <td class="px-1 py-1">
               <Button variant="ghost" size="icon" :aria-label="t('刪除')" @click="removeRow(k)"><Trash2Icon /></Button>
             </td>
@@ -148,6 +161,6 @@ function removeRow(k: number) {
       <span class="tabular-nums">{{ t('第 {page}／{pages} 頁', { page: page + 1, pages }) }}</span>
       <Button variant="ghost" size="icon" :disabled="page >= pages - 1" :aria-label="t('下一頁')" @click="page++"><ChevronRightIcon /></Button>
     </div>
-    <ImportDialog v-model:open="importing" :kind="kind" />
+    <ImportDialog v-model:open="importing" :kind="kind" @imported="showImported" />
   </div>
 </template>

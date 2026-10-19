@@ -50,6 +50,8 @@ export interface ProjectSentence {
   zh: string
   en: string
   dialects: string[]
+  /** 備註（例如出處）；舊的專案檔沒有這一欄 */
+  note?: string
 }
 
 export interface PlaygroundProject {
@@ -184,6 +186,7 @@ export function projectToDataset(project: PlaygroundProject, locale = 'zh-TW'): 
       {
         senses: s.zh || s.en ? [createSense({ zh: s.zh, en: s.en })] : [],
         dialects: [...s.dialects],
+        notes: s.note?.trim() ? [s.note.trim()] : [],
         group: { id: sentences.id, role: 'item', parent: null, seq },
       },
     ),

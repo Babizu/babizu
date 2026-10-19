@@ -27,8 +27,9 @@ async function studio(page: Page, tab: string) {
 }
 
 test('第一次開啟是範例專案：在瀏覽器裡建置之後可以跨方言搜尋', async ({ page }) => {
-  await page.goto('./#/?q=ralan')
-  await expect(page.locator('article').filter({ hasText: 'lalan' }).first()).toBeVisible({ timeout: 30_000 })
+  // 巴宰語 turu「三」，噶哈巫語 tu'u（r → '）
+  await page.goto('./#/?q=turu')
+  await expect(page.locator('article').filter({ hasText: "tu'u" }).first()).toBeVisible({ timeout: 30_000 })
   await expect(page.getByRole('link', { name: '工作台' }).first()).toBeVisible()
   await expectNoHorizontalOverflow(page)
 })
@@ -36,7 +37,7 @@ test('第一次開啟是範例專案：在瀏覽器裡建置之後可以跨方�
 test('匯入貼上的表格（方言值對不到的自動新增為變體）→ 建置 → 搜得到新詞，篩選有新的變體；重新整理之後還在', async ({ page }) => {
   await studio(page, '詞表')
   await page.getByRole('button', { name: '匯入' }).first().click()
-  await page.getByLabel('貼上表格').fill('詞\t中文\t方言\nwatu\t石頭\tnorth\nbatu\t石頭\t山區')
+  await page.getByLabel('貼上表格').fill('詞\t中文\t方言\nwatu\t石頭\tpazeh\nbatu\t石頭\t山區')
   await page.getByRole('button', { name: '讀取貼上的內容' }).click()
   await expect(page.getByText('會匯入 2 列')).toBeVisible()
   await expect(page.getByText('方言欄有這些值對不到語言變體：山區')).toBeVisible()
@@ -52,7 +53,7 @@ test('匯入貼上的表格（方言值對不到的自動新增為變體）→ �
 })
 
 test('新增一條方言規則 → 建置 → 模糊搜尋找到原本找不到的詞', async ({ page }) => {
-  // 範例中 asu（狗）沒有對應的寫法；加一個詞 azu 與規則 s ↔ z
+  // 範例沒有清濁的規則（最早的規則列表的「濁化」）：加一個詞 azu 與規則 s ↔ z，查 asu
   await studio(page, '詞表')
   await page.getByRole('button', { name: '新增一個詞' }).click()
   await page.getByRole('textbox', { name: '詞形' }).last().fill('azu')
@@ -68,13 +69,13 @@ test('新增一條方言規則 → 建置 → 模糊搜尋找到原本找不到�
 
 test('構詞：加一個前綴 → 建置 → 實驗室的 BCDP 分頁拆出詞根', async ({ page }) => {
   await studio(page, '構詞')
-  // 範例已有 ma-、pa-：新增的是前綴的第 3 列
+  // 範例已有 9 個前綴：新增的是前綴的第 10 列。maa-（相互）不在範例中
   await page.getByRole('button', { name: '新增', exact: true }).first().click()
-  await page.getByRole('textbox', { name: '寫法', exact: true }).nth(2).fill('ka')
+  await page.getByRole('textbox', { name: '寫法', exact: true }).nth(9).fill('maa')
   await build(page)
-  await page.goto('./#/lab?tab=bcdp&q=kakan&t=kan')
+  await page.goto('./#/lab?tab=bcdp&q=maabaket&t=baket')
   await expect(page.getByText('找到的詞根').first()).toBeVisible({ timeout: 30_000 })
-  await expect(page.getByRole('button', { name: /^kan / }).first()).toBeVisible()
+  await expect(page.getByRole('button', { name: /^baket / }).first()).toBeVisible()
 })
 
 test('匯出專案檔再匯入：內容相同；檢查不通過時不能建置', async ({ page }, testInfo) => {
@@ -83,7 +84,7 @@ test('匯出專案檔再匯入：內容相同；檢查不通過時不能建置',
   const file = testInfo.outputPath('project.babizu.json')
   await download.saveAs(file)
   const exported = JSON.parse(readFileSync(file, 'utf8'))
-  expect(exported).toMatchObject({ format: 'babizu-playground-project', title: { 'zh-TW': '示範語（範例專案）' } })
+  expect(exported).toMatchObject({ format: 'babizu-playground-project', title: { 'zh-TW': '巴宰語與噶哈巫語（範例專案）' } })
 
   // 換成空白專案，再匯入剛才的檔
   page.once('dialog', (d) => d.accept())
@@ -91,7 +92,7 @@ test('匯出專案檔再匯入：內容相同；檢查不通過時不能建置',
   await expect(page.locator('#title-zh-TW')).toHaveValue('新的辭典')
   page.once('dialog', (d) => d.accept())
   await page.locator('input[type=file]').setInputFiles(file)
-  await expect(page.locator('#title-zh-TW')).toHaveValue('示範語（範例專案）')
+  await expect(page.locator('#title-zh-TW')).toHaveValue('巴宰語與噶哈巫語（範例專案）')
 
   // 詞形空白：列出問題，「建置」不能按
   await page.getByRole('tab', { name: '詞表' }).click()

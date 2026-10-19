@@ -2,37 +2,29 @@
   "format": "babizu-playground-project",
   "version": 1,
   "title": {
-    "zh-TW": "示範語（範例專案）",
-    "en": "Demo language (sample project)"
+    "zh-TW": "巴宰語與噶哈巫語（範例專案）",
+    "en": "Pazeh and Kaxabu (sample project)"
   },
   "description": {
-    "zh-TW": "虛構的小語言：北部、南部兩種方言與一種地方變體，有前綴、後綴、中綴與重疊。只用來展示 babizu，與任何真實的語言無關。",
-    "en": "A made-up little language with northern and southern dialects, one local variety, and prefixes, suffixes, an infix and reduplication. For showing babizu only; it is not a real language."
+    "zh-TW": "從《巴宰語詞典》、《噶哈巫語分類辭典》、潘德興詞彙表與林鴻瑞《噶哈巫語參考語法》選出的幾十個詞與例句，用來展示 babizu：方言規則取自巴宰–噶哈巫語辭典最早的語音對應規則，構詞是幾個常見、能產的詞綴。完整的辭典在 https://babizu.github.io/pazeh-kaxabu/",
+    "en": "A few dozen words and sentences chosen from the Pazih Dictionary, the Kaxabu classified dictionary, Pan Dexing’s wordlist and Lin Hongrui’s Kaxabu reference grammar, for showing babizu. The dialect rules come from the first sound-correspondence rules of the Pazeh–Kaxabu dictionary; the morphology lists a few common, productive affixes. The full dictionary is at https://babizu.github.io/pazeh-kaxabu/"
   },
   "varieties": [
     {
-      "code": "north",
+      "code": "pazeh",
       "label": {
-        "zh-TW": "北部",
-        "en": "Northern"
+        "zh-TW": "巴宰",
+        "en": "Pazeh"
       },
-      "hue": 265
+      "hue": 55
     },
     {
-      "code": "south",
+      "code": "kaxabu",
       "label": {
-        "zh-TW": "南部",
-        "en": "Southern"
+        "zh-TW": "噶哈巫",
+        "en": "Kaxabu"
       },
-      "hue": 150
-    },
-    {
-      "code": "coast",
-      "parent": "south",
-      "label": {
-        "zh-TW": "南部（海岸）",
-        "en": "Southern (coastal)"
-      }
+      "hue": 175
     }
   ],
   "profile": {
@@ -41,9 +33,13 @@
     "normalizer": {
       "lowercase": true,
       "charMap": {
-        "ʔ": "'"
+        "ʔ": "'",
+        "’": "'"
       },
-      "stripDiacritics": true
+      "stripDiacritics": true,
+      "preserve": [
+        "é"
+      ]
     },
     "costs": {
       "substitute": 1.5,
@@ -58,16 +54,124 @@
     },
     "rules": [
       {
-        "category": "流音",
+        "category": "元音",
         "label": {
-          "en": "Liquids"
+          "en": "Vowels"
         },
-        "description": "北部說 r、南部說 l",
+        "description": "元音音值的方言對應（巴宰 u、i，噶哈巫常是 o、é）",
         "rules": [
+          [
+            "u",
+            "o",
+            0.1
+          ],
+          [
+            "i",
+            "é",
+            0.1
+          ],
+          [
+            "au",
+            "o",
+            0.1
+          ],
+          [
+            "e",
+            "u",
+            0.1
+          ]
+        ]
+      },
+      {
+        "category": "閃音",
+        "label": {
+          "en": "Flap r"
+        },
+        "description": "r 的脫落、變 l、變喉塞音，以及造成的元音延長。元音＋r 變長元音（er ＝ ee、ur ＝ uu）只在詞尾（與詞素交界）",
+        "rules": [
+          [
+            "r",
+            "",
+            0.1
+          ],
           [
             "r",
             "l",
             0.1
+          ],
+          [
+            "r",
+            "'",
+            0.1
+          ],
+          {
+            "source": "er",
+            "target": "ee",
+            "weight": 0.12,
+            "position": "final"
+          },
+          {
+            "source": "ur",
+            "target": "uu",
+            "weight": 0.12,
+            "position": "final"
+          }
+        ]
+      },
+      {
+        "category": "靠後輔音",
+        "label": {
+          "en": "Back consonants"
+        },
+        "rules": [
+          [
+            "x",
+            "h",
+            0.1
+          ]
+        ]
+      },
+      {
+        "category": "前後鼻音",
+        "label": {
+          "en": "Nasals"
+        },
+        "rules": [
+          [
+            "ng",
+            "n",
+            0.1
+          ]
+        ]
+      },
+      {
+        "category": "靠前輔音",
+        "label": {
+          "en": "Front consonants"
+        },
+        "rules": [
+          [
+            "z",
+            "d",
+            0.1
+          ]
+        ]
+      },
+      {
+        "category": "滑音產生",
+        "label": {
+          "en": "Glide insertion"
+        },
+        "rules": [
+          [
+            "aru",
+            "aw",
+            0.15
+          ],
+          [
+            "ura",
+            "owa",
+            0.15
           ]
         ]
       },
@@ -77,70 +181,210 @@
           "en": "Word-final"
         },
         "position": "final",
+        "description": "只在詞尾適用，例如 bintul = bintun，但 alaw 的 l 不變",
         "rules": [
           [
+            "l",
             "n",
-            "ng",
+            0.1
+          ],
+          [
+            "s",
+            "t",
+            0.1
+          ],
+          [
+            "x",
+            "k",
             0.1
           ],
           [
             "h",
             "",
-            0.1
-          ],
-          [
-            "'",
-            "",
-            0.1
-          ]
-        ]
-      },
-      {
-        "category": "元音",
-        "label": {
-          "en": "Vowels"
-        },
-        "rules": [
-          [
-            "e",
-            "i",
-            0.2
-          ],
-          [
-            "o",
-            "u",
-            0.2
+            0.15
           ]
         ]
       }
     ],
     "morphology": {
+      "cost": 0.1,
       "minStem": 3,
+      "maxSteps": 3,
+      "lemmaRulePenalty": 4,
+      "virtualRootLengthCost": 0.03,
+      "rootSyllableCost": {
+        "1": 0.5,
+        "3": 0.1,
+        "4": 0.2
+      },
+      "glides": "iu",
       "prefixes": [
         {
+          "form": "m",
+          "gloss": {
+            "zh-TW": "主事焦點",
+            "en": "AV"
+          }
+        },
+        {
+          "form": "mu",
+          "gloss": {
+            "zh-TW": "主事焦點",
+            "en": "AV"
+          }
+        },
+        {
+          "form": "mi",
+          "gloss": {
+            "zh-TW": "主事焦點",
+            "en": "AV"
+          }
+        },
+        {
+          "form": "me",
+          "gloss": {
+            "zh-TW": "主事焦點",
+            "en": "AV"
+          }
+        },
+        {
           "form": "ma",
-          "gloss": "主事"
+          "gloss": {
+            "zh-TW": "靜態",
+            "en": "STAT"
+          }
         },
         {
           "form": "pa",
-          "gloss": "使動"
+          "gloss": {
+            "zh-TW": "使動",
+            "en": "CAUS"
+          }
+        },
+        {
+          "form": "paka",
+          "gloss": {
+            "zh-TW": "使動",
+            "en": "CAUS"
+          }
+        },
+        {
+          "form": "sa",
+          "gloss": {
+            "zh-TW": "工具焦點",
+            "en": "IV"
+          }
+        },
+        {
+          "form": "saa",
+          "gloss": {
+            "zh-TW": "工具焦點",
+            "en": "IV"
+          }
         }
       ],
       "suffixes": [
         {
           "form": "an",
-          "gloss": "處所"
+          "gloss": {
+            "zh-TW": "處所焦點",
+            "en": "LV"
+          }
+        },
+        {
+          "form": "en",
+          "gloss": {
+            "zh-TW": "受事焦點",
+            "en": "PV"
+          }
+        },
+        {
+          "form": "un",
+          "gloss": {
+            "zh-TW": "受事焦點",
+            "en": "PV"
+          }
         }
       ],
       "infixes": [
         {
           "form": "in",
-          "gloss": "完成"
+          "gloss": {
+            "zh-TW": "完成",
+            "en": "PFV"
+          }
         }
       ],
       "reduplication": [
         {
-          "pattern": "CV"
+          "pattern": "CV",
+          "gloss": {
+            "zh-TW": "重疊",
+            "en": "RED"
+          }
+        },
+        {
+          "pattern": "CVV",
+          "gloss": {
+            "zh-TW": "進行",
+            "en": "PROG"
+          }
+        }
+      ],
+      "circumfixes": [
+        {
+          "prefix": "ta",
+          "suffix": "i",
+          "gloss": {
+            "zh-TW": "勸誘（咱們…吧）",
+            "en": "HORT"
+          }
+        },
+        {
+          "prefix": "ta",
+          "suffix": "aw",
+          "gloss": {
+            "zh-TW": "勸誘（咱們…吧）",
+            "en": "HORT"
+          }
+        },
+        {
+          "prefix": "m",
+          "infix": "a",
+          "suffix": "ay",
+          "gloss": {
+            "zh-TW": "主事焦點・非實現",
+            "en": "AV.IRR"
+          }
+        },
+        {
+          "prefix": "ma",
+          "suffix": "ay",
+          "stemInitial": "V",
+          "gloss": {
+            "zh-TW": "主事焦點・非實現",
+            "en": "AV.IRR"
+          }
+        }
+      ],
+      "alternations": [
+        {
+          "underlying": "p",
+          "surface": "b",
+          "position": "final",
+          "cost": 0.05
+        },
+        {
+          "underlying": "t",
+          "surface": "d",
+          "position": "final",
+          "cost": 0.05
+        },
+        {
+          "underlying": "k",
+          "surface": "g",
+          "position": "final",
+          "cost": 0.05
         }
       ]
     }
@@ -148,428 +392,1021 @@
   "words": [
     {
       "id": "w1",
-      "text": "ralan",
-      "zh": "路",
-      "en": "road",
+      "text": "turu",
+      "zh": "三",
+      "en": "three",
       "dialects": [
-        "north"
+        "pazeh"
       ],
-      "pos": "n",
+      "pos": "num",
       "alt": [],
-      "note": ""
+      "note": "《巴宰語詞典》p.308"
     },
     {
       "id": "w2",
-      "text": "lalan",
-      "zh": "路",
-      "en": "road",
+      "text": "tu'u",
+      "zh": "三",
+      "en": "three",
       "dialects": [
-        "south"
+        "kaxabu"
       ],
-      "pos": "n",
-      "alt": [],
-      "note": ""
+      "pos": "num",
+      "alt": [
+        "tuu"
+      ],
+      "note": "《噶哈巫語分類辭典》20-009；tuu：潘德興詞彙表 第 384 列"
     },
     {
       "id": "w3",
-      "text": "bunan",
-      "zh": "月亮",
-      "en": "moon",
+      "text": "tuturu",
+      "zh": "中指",
+      "en": "middle finger",
       "dialects": [
-        "north"
+        "pazeh"
       ],
       "pos": "n",
       "alt": [],
-      "note": ""
+      "note": "《巴宰語詞典》p.309"
     },
     {
       "id": "w4",
-      "text": "bunang",
-      "zh": "月亮",
-      "en": "moon",
+      "text": "tutulu",
+      "zh": "中指",
+      "en": "middle finger",
       "dialects": [
-        "south"
+        "kaxabu"
       ],
       "pos": "n",
       "alt": [],
-      "note": ""
+      "note": "《噶哈巫語分類辭典》01K-012"
     },
     {
       "id": "w5",
-      "text": "tamoh",
-      "zh": "水",
-      "en": "water",
+      "text": "rizax",
+      "zh": "太陽",
+      "en": "sun",
       "dialects": [
-        "north"
+        "pazeh"
       ],
       "pos": "n",
       "alt": [],
-      "note": ""
+      "note": "《巴宰語詞典》p.255"
     },
     {
       "id": "w6",
-      "text": "tamo",
-      "zh": "水",
-      "en": "water",
+      "text": "lizax",
+      "zh": "太陽",
+      "en": "sun",
       "dialects": [
-        "coast"
+        "kaxabu"
       ],
       "pos": "n",
       "alt": [],
-      "note": ""
+      "note": "《噶哈巫語分類辭典》13-030"
     },
     {
       "id": "w7",
-      "text": "keru",
-      "zh": "石頭",
-      "en": "stone",
+      "text": "mara",
+      "zh": "拿；娶",
+      "en": "take; marry",
       "dialects": [
-        "north"
+        "pazeh"
       ],
-      "pos": "n",
+      "pos": "v",
       "alt": [],
-      "note": ""
+      "note": "《巴宰語詞典》p.183"
     },
     {
       "id": "w8",
-      "text": "kilu",
-      "zh": "石頭",
-      "en": "stone",
+      "text": "ma'a",
+      "zh": "拿",
+      "en": "take",
       "dialects": [
-        "south"
+        "kaxabu"
       ],
-      "pos": "n",
+      "pos": "v",
       "alt": [],
-      "note": ""
+      "note": "《噶哈巫語分類辭典》02C-050"
     },
     {
       "id": "w9",
-      "text": "sapi'",
-      "zh": "火",
-      "en": "fire",
+      "text": "sabul",
+      "zh": "乾草；長草",
+      "en": "dry grass",
       "dialects": [
-        "north"
+        "pazeh"
       ],
       "pos": "n",
       "alt": [],
-      "note": ""
+      "note": "《巴宰語詞典》p.263"
     },
     {
       "id": "w10",
-      "text": "sapi",
-      "zh": "火",
-      "en": "fire",
+      "text": "sabun",
+      "zh": "雜草，乾草",
+      "en": "weeds, dry grass",
       "dialects": [
-        "south"
+        "kaxabu"
       ],
       "pos": "n",
       "alt": [],
-      "note": ""
+      "note": "《噶哈巫語分類辭典》14-006"
     },
     {
       "id": "w11",
-      "text": "arem",
-      "zh": "夜晚",
-      "en": "night",
+      "text": "mudal",
+      "zh": "下雨",
+      "en": "to rain",
       "dialects": [
-        "north"
+        "pazeh"
       ],
-      "pos": "n",
+      "pos": "v",
       "alt": [],
-      "note": ""
+      "note": "《巴宰語詞典》p.200"
     },
     {
       "id": "w12",
-      "text": "alim",
-      "zh": "夜晚",
-      "en": "night",
+      "text": "mudan",
+      "zh": "下雨",
+      "en": "to rain",
       "dialects": [
-        "coast"
+        "kaxabu"
       ],
-      "pos": "n",
+      "pos": "v",
       "alt": [],
-      "note": ""
+      "note": "《噶哈巫語分類辭典》13-013"
     },
     {
       "id": "w13",
-      "text": "bari",
-      "zh": "風",
-      "en": "wind",
+      "text": "bintul",
+      "zh": "星",
+      "en": "star",
       "dialects": [
-        "north"
+        "pazeh"
       ],
       "pos": "n",
       "alt": [],
-      "note": ""
+      "note": "《巴宰語詞典》p.90"
     },
     {
       "id": "w14",
-      "text": "bali",
-      "zh": "風",
-      "en": "wind",
+      "text": "bintun",
+      "zh": "星星",
+      "en": "star",
       "dialects": [
-        "south"
+        "kaxabu"
       ],
       "pos": "n",
       "alt": [],
-      "note": ""
+      "note": "《噶哈巫語分類辭典》20-072"
     },
     {
       "id": "w15",
-      "text": "asu",
-      "zh": "狗",
-      "en": "dog",
-      "dialects": [],
+      "text": "kawas",
+      "zh": "年；年齡；天",
+      "en": "year; age; sky",
+      "dialects": [
+        "pazeh"
+      ],
       "pos": "n",
       "alt": [],
-      "note": ""
+      "note": "《巴宰語詞典》p.145（噶哈巫語也說 kawas）"
     },
     {
       "id": "w16",
-      "text": "tulu",
-      "zh": "三",
-      "en": "three",
-      "dialects": [],
-      "pos": "num",
+      "text": "kawat",
+      "zh": "年；歲",
+      "en": "year; age",
+      "dialects": [
+        "kaxabu"
+      ],
+      "pos": "n",
       "alt": [],
-      "note": ""
+      "note": "潘德興詞彙表 第 83 列"
     },
     {
       "id": "w17",
-      "text": "tutulu",
-      "zh": "三個（人）",
-      "en": "three (people)",
-      "dialects": [],
-      "pos": "num",
+      "text": "lalimah",
+      "zh": "便宜；容易",
+      "en": "cheap; easy",
+      "dialects": [
+        "pazeh"
+      ],
+      "pos": "adj",
       "alt": [],
-      "note": ""
+      "note": "《巴宰語詞典》p.163"
     },
     {
       "id": "w18",
-      "text": "ruza",
-      "zh": "跑",
-      "en": "run",
+      "text": "lalima",
+      "zh": "便宜",
+      "en": "cheap",
       "dialects": [
-        "north"
+        "kaxabu"
       ],
-      "pos": "v",
+      "pos": "adj",
       "alt": [],
-      "note": ""
+      "note": "《噶哈巫語分類辭典》12A-056"
     },
     {
       "id": "w19",
-      "text": "luza",
-      "zh": "跑",
-      "en": "run",
+      "text": "mairix",
+      "zh": "滑的",
+      "en": "slippery",
       "dialects": [
-        "south"
+        "pazeh"
       ],
-      "pos": "v",
+      "pos": "adj",
       "alt": [],
-      "note": ""
+      "note": "《巴宰語詞典》p.179"
     },
     {
       "id": "w20",
-      "text": "maruza",
-      "zh": "在跑",
-      "en": "to run",
+      "text": "maiik",
+      "zh": "滑的",
+      "en": "slippery",
       "dialects": [
-        "north"
+        "kaxabu"
       ],
-      "pos": "v",
+      "pos": "adj",
       "alt": [],
-      "note": ""
+      "note": "潘德興詞彙表 第 406 列"
     },
     {
       "id": "w21",
-      "text": "maluza",
-      "zh": "在跑",
-      "en": "to run",
+      "text": "luxut",
+      "zh": "鹿",
+      "en": "deer",
       "dialects": [
-        "south"
+        "pazeh"
       ],
-      "pos": "v",
+      "pos": "n",
       "alt": [],
-      "note": ""
+      "note": "《巴宰語詞典》p.171"
     },
     {
       "id": "w22",
-      "text": "kan",
-      "zh": "吃",
-      "en": "eat",
-      "dialects": [],
-      "pos": "v",
+      "text": "luhut",
+      "zh": "鹿",
+      "en": "deer",
+      "dialects": [
+        "kaxabu"
+      ],
+      "pos": "n",
       "alt": [],
-      "note": ""
+      "note": "潘德興詞彙表 第 91 列"
     },
     {
       "id": "w23",
-      "text": "makan",
-      "zh": "在吃",
-      "en": "to eat",
-      "dialects": [],
-      "pos": "v",
+      "text": "uhuni",
+      "zh": "現在；今天",
+      "en": "now; today",
+      "dialects": [
+        "pazeh"
+      ],
+      "pos": "adv",
       "alt": [],
-      "note": ""
+      "note": "《巴宰語詞典》p.311"
     },
     {
       "id": "w24",
-      "text": "pakan",
-      "zh": "餵",
-      "en": "to feed",
-      "dialects": [],
-      "pos": "v",
+      "text": "ohoni",
+      "zh": "現在",
+      "en": "now",
+      "dialects": [
+        "kaxabu"
+      ],
+      "pos": "adv",
       "alt": [],
-      "note": ""
+      "note": "《噶哈巫語分類辭典》19-018"
     },
     {
       "id": "w25",
-      "text": "kanan",
-      "zh": "吃的地方",
-      "en": "place for eating",
-      "dialects": [],
+      "text": "bakung",
+      "zh": "喉嚨",
+      "en": "throat",
+      "dialects": [
+        "pazeh"
+      ],
       "pos": "n",
       "alt": [],
-      "note": ""
+      "note": "《巴宰語詞典》p.81"
     },
     {
       "id": "w26",
-      "text": "kinan",
-      "zh": "吃過了",
-      "en": "ate",
-      "dialects": [],
-      "pos": "v",
-      "alt": [],
-      "note": ""
-    },
-    {
-      "id": "w27",
-      "text": "raya",
-      "zh": "大",
-      "en": "big",
+      "text": "bakong",
+      "zh": "喉嚨",
+      "en": "throat",
       "dialects": [
-        "north"
-      ],
-      "pos": "adj",
-      "alt": [],
-      "note": ""
-    },
-    {
-      "id": "w28",
-      "text": "laya",
-      "zh": "大",
-      "en": "big",
-      "dialects": [
-        "south"
-      ],
-      "pos": "adj",
-      "alt": [],
-      "note": ""
-    },
-    {
-      "id": "w29",
-      "text": "maraya",
-      "zh": "變大",
-      "en": "to grow big",
-      "dialects": [
-        "north"
-      ],
-      "pos": "v",
-      "alt": [],
-      "note": ""
-    },
-    {
-      "id": "w30",
-      "text": "turu",
-      "zh": "看",
-      "en": "see",
-      "dialects": [
-        "north"
-      ],
-      "pos": "v",
-      "alt": [],
-      "note": ""
-    },
-    {
-      "id": "w31",
-      "text": "tulu-an",
-      "zh": "看的地方",
-      "en": "place to look from",
-      "dialects": [
-        "south"
+        "kaxabu"
       ],
       "pos": "n",
       "alt": [],
-      "note": ""
+      "note": "潘德興詞彙表 第 44 列"
+    },
+    {
+      "id": "w27",
+      "text": "kuhih",
+      "zh": "疥癬",
+      "en": "scabies",
+      "dialects": [
+        "pazeh"
+      ],
+      "pos": "n",
+      "alt": [],
+      "note": "《巴宰語詞典》p.157"
+    },
+    {
+      "id": "w28",
+      "text": "kohéh",
+      "zh": "疥癬",
+      "en": "scabies",
+      "dialects": [
+        "kaxabu"
+      ],
+      "pos": "n",
+      "alt": [],
+      "note": "《噶哈巫語分類辭典》01P-045"
+    },
+    {
+      "id": "w29",
+      "text": "muzemet",
+      "zh": "堵住，塞住",
+      "en": "to plug up",
+      "dialects": [
+        "pazeh"
+      ],
+      "pos": "v",
+      "alt": [],
+      "note": "《巴宰語詞典》p.212"
+    },
+    {
+      "id": "w30",
+      "text": "muzumut",
+      "zh": "塞住",
+      "en": "to plug up",
+      "dialects": [
+        "kaxabu"
+      ],
+      "pos": "v",
+      "alt": [],
+      "note": "《噶哈巫語分類辭典》06-075"
+    },
+    {
+      "id": "w31",
+      "text": "kanawang",
+      "zh": "銅；子彈",
+      "en": "copper; bullet",
+      "dialects": [
+        "pazeh"
+      ],
+      "pos": "n",
+      "alt": [],
+      "note": "《巴宰語詞典》p.141"
+    },
+    {
+      "id": "w32",
+      "text": "kanawan",
+      "zh": "銅；子彈",
+      "en": "copper; bullet",
+      "dialects": [
+        "kaxabu"
+      ],
+      "pos": "n",
+      "alt": [],
+      "note": "《噶哈巫語分類辭典》13-133"
+    },
+    {
+      "id": "w33",
+      "text": "ngazus",
+      "zh": "尾端，兩端",
+      "en": "tip, end",
+      "dialects": [
+        "pazeh"
+      ],
+      "pos": "n",
+      "alt": [],
+      "note": "《巴宰語詞典》p.219"
+    },
+    {
+      "id": "w34",
+      "text": "ngadus",
+      "zh": "尾端",
+      "en": "tip, end",
+      "dialects": [
+        "kaxabu"
+      ],
+      "pos": "n",
+      "alt": [],
+      "note": "《噶哈巫語分類辭典》16-010"
+    },
+    {
+      "id": "w35",
+      "text": "maturay",
+      "zh": "唱歌；演戲",
+      "en": "to sing; to act in an opera",
+      "dialects": [
+        "pazeh"
+      ],
+      "pos": "v",
+      "alt": [],
+      "note": "《巴宰語詞典》p.189"
+    },
+    {
+      "id": "w36",
+      "text": "matoway",
+      "zh": "唱歌",
+      "en": "to sing",
+      "dialects": [
+        "kaxabu"
+      ],
+      "pos": "v",
+      "alt": [],
+      "note": "《噶哈巫語分類辭典》11-007；潘德興詞彙表 第 257 列"
+    },
+    {
+      "id": "w37",
+      "text": "mataru",
+      "zh": "大；長大",
+      "en": "big; to grow up",
+      "dialects": [
+        "pazeh"
+      ],
+      "pos": "adj",
+      "alt": [],
+      "note": "《巴宰語詞典》p.187"
+    },
+    {
+      "id": "w38",
+      "text": "mataw",
+      "zh": "大",
+      "en": "big",
+      "dialects": [
+        "kaxabu"
+      ],
+      "pos": "adj",
+      "alt": [],
+      "note": "潘德興詞彙表 第 203 列"
+    },
+    {
+      "id": "w39",
+      "text": "baun",
+      "zh": "南瓜",
+      "en": "pumpkin",
+      "dialects": [
+        "pazeh"
+      ],
+      "pos": "n",
+      "alt": [],
+      "note": "《巴宰語詞典》p.85（噶哈巫語也說 baun）"
+    },
+    {
+      "id": "w40",
+      "text": "bon",
+      "zh": "南瓜",
+      "en": "pumpkin",
+      "dialects": [
+        "kaxabu"
+      ],
+      "pos": "n",
+      "alt": [],
+      "note": "潘德興詞彙表 第 52 列"
+    },
+    {
+      "id": "w41",
+      "text": "huruhur",
+      "zh": "水蒸氣",
+      "en": "steam",
+      "dialects": [
+        "pazeh"
+      ],
+      "pos": "n",
+      "alt": [],
+      "note": "《巴宰語詞典》p.126"
+    },
+    {
+      "id": "w42",
+      "text": "hoohoo",
+      "zh": "水蒸氣",
+      "en": "steam",
+      "dialects": [
+        "kaxabu"
+      ],
+      "pos": "n",
+      "alt": [],
+      "note": "《噶哈巫語分類辭典》13-086"
+    },
+    {
+      "id": "w43",
+      "text": "semer",
+      "zh": "小草",
+      "en": "young grass",
+      "dialects": [
+        "pazeh",
+        "kaxabu"
+      ],
+      "pos": "n",
+      "alt": [],
+      "note": "《巴宰語詞典》p.272；《噶哈巫語分類辭典》14-005"
+    },
+    {
+      "id": "w44",
+      "text": "xasep",
+      "zh": "五",
+      "en": "five",
+      "dialects": [
+        "pazeh",
+        "kaxabu"
+      ],
+      "pos": "num",
+      "alt": [],
+      "note": "《巴宰語詞典》p.320；《噶哈巫語分類辭典》20-011"
+    },
+    {
+      "id": "w45",
+      "text": "adang",
+      "zh": "一",
+      "en": "one",
+      "dialects": [
+        "pazeh",
+        "kaxabu"
+      ],
+      "pos": "num",
+      "alt": [],
+      "note": "《巴宰語詞典》p.60；《噶哈巫語分類辭典》20-003"
+    },
+    {
+      "id": "w46",
+      "text": "baket",
+      "zh": "掃打",
+      "en": "to swat",
+      "dialects": [
+        "kaxabu"
+      ],
+      "pos": "v",
+      "alt": [],
+      "note": "《噶哈巫語分類辭典》02C-013"
+    },
+    {
+      "id": "w47",
+      "text": "mubaket",
+      "zh": "打",
+      "en": "to hit",
+      "dialects": [
+        "pazeh",
+        "kaxabu"
+      ],
+      "pos": "v",
+      "alt": [],
+      "note": "《巴宰語詞典》p.80–81，baket- 條下派生詞；《噶哈巫語分類辭典》02C-014"
+    },
+    {
+      "id": "w48",
+      "text": "minubaket",
+      "zh": "打了",
+      "en": "hit (perfective)",
+      "dialects": [
+        "pazeh"
+      ],
+      "pos": "v",
+      "alt": [],
+      "note": "《巴宰語詞典》p.80–81，baket- 條下派生詞"
+    },
+    {
+      "id": "w49",
+      "text": "binaket",
+      "zh": "被打了",
+      "en": "was hit",
+      "dialects": [
+        "pazeh"
+      ],
+      "pos": "v",
+      "alt": [],
+      "note": "《巴宰語詞典》p.89"
+    },
+    {
+      "id": "w50",
+      "text": "mabaket",
+      "zh": "摑掌",
+      "en": "to slap",
+      "dialects": [
+        "pazeh"
+      ],
+      "pos": "v",
+      "alt": [],
+      "note": "《巴宰語詞典》p.177"
+    },
+    {
+      "id": "w51",
+      "text": "saabaket",
+      "zh": "用來打",
+      "en": "used for hitting",
+      "dialects": [
+        "pazeh"
+      ],
+      "pos": "v",
+      "alt": [],
+      "note": "《巴宰語詞典》p.80–81，baket- 條下派生詞"
+    },
+    {
+      "id": "w52",
+      "text": "sinubaket",
+      "zh": "曾用來打過",
+      "en": "was once used for hitting",
+      "dialects": [
+        "pazeh"
+      ],
+      "pos": "v",
+      "alt": [],
+      "note": "《巴宰語詞典》p.80–81，baket- 條下派生詞"
+    },
+    {
+      "id": "w53",
+      "text": "kan",
+      "zh": "吃（詞根）",
+      "en": "eat (root)",
+      "dialects": [
+        "pazeh",
+        "kaxabu"
+      ],
+      "pos": "v",
+      "alt": [],
+      "note": "《巴宰語詞典》p.140–141，kan- 條"
+    },
+    {
+      "id": "w54",
+      "text": "meken",
+      "zh": "吃",
+      "en": "to eat",
+      "dialects": [
+        "pazeh",
+        "kaxabu"
+      ],
+      "pos": "v",
+      "alt": [],
+      "note": "《巴宰語詞典》p.193；潘德興詞彙表 第 265 列"
+    },
+    {
+      "id": "w55",
+      "text": "mineken",
+      "zh": "吃完了",
+      "en": "ate",
+      "dialects": [
+        "pazeh",
+        "kaxabu"
+      ],
+      "pos": "v",
+      "alt": [],
+      "note": "《巴宰語詞典》p.130，<in> 條下派生詞；潘德興詞彙表 第 266 列"
+    },
+    {
+      "id": "w56",
+      "text": "pakan",
+      "zh": "餵",
+      "en": "to feed",
+      "dialects": [
+        "pazeh"
+      ],
+      "pos": "v",
+      "alt": [],
+      "note": "《巴宰語詞典》p.224"
+    },
+    {
+      "id": "w57",
+      "text": "kakanan",
+      "zh": "餐桌",
+      "en": "dining table",
+      "dialects": [
+        "pazeh"
+      ],
+      "pos": "n",
+      "alt": [],
+      "note": "《巴宰語詞典》p.137"
+    },
+    {
+      "id": "w58",
+      "text": "saaken",
+      "zh": "菜餚",
+      "en": "side dish",
+      "dialects": [
+        "pazeh",
+        "kaxabu"
+      ],
+      "pos": "n",
+      "alt": [],
+      "note": "《巴宰語詞典》p.261；潘德興詞彙表 第 113 列"
+    },
+    {
+      "id": "w59",
+      "text": "takani",
+      "zh": "咱們來吃",
+      "en": "let's eat",
+      "dialects": [
+        "pazeh",
+        "kaxabu"
+      ],
+      "pos": "v",
+      "alt": [],
+      "note": "《巴宰語詞典》p.140–141，kan- 條下例句；《噶哈巫語分類辭典》04B-039"
+    },
+    {
+      "id": "w60",
+      "text": "usa",
+      "zh": "去！",
+      "en": "go!",
+      "dialects": [
+        "pazeh",
+        "kaxabu"
+      ],
+      "pos": "v",
+      "alt": [],
+      "note": "《巴宰語詞典》p.313–314；潘德興詞彙表 第 321 列"
+    },
+    {
+      "id": "w61",
+      "text": "udal",
+      "zh": "雨",
+      "en": "rain",
+      "dialects": [
+        "pazeh"
+      ],
+      "pos": "n",
+      "alt": [],
+      "note": "《巴宰語詞典》p.310–311"
+    },
+    {
+      "id": "w62",
+      "text": "maudalay",
+      "zh": "可能會下雨",
+      "en": "it may rain",
+      "dialects": [
+        "pazeh"
+      ],
+      "pos": "v",
+      "alt": [],
+      "note": "《巴宰語詞典》p.189"
+    },
+    {
+      "id": "w63",
+      "text": "maudanay",
+      "zh": "將要下雨",
+      "en": "it is going to rain",
+      "dialects": [
+        "kaxabu"
+      ],
+      "pos": "v",
+      "alt": [],
+      "note": "《噶哈巫語分類辭典》13-018；潘德興詞彙表 第 299 列"
+    },
+    {
+      "id": "w64",
+      "text": "mausay",
+      "zh": "要去",
+      "en": "will go",
+      "dialects": [
+        "pazeh",
+        "kaxabu"
+      ],
+      "pos": "v",
+      "alt": [],
+      "note": "《巴宰語詞典》p.189；潘德興詞彙表 第 320 列"
+    },
+    {
+      "id": "w65",
+      "text": "paka",
+      "zh": "讓",
+      "en": "to let, to make",
+      "dialects": [
+        "kaxabu"
+      ],
+      "pos": "v",
+      "alt": [],
+      "note": "《噶哈巫語分類辭典》24-027；潘德興詞彙表 第 5 列"
     }
   ],
   "sentences": [
     {
       "id": "s1",
-      "text": "maruza a tamoh",
-      "zh": "水在流",
-      "en": "The water flows.",
+      "text": "mubaket rakihan ki aba",
+      "zh": "父親在打小孩",
+      "en": "Father is hitting the child.",
       "dialects": [
-        "north"
-      ]
+        "pazeh"
+      ],
+      "note": "《巴宰語詞典》p.80–81，baket- 條下例句"
     },
     {
       "id": "s2",
-      "text": "sapi ka alim",
-      "zh": "夜晚的火",
-      "en": "A fire at night.",
+      "text": "minubaket wazu ki aba",
+      "zh": "父親打了狗",
+      "en": "Father hit the dog.",
       "dialects": [
-        "coast"
-      ]
+        "pazeh"
+      ],
+      "note": "《巴宰語詞典》p.80–81，baket- 條下例句"
     },
     {
       "id": "s3",
-      "text": "bunang ka lalan",
-      "zh": "路上的月亮",
-      "en": "The moon over the road.",
+      "text": "baabaket wazu ki saw",
+      "zh": "人正在打狗",
+      "en": "Someone is hitting the dog.",
       "dialects": [
-        "south"
-      ]
+        "pazeh"
+      ],
+      "note": "《巴宰語詞典》p.80–81，baket- 條下例句"
     },
     {
       "id": "s4",
-      "text": "makan a asu",
-      "zh": "狗在吃",
-      "en": "The dog is eating.",
-      "dialects": []
+      "text": "saabaket wazu ki batakan",
+      "zh": "此竹子用來打狗",
+      "en": "This bamboo is used to hit dogs.",
+      "dialects": [
+        "pazeh"
+      ],
+      "note": "《巴宰語詞典》p.80–81，baket- 條下例句"
     },
     {
       "id": "s5",
-      "text": "pakan ka asu",
-      "zh": "餵狗",
-      "en": "Feed the dog.",
-      "dialects": []
+      "text": "sinubaket wazu ki batakan",
+      "zh": "這竹子曾用來打過狗",
+      "en": "This bamboo was once used to hit a dog.",
+      "dialects": [
+        "pazeh"
+      ],
+      "note": "《巴宰語詞典》p.80–81，baket- 條下例句"
+    },
+    {
+      "id": "s6",
+      "text": "pabaket mu!",
+      "zh": "你們相打吧！",
+      "en": "Go on, hit each other!",
+      "dialects": [
+        "pazeh"
+      ],
+      "note": "《巴宰語詞典》p.80–81，baket- 條下例句"
+    },
+    {
+      "id": "s7",
+      "text": "ana mubaket rakihan!",
+      "zh": "別打孩子！",
+      "en": "Don't hit the child!",
+      "dialects": [
+        "pazeh"
+      ],
+      "note": "《巴宰語詞典》p.66，ana 條下例句"
+    },
+    {
+      "id": "s8",
+      "text": "takani!",
+      "zh": "咱們吃！",
+      "en": "Let's eat!",
+      "dialects": [
+        "pazeh"
+      ],
+      "note": "《巴宰語詞典》p.140–141，kan- 條下例句"
+    },
+    {
+      "id": "s9",
+      "text": "takanaw alaw!",
+      "zh": "咱們吃魚吧！",
+      "en": "Let's eat fish!",
+      "dialects": [
+        "pazeh"
+      ],
+      "note": "《巴宰語詞典》p.285，ta- 條下例句"
+    },
+    {
+      "id": "s10",
+      "text": "mausay asay?",
+      "zh": "要去那兒？",
+      "en": "Where are you going?",
+      "dialects": [
+        "pazeh"
+      ],
+      "note": "《巴宰語詞典》p.71–72，asay 條下例句"
+    },
+    {
+      "id": "s11",
+      "text": "aduun naki lia",
+      "zh": "我放好了",
+      "en": "I have put it away.",
+      "dialects": [
+        "pazeh"
+      ],
+      "note": "《巴宰語詞典》p.61，adu- 條下例句"
+    },
+    {
+      "id": "s12",
+      "text": "pakatubabawen naki ki xuma",
+      "zh": "我加高房子了",
+      "en": "I made the house taller.",
+      "dialects": [
+        "pazeh"
+      ],
+      "note": "《巴宰語詞典》p.78–79，babaw 條下例句"
+    },
+    {
+      "id": "s13",
+      "text": "yaku a takat pasibaza yaku matoway.",
+      "zh": "我的老師教我唱歌。",
+      "en": "My teacher teaches me to sing.",
+      "dialects": [
+        "kaxabu"
+      ],
+      "note": "林鴻瑞《噶哈巫語參考語法》CH10 價調整機制 例 (10.5a)（潘德興 2017/09/08）"
+    },
+    {
+      "id": "s14",
+      "text": "paka bauzak meken.",
+      "zh": "讓豬吃。",
+      "en": "Let the pig eat.",
+      "dialects": [
+        "kaxabu"
+      ],
+      "note": "林鴻瑞《噶哈巫語參考語法》CH10 價調整機制 例 (10.18a)（潘德興 2019/09/17）"
+    },
+    {
+      "id": "s15",
+      "text": "biluan pakamuaping yaku a ukut.",
+      "zh": "Biluan 弄破我的褲子。",
+      "en": "Biluan tore my trousers.",
+      "dialects": [
+        "kaxabu"
+      ],
+      "note": "林鴻瑞《噶哈巫語參考語法》CH10 價調整機制 例 (10.8a)（潘德興 2021/01/19）"
+    },
+    {
+      "id": "s16",
+      "text": "atun iu biluan maakahaaput.",
+      "zh": "Atun 和 Biluan 相愛。",
+      "en": "Atun and Biluan love each other.",
+      "dialects": [
+        "kaxabu"
+      ],
+      "note": "林鴻瑞《噶哈巫語參考語法》CH10 價調整機制 例 (10.32b)（潘德興 2020/11/27）"
+    },
+    {
+      "id": "s17",
+      "text": "yaku mineken lia.",
+      "zh": "我吃完了。",
+      "en": "I have eaten.",
+      "dialects": [
+        "kaxabu"
+      ],
+      "note": "林鴻瑞《噶哈巫語參考語法》CH12 語法關係 例 (12.7b)（潘德興 2020/08/20）"
+    },
+    {
+      "id": "s18",
+      "text": "yaku mausay mutalek a sumay.",
+      "zh": "我要來煮飯。",
+      "en": "I'm going to cook rice.",
+      "dialects": [
+        "kaxabu"
+      ],
+      "note": "林鴻瑞《噶哈巫語參考語法》CH12 語法關係 例 (12.11c)（潘德興 2018/03/14）"
+    },
+    {
+      "id": "s19",
+      "text": "laladan nahaza saaken.",
+      "zh": "桌子（上）有菜餚。",
+      "en": "There are dishes on the table.",
+      "dialects": [
+        "kaxabu"
+      ],
+      "note": "林鴻瑞《噶哈巫語參考語法》CH11 子句類型 例 (11.26a)（潘德興 2017/10/11）"
     }
   ],
   "examples": [
     {
-      "q": "ralan",
+      "q": "turu",
       "note": {
-        "zh-TW": "也會找到南部的 lalan（r↔l）",
-        "en": "also finds southern lalan (r↔l)"
+        "zh-TW": "也會找到噶哈巫的 tu'u、tuu（r → '、r → ∅）",
+        "en": "also finds Kaxabu tu'u, tuu (r → ', r → ∅)"
       }
     },
     {
-      "q": "bunan",
+      "q": "bintul",
       "note": {
-        "zh-TW": "也會找到 bunang（詞尾 n↔ng）",
-        "en": "also finds bunang (final n↔ng)"
+        "zh-TW": "也會找到 bintun（詞尾 l → n）",
+        "en": "also finds bintun (final l → n)"
       }
     },
     {
-      "q": "pakan",
+      "q": "maturay",
       "note": {
-        "zh-TW": "自動拆解出詞根 kan",
-        "en": "finds the root kan automatically"
+        "zh-TW": "也會找到 matoway（ura → owa）",
+        "en": "also finds matoway (ura → owa)"
       }
     },
     {
-      "q": "火",
+      "q": "minubaket",
+      "note": {
+        "zh-TW": "自動拆解出詞根 baket",
+        "en": "finds the root baket automatically"
+      }
+    },
+    {
+      "q": "打",
       "note": {
         "zh-TW": "以中文釋義搜尋",
         "en": "search Chinese meanings"
@@ -579,31 +1416,39 @@
   "lab": {
     "pairs": [
       [
-        "ralan",
-        "lalan"
+        "turu",
+        "tu'u"
       ],
       [
-        "bunan",
-        "bunang"
+        "maturay",
+        "matoway"
       ],
       [
-        "keru",
-        "kilu"
+        "huruhur",
+        "hoohoo"
+      ],
+      [
+        "kuhih",
+        "kohéh"
       ]
     ],
     "morph": {
       "examples": [
         [
-          "pakan",
+          "minubaket",
+          "baket"
+        ],
+        [
+          "saabaket",
+          "baket"
+        ],
+        [
+          "takani",
           "kan"
         ],
         [
-          "tutulu",
-          "tulu"
-        ],
-        [
-          "maluza",
-          "ruza"
+          "maudanay",
+          "udal"
         ]
       ]
     }

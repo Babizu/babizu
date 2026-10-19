@@ -19,6 +19,8 @@ const draft = reactive(studioDraft)
 
 const open = defineModel<boolean>('open', { required: true })
 const props = defineProps<{ kind: 'words' | 'sentences' }>()
+/** 匯入完成（附加或取代），讓表格翻到新的列 */
+const emit = defineEmits<{ imported: [mode: 'append' | 'replace'] }>()
 
 const pasted = ref('')
 const table = ref<string[][]>([])
@@ -40,7 +42,7 @@ const ROLE_LABELS: Record<ColumnRole, string> = {
   ignore: msg('不用'),
 }
 /** 例句只用得到這幾種 */
-const roleOptions = computed(() => (props.kind === 'words' ? COLUMN_ROLES : COLUMN_ROLES.filter((r) => ['text', 'zh', 'en', 'dialect', 'ignore'].includes(r))))
+const roleOptions = computed(() => (props.kind === 'words' ? COLUMN_ROLES : COLUMN_ROLES.filter((r) => ['text', 'zh', 'en', 'dialect', 'note', 'ignore'].includes(r))))
 
 watch(open, (value) => {
   if (!value) return
@@ -102,6 +104,7 @@ function doImport() {
   if (mode.value === 'replace') draft[props.kind].splice(0, draft[props.kind].length)
   ;(draft[props.kind] as unknown[]).push(...rows)
   toast.success(t('已匯入 {count} 列', { count: rows.length }))
+  emit('imported', mode.value)
   open.value = false
 }
 </script>

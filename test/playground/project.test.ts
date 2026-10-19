@@ -56,13 +56,13 @@ describe('專案 → 資料集', () => {
 
   it('一個來源、詞與例句兩個分片；記錄的編號就是專案的編號，順序與群組照專案', () => {
     expect(source.id).toBe('playground')
-    expect(source.title).toBe('示範語（範例專案）')
+    expect(source.title).toBe('巴宰語與噶哈巫語（範例專案）')
     expect(shards.map((s) => [s.key, s.records.length])).toEqual([
       ['words', SAMPLE.words.length],
       ['sentences', SAMPLE.sentences.length],
     ])
-    expect(shards[0].records[0]).toMatchObject({ id: 'playground:w1', text: 'ralan', unit: 'word', dialects: ['north'], pos: 'n', group: { id: 'playground:words', seq: 0 } })
-    expect(shards[1].records[0]).toMatchObject({ unit: 'sentence', senses: [{ zh: '水在流', en: 'The water flows.' }] })
+    expect(shards[0].records[0]).toMatchObject({ id: 'playground:w1', text: 'turu', unit: 'word', dialects: ['pazeh'], pos: 'num', group: { id: 'playground:words', seq: 0 } })
+    expect(shards[1].records[0]).toMatchObject({ unit: 'sentence', senses: [{ zh: '父親在打小孩', en: 'Father is hitting the child.' }], notes: ['《巴宰語詞典》p.80–81，baket- 條下例句'] })
     expect(source.stats).toMatchObject({ records: SAMPLE.words.length + SAMPLE.sentences.length, sentence: SAMPLE.sentences.length })
   })
 
@@ -81,12 +81,12 @@ describe('在記憶體建置（與 babizu build 同一份程式）', () => {
   it('瀏覽器的單一執行緒分析與 Node 的 worker_threads（prepareSiteData 用的）產生逐位元相同的網站資料', async () => {
     const browser = await buildProject(SAMPLE, { sha1Hex, analyze: analyzeInProcess(), builtAt: 'x' })
     const node = await buildSiteData(
-      { loaded: projectToDataset(SAMPLE), profile: SAMPLE.profile, varieties: [{ code: 'north', parent: null }, { code: 'south', parent: null }, { code: 'coast', parent: 'south' }] },
+      { loaded: projectToDataset(SAMPLE), profile: SAMPLE.profile, varieties: [{ code: 'pazeh', parent: null }, { code: 'kaxabu', parent: null }] },
       { derive: (args) => buildDerivations({ ...args, cacheDir }) },
     )
     for (const [path, content] of node.files) expect(JSON.stringify(browser.files[path]), path).toBe(JSON.stringify(content))
     expect(Object.keys(browser.files).sort()).toEqual([...node.files.map(([p]) => p), 'manifest.json'].sort())
-    // 範例有構詞：自動派生圖不是空的（kan → makan、pakan…）
+    // 範例有構詞：自動派生圖不是空的（baket → mubaket、saabaket…）
     expect(browser.stats.derivationEdges).toBeGreaterThan(0)
   }, 60_000)
 
@@ -98,31 +98,31 @@ describe('在記憶體建置（與 babizu build 同一份程式）', () => {
     const c = await buildProject(changed, { sha1Hex, analyze: analyzeInProcess(), builtAt: 'x' })
     expect(a.version).toBe(b.version)
     expect(c.version).not.toBe(a.version)
-    expect(a.files['manifest.json']).toMatchObject({ version: a.version, sources: ['playground'], counts: { records: 36 } })
+    expect(a.files['manifest.json']).toMatchObject({ version: a.version, sources: ['playground'], counts: { records: SAMPLE.words.length + SAMPLE.sentences.length } })
   })
 
   it('進度：分析每一段都回報；步驟依序', async () => {
     const steps: string[] = []
     const progress: number[] = []
-    await buildProject(SAMPLE, { sha1Hex, analyze: analyzeInProcess((done) => progress.push(done)), onStep: (s) => steps.push(s) })
+    const { stats } = await buildProject(SAMPLE, { sha1Hex, analyze: analyzeInProcess((done) => progress.push(done)), onStep: (s) => steps.push(s) })
     expect(steps).toEqual(['dataset', 'index', 'derivations', 'done'])
-    expect(progress.at(-1)).toBe(SAMPLE.words.length + 2) // 詞圖的詞數（含例句中的詞）
+    expect(progress.at(-1)).toBe(stats.terms) // 詞圖的詞數（含例句中的詞）
+    expect(stats.terms).toBeGreaterThan(SAMPLE.words.length)
   })
 })
 
 describe('站台設定', () => {
   it('名稱、變體、語言設定檔、範例、實驗室的詞對來自專案；介面字串沿用建置時的設定', () => {
     const site = playgroundClientSite(SITE, SAMPLE)
-    expect(site.title).toEqual({ 'zh-TW': '示範語（範例專案）', en: 'Demo language (sample project)' })
+    expect(site.title).toEqual({ 'zh-TW': '巴宰語與噶哈巫語（範例專案）', en: 'Pazeh and Kaxabu (sample project)' })
     expect(site.varieties.map((v) => [v.code, v.parent])).toEqual([
-      ['north', null],
-      ['south', null],
-      ['coast', 'south'],
+      ['pazeh', null],
+      ['kaxabu', null],
     ])
     expect(site.profile).toBe(SAMPLE.profile)
-    expect(site.examples[0].q).toBe('ralan')
-    expect(site.lab.pairs[0]).toEqual(['ralan', 'lalan'])
-    expect(site.lab.morph.examples[0]).toEqual(['pakan', 'kan'])
+    expect(site.examples[0].q).toBe('turu')
+    expect(site.lab.pairs[0]).toEqual(['turu', "tu'u"])
+    expect(site.lab.morph.examples[0]).toEqual(['minubaket', 'baket'])
     expect(site).toMatchObject({ playground: true, csr: false, messages: SITE.messages, locales: SITE.locales })
   })
 
@@ -130,8 +130,8 @@ describe('站台設定', () => {
     const p = { ...clone(SAMPLE), examples: undefined, lab: undefined }
     delete p.profile.morphology
     const site = playgroundClientSite(SITE, p)
-    expect(site.examples.map((e) => e.q)).toEqual(['ralan', 'lalan', 'bunan'])
-    expect(site.lab.pairs).toEqual([['ralan', 'lalan']])
+    expect(site.examples.map((e) => e.q)).toEqual(['turu', "tu'u", 'tuturu'])
+    expect(site.lab.pairs).toEqual([['turu', "tu'u"]])
     expect(site.lab.morph.examples).toEqual([])
   })
 })
@@ -141,7 +141,7 @@ describe('網站起始包與 zip', () => {
     const files = new Map(siteStarterFiles(SAMPLE, 'demo-dict'))
     expect([...files.keys()]).toEqual(['README.md', 'babizu.config.js', 'language.json', 'data/records/playground/words.json', 'data/records/playground/sentences.json', 'data/sources.json', 'data/dataset.json'])
     expect(files.get('babizu.config.js')).toContain('id: "demo-dict"')
-    expect(files.get('babizu.config.js')).toContain('"code": "coast"')
+    expect(files.get('babizu.config.js')).toContain('"code": "kaxabu"')
     expect(JSON.parse(files.get('language.json') as string)).toEqual(SAMPLE.profile)
     expect(JSON.parse(files.get('data/dataset.json') as string)).toMatchObject({ format: 'babizu-dataset', sources: [{ id: 'playground' }] })
     const zip = createZip([...files])

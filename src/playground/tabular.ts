@@ -167,9 +167,9 @@ export function tableToWords(table: string[][], roles: ColumnRole[], { hasHeader
   return { rows, unknownDialects: [...unknown], skipped }
 }
 
-/** 表格 → 專案的例句（用到的欄：text、zh、en、dialect） */
+/** 表格 → 專案的例句（用到的欄：text、zh、en、dialect、note） */
 export function tableToSentences(table: string[][], roles: ColumnRole[], { hasHeader, varieties, usedIds = [] }: { hasHeader: boolean; varieties: ProjectVariety[]; usedIds?: Iterable<string> }): ImportResult<ProjectSentence> {
   const words = tableToWords(table, roles, { hasHeader, varieties })
   const next = nextId('s', usedIds)
-  return { ...words, rows: words.rows.map(({ text, zh, en, dialects }) => ({ id: next(), text, zh, en, dialects })) }
+  return { ...words, rows: words.rows.map(({ text, zh, en, dialects, note }) => ({ id: next(), text, zh, en, dialects, note })) }
 }
