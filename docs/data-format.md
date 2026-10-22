@@ -94,6 +94,67 @@ data/
 | `citation` | 整組的出處（例如錄音檔），可為 `null` |
 | `media[]` | 整組的媒體（例如整支錄影），格式同記錄的 `media` |
 
+## 不同類型的來源怎麼放
+
+辭典、詞表、長篇語料、田野錄音的結構差很大，但全部放進同一組欄位。差異由三個地方承擔：來源的 `type`、`browse` 與群組的 `type`；
+每筆記錄再用 `citation`、`speaker`、`media` 等欄位記下各自的溯源資訊。
+
+| 來源類型 | 來源 `type` | 群組 | 瀏覽（`browse.mode`） | 主要記錄 | 校對（`reviewTracked`） |
+|---|---|---|---|---|---|
+| 紙本辭典（如 `pazih-dict`） | `dictionary` | 一個詞條一個群組（`entry`），含詞條標題、派生詞與例句 | `page`：一頁一個分片 | 詞綴、詞、片語、句子 | 依來源決定 |
+| 分類辭典（如 `kaxabu-classified`） | `dictionary` | 一個語意類別一個群組（`category`） | `category` | 詞、片語 | 依來源決定 |
+| 詞表（如 `pan-dexing-wordlist`） | `wordlist` | 依詞性或文獻分組（`list`） | `list` | 詞 | 通常沒有 |
+| 語法例句集（如 `lin-grammar`） | `corpus` | 一章一個群組（`list`） | `category` | 句子，附音檔、發音人、記錄日期 | 依來源決定 |
+| 錄影、錄音語料（如 `pan-dexing-corpus`） | `corpus` | 一支錄影或錄音一個群組（`recording`） | `recording` | 句子，附時間碼、逐詞對譯 | 依來源決定 |
+
+各種來源特有的資訊放在固定的欄位，不需要另開格式：
+
+| 來源特徵 | 用到的欄位 |
+|---|---|
+| 田野錄音、錄影語料 | `speaker` 發音人；`media[]` 音檔與影片；`citation.timecode` 起訖秒數；`notes` 記錄日期；群組的 `media[]` 放整支錄影 |
+| 紙本辭典 | `citation.page`、`citation.pages[]`、`citation.scan`（原書掃描圖）；`group` 表示詞條的層級 |
+| 詞表 | `citation.row`（原表第幾列）；`pos`；`domain`（語意分類） |
+| 早期外文文獻 | `dialectRaw`（照抄原始的方言標記）；`attribution`（原書出處）；群組標題放文獻名稱 |
+| 使用多種書寫系統的來源 | `altTexts[]`，`text` 仍然是來源的主要寫法 |
+
+校對流程是來源的屬性，不是記錄的屬性：`reviewTracked: false` 的來源，網站完全不顯示校對狀態，不假裝有狀態可言。
+
+## 條目、句子、詞綴與詞根
+
+每筆記錄一個 `unit`：`affix`、`word`、`phrase`、`sentence`（判定規則見上）。詞條、派生詞、例句之間的關係不靠 `unit`，靠群組：
+
+- `group.role`：`head` 詞條標題、`form` 派生詞、`example` 例句、`segment` 語料片段、`item` 一般項目；
+- `group.parent`：這筆記錄排在哪一筆底下（記錄 id）。例句的 `parent` 指向它示範的那個詞；
+- `morphology.derivedFrom[]`：辭典標示的派生關係 `{relation, text}`，`relation` 是 `<`、`>`、`+`，符號與衍生方式（`via`）依來源體例原樣記錄，不另行詮釋。
+
+以《巴宰語詞典》的 `baket-` 條為例：
+
+```
+群組 pazih-dict:p080-16（type: entry，標題 baket-）
+├─ head     baket-       affix（formType: bound-initial）     條目標題，是黏著的詞根
+├─ form     mubaket      word（formType: free）               派生詞
+├─ form     minubaket    word
+│   └─ example  mubaket rakihan ki aba    sentence            group.parent → mubaket
+└─ …
+```
+
+詞根與詞綴的處理：
+
+- `morphology.formType` 分 `free`（自由詞）、`bound-initial`（詞首黏著形式）、`bound-final`（詞尾）、`circumfix`（環綴）、`infix`（中綴）。
+  黏著的詞根在辭典裡常寫成 `baket-`，所以與詞綴一樣是 `affix`。
+- 資料集**不要求**每筆記錄標出詞根或詞幹。要找詞根，BCDP 用詞庫的所有詞去拆（見 [../packages/bcdp/docs/bcdp.md](../packages/bcdp/docs/bcdp.md)），
+  `segmentation` 與 `derivedFrom` 只是辭典已有的人工標註，檢查清單拿它們與演算法的結果對照。
+- `segmentation` 依萊比錫標註規則（`-` 詞素界、`=` 附著詞界、`~` 重疊、`<x>` 中綴、`( )` 可省略）。
+
+## 設計原則
+
+1. **照錄，不修正。** `text`、`dialectRaw`、`pos`、`attribution` 都照來源抄；整理過的欄位（`dialects`）另外存。
+2. **不確定就留空。** 不臆測方言，不補來源沒有的釋義或英文。
+3. **每筆記錄都能溯源。** 頁碼、列號、時間碼、掃描圖，讓人回得到原始位置；`localId` 保持穩定。
+4. **校對狀態誠實。** 沒有流程的來源不顯示狀態。
+5. **資料與搜尋分開。** 搜尋索引不在資料集裡，換語言設定檔不必重新匯出。
+6. **每一筆都驗證。** JSON Schema 加上一致性檢查，有錯誤就不輸出。
+
 ## 一致性檢查
 
 `validateDataset` 除了 JSON Schema 之外還檢查：
