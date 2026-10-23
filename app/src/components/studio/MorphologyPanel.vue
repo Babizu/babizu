@@ -12,7 +12,8 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { msg, t } from '@/i18n.ts'
 import { specLabel } from '@/lib/labels.ts'
-import { draft as studioDraft } from '@/playground/studio.ts'
+import { askConfirm } from '@/playground/confirm.ts'
+import { issuePaths, draft as studioDraft } from '@/playground/studio.ts'
 
 /** 草稿（以 reactive 取用：模板裡直接改它的欄位，Vue 才知道它不是 ref） */
 const draft = reactive(studioDraft)
@@ -21,9 +22,9 @@ const draft = reactive(studioDraft)
 const isGrammar = computed(() => !!draft.profile.morphology && 'morphemes' in draft.profile.morphology)
 const spec = computed(() => (isGrammar.value ? null : ((draft.profile.morphology as MorphologySpec | undefined) ?? null)))
 
-function enable(on: boolean) {
+async function enable(on: boolean) {
   if (on) draft.profile.morphology = { prefixes: [], suffixes: [], minStem: 3 }
-  else if (window.confirm(t('關掉構詞會刪掉所有詞綴與構詞音變。要繼續嗎？'))) delete draft.profile.morphology
+  else if (await askConfirm({ title: t('關掉構詞？'), message: t('關掉構詞會刪掉所有詞綴與構詞音變。要保留，請先匯出專案檔。'), confirm: t('關掉構詞'), destructive: true })) delete draft.profile.morphology
 }
 
 type AffixList = 'prefixes' | 'suffixes' | 'infixes'
@@ -38,6 +39,7 @@ function addAffix(key: AffixList) {
   ;(s[key] ??= []).push({ form: '' })
 }
 const glossText = (gloss: unknown) => (typeof gloss === 'string' ? gloss : '')
+const invalid = (path: string) => issuePaths.value.has(path) || undefined
 
 /** 重疊型式的說明 */
 const PATTERN_HINTS: Record<ReduplicationPattern, string> = {
@@ -108,8 +110,8 @@ function setText(key: 'vowels' | 'glides', value: string) {
             <Button variant="ghost" size="sm" @click="addAffix(list.key)"><PlusIcon />{{ t('新增') }}</Button>
           </div>
           <p class="text-muted-foreground text-xs">{{ t(list.hint) }}</p>
-          <div v-for="(affix, k) in listOf(list.key)" :key="k" class="flex items-center gap-2">
-            <Input v-model="affix.form" class="native-text h-8 w-32 font-mono" :aria-label="t('寫法')" :aria-invalid="!affix.form.trim() || undefined" />
+          <div v-for="(affix, k) in listOf(list.key)" :key="k" class="flex items-center gap-2" :data-path="`profile.morphology.${list.key}[${k}]`">
+            <Input v-model="affix.form" class="native-text h-8 w-32 font-mono" :aria-label="t('寫法')" :aria-invalid="!affix.form.trim() || invalid(`profile.morphology.${list.key}[${k}]`)" />
             <Input class="h-8 flex-1" :model-value="glossText(affix.gloss)" :placeholder="t('意思（選填）')" :aria-label="t('意思')" @update:model-value="(v) => (affix.gloss = String(v) || undefined)" />
             <Button variant="ghost" size="icon" :aria-label="t('刪除')" @click="listOf(list.key).splice(k, 1)"><Trash2Icon /></Button>
           </div>
@@ -131,8 +133,8 @@ function setText(key: 'vowels' | 'glides', value: string) {
             <Button variant="ghost" size="sm" @click="addAlternation"><PlusIcon />{{ t('新增') }}</Button>
           </div>
           <p class="text-muted-foreground text-xs">{{ t('只在詞素交界發生的變化，例如詞根末的 t 在後綴前寫成 d（底層 t → 表面 d）。') }}</p>
-          <div v-for="(alt, k) in spec.alternations ?? []" :key="k" class="flex flex-wrap items-center gap-2">
-            <Input v-model="alt.underlying" class="native-text h-8 w-24 font-mono" :aria-label="t('底層')" :placeholder="t('底層')" />
+          <div v-for="(alt, k) in spec.alternations ?? []" :key="k" class="flex flex-wrap items-center gap-2" :data-path="`profile.morphology.alternations[${k}]`">
+            <Input v-model="alt.underlying" class="native-text h-8 w-24 font-mono" :aria-label="t('底層')" :placeholder="t('底層')" :aria-invalid="invalid(`profile.morphology.alternations[${k}]`)" />
             <span class="text-muted-foreground" aria-hidden="true">→</span>
             <Input v-model="alt.surface" class="native-text h-8 w-24 font-mono" :aria-label="t('表面')" :placeholder="t('表面')" />
             <select v-model="alt.position" class="border-input bg-background h-8 rounded-md border px-1 text-sm" :aria-label="t('位置')">

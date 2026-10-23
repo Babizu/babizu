@@ -169,7 +169,7 @@ export async function loadSiteConfig(siteDir: string) {
     else if (!existsSync(file)) errors.push(`找不到展示版的範例專案 ${file}`)
     else {
       const sample = JSON.parse(await readFile(file, 'utf8'))
-      const problems = validateProject(sample)
+      const problems = validateProject(sample).filter((e) => e.level === 'error')
       for (const e of problems) errors.push(`展示版的範例專案：${e.path ? `${e.path}：` : ''}${e.message}`)
       if (problems.length === 0) playgroundSample = sample
     }

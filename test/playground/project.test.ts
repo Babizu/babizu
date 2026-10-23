@@ -1,20 +1,19 @@
 /**
  * 展示版的專案（src/playground/）：檢查、轉成資料集、在記憶體建置（與 `babizu build` 的程式等價）、
- * 站台設定、網站起始包、規則列的兩種寫法、讀 .xlsx。
+ * 站台設定、網站起始包、規則列的兩種寫法。
  */
 
 import { createHash } from 'node:crypto'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { deflateRawSync } from 'node:zlib'
+import { unzipSync } from 'fflate'
 import { afterAll, describe, expect, it } from 'vitest'
 import { buildProject } from '../../src/playground/build.ts'
 import { siteStarterFiles } from '../../src/playground/export.ts'
-import { newProject, projectToDataset, validateProject, type PlaygroundProject } from '../../src/playground/project.ts'
+import { hasErrors, newProject, projectToDataset, validateProject, type PlaygroundProject } from '../../src/playground/project.ts'
 import { ruleRowFrom, ruleRowProblem, ruleRowView } from '../../src/playground/rule-rows.ts'
 import { playgroundClientSite } from '../../src/playground/site.ts'
-import { readXlsx, unzipText } from '../../src/playground/xlsx.ts'
 import { createZip, crc32 } from '../../src/playground/zip.ts'
 import { buildDerivations } from '../../src/site/derivations.ts'
 import { analyzeInProcess, buildSiteData } from '../../src/site/site-data.ts'
@@ -34,19 +33,57 @@ describe('檢查專案', () => {
     expect(validateProject(newProject())).toEqual([])
   })
 
-  it('編號重複或格式不對、沒有詞形、方言不在變體清單、規則的權重是負的：都指出位置', () => {
+  it('編號重複或格式不對、沒有詞形、方言不在變體清單、規則的權重是負的：都指出位置，訊息說明是哪一列', () => {
     const p = clone(SAMPLE)
     p.words[1].id = p.words[0].id
     p.words[2].id = 'a b'
     p.words[3].text = ' '
     p.sentences[0].dialects = ['west']
+    p.sentences[2].dialects = ['west']
     p.profile.rules = [{ category: 'x', rules: [['a', 'b', -1]] }]
-    const paths = validateProject(p).map((i) => i.path)
-    expect(paths).toEqual(expect.arrayContaining(['words[1].id', 'words[2].id', 'words[3].text', 'sentences[0].dialects', 'profile']))
+    const issues = validateProject(p)
+    expect(issues.map((i) => i.path)).toEqual(expect.arrayContaining(['words[1].id', 'words[2].id', 'words[3].text', 'sentences[0].dialects', 'profile.rules[0].rules[0]']))
+    expect(issues.every((i) => i.level === 'error')).toBe(true)
+    // 同一個不存在的變體只報一次，列出所有的列
+    const west = issues.find((i) => i.path === 'sentences[0].dialects')
+    expect(west).toMatchObject({ paths: ['sentences[0].dialects', 'sentences[2].dialects'], params: { code: 'west', count: 2, rows: '1, 3' } })
+    expect(west?.message).toContain('例句有 2 列用到不在清單中的語言變體「west」（第 1, 3 列）')
+    expect(issues.find((i) => i.path === 'words[1].id')?.message).toContain(`和第 1 列重複`)
+  })
+
+  it('變體：代碼格式、上層不存在或循環；構詞：空白、帶連字號的詞綴', () => {
+    const p = clone(SAMPLE)
+    p.varieties = [
+      { code: 'a', label: 'A', parent: 'b' },
+      { code: 'b', label: 'B', parent: 'a' },
+      { code: 'North', label: 'N' },
+      { code: 'c', label: 'C', parent: 'zz' },
+    ]
+    for (const r of [...p.words, ...p.sentences]) r.dialects = []
+    p.profile.morphology = { prefixes: [{ form: '' }, { form: 'ma-' }], suffixes: [] }
+    const messages = validateProject(p).map((i) => `${i.path} ${i.message}`)
+    expect(messages).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/^varieties\[0\]\.parent .*循環（a → b → a）/u),
+        expect.stringMatching(/^varieties\[2\]\.code .*「North」只能用小寫/u),
+        expect.stringMatching(/^varieties\[3\]\.parent .*「zz」不在變體清單中/u),
+        expect.stringMatching(/^profile\.morphology\.prefixes\[0\] 構詞：前綴第 1 個沒有寫法/u),
+        expect.stringMatching(/^profile\.morphology\.prefixes\[1\] 構詞：前綴「ma-」不用寫連字號/u),
+      ]),
+    )
+  })
+
+  it('完全重複的列是提醒，不擋建置', () => {
+    const p = clone(SAMPLE)
+    p.words.push({ ...p.words[0], id: 'dup' })
+    const issues = validateProject(p)
+    expect(issues).toHaveLength(1)
+    expect(issues[0]).toMatchObject({ level: 'warning', path: `words[${p.words.length - 1}].text` })
+    expect(hasErrors(issues)).toBe(false)
   })
 
   it('不是專案：格式、名稱', () => {
-    expect(validateProject(null)).toEqual([{ path: '', message: '專案必須是物件' }])
+    expect(validateProject(null)).toMatchObject([{ path: '', level: 'error', message: '這不是專案（內容必須是一個 JSON 物件）' }])
     expect(validateProject({ ...newProject(), format: 'x', title: { 'zh-TW': ' ' } }).map((i) => i.path)).toEqual(['format', 'title'])
   })
 })
@@ -145,8 +182,8 @@ describe('網站起始包與 zip', () => {
     expect(JSON.parse(files.get('language.json') as string)).toEqual(SAMPLE.profile)
     expect(JSON.parse(files.get('data/dataset.json') as string)).toMatchObject({ format: 'babizu-dataset', sources: [{ id: 'playground' }] })
     const zip = createZip([...files])
-    const back = await unzipText(zip)
-    expect([...back]).toEqual([...files])
+    const back = Object.entries(unzipSync(zip)).map(([name, data]) => [name, new TextDecoder().decode(data)])
+    expect(back).toEqual([...files])
   })
 
   it('CRC-32（標準的測試向量）', () => {
@@ -169,47 +206,4 @@ describe('規則列的兩種寫法', () => {
     expect(ruleRowProblem({ source: 'a', target: '', weight: Number.NaN })).toBe('weight')
     expect(ruleRowProblem({ source: 'a', target: 'b', weight: 0 })).toBeNull()
   })
-})
-
-describe('讀 .xlsx', () => {
-  /** 一個最小的活頁簿；deflate 為 true 時以 deflate 壓縮（Excel 存檔的方式） */
-  function workbook(deflate: boolean): Uint8Array {
-    const files: Array<[string, string]> = [
-      ['xl/workbook.xml', '<workbook><sheets><sheet name="詞表" sheetId="1" r:id="rId7"/></sheets></workbook>'],
-      ['xl/_rels/workbook.xml.rels', '<Relationships><Relationship Id="rId7" Type="worksheet" Target="worksheets/data.xml"/></Relationships>'],
-      ['xl/sharedStrings.xml', '<sst><si><t>詞</t></si><si><t>中文</t></si><si><r><t>ra</t></r><r><t>lan</t></r></si><si><t xml:space="preserve"> 路 &amp; 道 </t></si></sst>'],
-      [
-        'xl/worksheets/data.xml',
-        '<worksheet><sheetData><row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1" t="s"><v>1</v></c></row>' +
-          '<row r="2"><c r="A2" t="s"><v>2</v></c><c r="C2" t="s"><v>3</v></c></row><row r="3"><c r="A3" t="inlineStr"><is><t>tulu</t></is></c><c r="B3"><v>3</v></c></row>' +
-          '<row r="4"><c r="A4"/></row></sheetData></worksheet>',
-      ],
-    ]
-    if (!deflate) return createZip(files)
-    // 以 deflate 壓縮的 zip（只寫 readXlsx 需要的欄位）
-    const enc = new TextEncoder()
-    const parts: number[] = []
-    const central: number[] = []
-    const u16 = (n: number) => [n & 0xff, (n >> 8) & 0xff]
-    const u32 = (n: number) => [n & 0xff, (n >> 8) & 0xff, (n >> 16) & 0xff, (n >>> 24) & 0xff]
-    for (const [name, text] of files) {
-      const data = [...deflateRawSync(enc.encode(text))]
-      const nameBytes = [...enc.encode(name)]
-      const offset = parts.length
-      parts.push(...u32(0x04034b50), ...u16(20), ...u16(0), ...u16(8), ...u32(0), ...u32(0), ...u32(data.length), ...u32(text.length), ...u16(nameBytes.length), ...u16(0), ...nameBytes, ...data)
-      central.push(...u32(0x02014b50), ...u16(20), ...u16(20), ...u16(0), ...u16(8), ...u32(0), ...u32(0), ...u32(data.length), ...u32(text.length), ...u16(nameBytes.length), ...u16(0), ...u16(0), ...u16(0), ...u16(0), ...u32(0), ...u32(offset), ...nameBytes)
-    }
-    const end = [...u32(0x06054b50), ...u16(0), ...u16(0), ...u16(files.length), ...u16(files.length), ...u32(central.length), ...u32(parts.length), ...u16(0)]
-    return new Uint8Array([...parts, ...central, ...end])
-  }
-
-  for (const deflate of [false, true]) {
-    it(`第一張工作表（依 workbook 與 rels 找到）：共用字串、格式化片段、行內字串、數字、跳過的欄、空白列（${deflate ? 'deflate' : '不壓縮'}）`, async () => {
-      expect(await readXlsx(workbook(deflate))).toEqual([
-        ['詞', '中文'],
-        ['ralan', '', '路 & 道'],
-        ['tulu', '3'],
-      ])
-    })
-  }
 })

@@ -36,7 +36,7 @@ test('第一次開啟是範例專案：在瀏覽器裡建置之後可以跨方�
 
 test('匯入貼上的表格（方言值對不到的自動新增為變體）→ 建置 → 搜得到新詞，篩選有新的變體；重新整理之後還在', async ({ page }) => {
   await studio(page, '詞表')
-  await page.getByRole('button', { name: '匯入' }).first().click()
+  await page.getByRole('button', { name: '匯入詞表' }).click()
   await page.getByLabel('貼上表格').fill('詞\t中文\t方言\nwatu\t石頭\tpazeh\nbatu\t石頭\t山區')
   await page.getByRole('button', { name: '讀取貼上的內容' }).click()
   await expect(page.getByText('會匯入 2 列')).toBeVisible()
@@ -78,7 +78,7 @@ test('構詞：加一個前綴 → 建置 → 實驗室的 BCDP 分頁拆出詞�
   await expect(page.getByRole('button', { name: /^baket / }).first()).toBeVisible()
 })
 
-test('匯出專案檔再匯入：內容相同；檢查不通過時不能建置', async ({ page }, testInfo) => {
+test('匯出專案檔再匯入成另一個專案：內容相同；可以切換回原本的專案；檢查不通過時不能建置', async ({ page }, testInfo) => {
   await studio(page, '專案')
   const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: '匯出專案檔' }).click()])
   const file = testInfo.outputPath('project.babizu.json')
@@ -86,17 +86,98 @@ test('匯出專案檔再匯入：內容相同；檢查不通過時不能建置',
   const exported = JSON.parse(readFileSync(file, 'utf8'))
   expect(exported).toMatchObject({ format: 'babizu-playground-project', title: { 'zh-TW': '巴宰語與噶哈巫語（範例專案）' } })
 
-  // 換成空白專案，再匯入剛才的檔
-  page.once('dialog', (d) => d.accept())
-  await page.getByRole('button', { name: '新的空白專案' }).click()
+  // 新的空白專案：重新載入，目前的專案換成它，範例專案還在清單上
+  await Promise.all([page.waitForEvent('load'), page.getByRole('button', { name: '新的空白專案' }).click()])
   await expect(page.locator('#title-zh-TW')).toHaveValue('新的辭典')
-  page.once('dialog', (d) => d.accept())
-  await page.locator('input[type=file]').setInputFiles(file)
-  await expect(page.locator('#title-zh-TW')).toHaveValue('巴宰語與噶哈巫語（範例專案）')
+  await expect(page.getByLabel('目前的專案').locator('option')).toHaveCount(2)
 
-  // 詞形空白：列出問題，「建置」不能按
+  // 匯入剛才的檔：成為第三個專案
+  await Promise.all([page.waitForEvent('load'), page.locator('input[type=file][accept^=".json"]').setInputFiles(file)])
+  await expect(page.locator('#title-zh-TW')).toHaveValue('巴宰語與噶哈巫語（範例專案）')
+  await expect(page.getByText('已匯入「project.babizu.json」')).toBeVisible()
+  await expect(page.getByLabel('目前的專案').locator('option')).toHaveCount(3)
+
+  // 切換回空白專案：沒有變更，不必確認
+  const blank = page.getByLabel('目前的專案').locator('option', { hasText: '新的辭典' })
+  await Promise.all([page.waitForEvent('load'), page.getByLabel('目前的專案').selectOption({ label: (await blank.textContent())?.trim() ?? '' })])
+  await expect(page.locator('#title-zh-TW')).toHaveValue('新的辭典')
+
+  // 詞形空白：列出問題，「建置」不能按；「前往」跳到那一列
   await page.getByRole('tab', { name: '詞表' }).click()
-  await page.getByRole('textbox', { name: '詞形' }).first().fill('')
+  await page.getByRole('button', { name: '新增一個詞' }).click()
   await expect(page.getByText(/有 1 個問題/)).toBeVisible()
   await expect(page.getByRole('button', { name: '建置', exact: true })).toBeDisabled()
+  await page.getByRole('tab', { name: /專案/ }).click()
+  await page.getByRole('button', { name: '前往' }).first().click()
+  await expect(page.getByRole('textbox', { name: '詞形' }).first()).toBeFocused()
+})
+
+test('切換專案：有還沒建置的變更時先確認，草稿留在原本的專案裡', async ({ page }) => {
+  await studio(page, '專案')
+  await Promise.all([page.waitForEvent('load'), page.getByRole('button', { name: '新的空白專案' }).click()])
+  await page.locator('#title-zh-TW').fill('我的詞表')
+  await expect(page.getByText('有還沒建置的變更')).toBeVisible()
+  await expect(page.getByText('草稿已儲存')).toBeVisible()
+
+  // 換到範例專案：確認視窗（不是瀏覽器的 confirm）
+  const select = page.getByLabel('目前的專案')
+  const sampleLabel = (await select.locator('option', { hasText: '範例專案' }).textContent())?.trim() ?? ''
+  await select.selectOption({ label: sampleLabel })
+  const dialog = page.getByRole('dialog', { name: '切換專案' })
+  await expect(dialog).toContainText('草稿會保留在這個專案裡')
+  await Promise.all([page.waitForEvent('load'), dialog.getByRole('button', { name: '切換' }).click()])
+  await expect(page.locator('#title-zh-TW')).toHaveValue('巴宰語與噶哈巫語（範例專案）')
+
+  // 換回來：草稿還在
+  const mine = (await select.locator('option', { hasText: '我的詞表' }).textContent())?.trim() ?? ''
+  await Promise.all([page.waitForEvent('load'), select.selectOption({ label: mine })])
+  await expect(page.locator('#title-zh-TW')).toHaveValue('我的詞表')
+})
+
+test('有還沒建置的變更時，重新整理要先經過瀏覽器的確認', async ({ page }) => {
+  await studio(page, '專案')
+  await page.locator('#title-zh-TW').fill('改了名稱')
+  await expect(page.getByText('草稿已儲存')).toBeVisible()
+  const dialogs: string[] = []
+  page.on('dialog', async (d) => {
+    dialogs.push(d.type())
+    await d.dismiss()
+  })
+  // 瀏覽器只在使用者和頁面互動過之後才顯示離開確認
+  await page.locator('#title-zh-TW').click()
+  await page.reload({ timeout: 2000 }).catch(() => {})
+  expect(dialogs).toContain('beforeunload')
+  await expect(page.locator('#title-zh-TW')).toHaveValue('改了名稱')
+})
+
+test('匯入 CSV 檔：Windows 換行、引號裡的逗號與換行；自訂欄首對應，下次自動套用', async ({ page }) => {
+  await studio(page, '詞表')
+  const csv = ['Lexeme,Gloss,Remarks,Region', '"kita, ita",road,"line1\r\nline2",pazeh', 'batu,stone,,pazeh', ''].join('\r\n')
+  await page.getByRole('button', { name: '匯入詞表' }).click()
+  const dialog = page.getByRole('dialog')
+  await dialog.locator('input[type=file]').setInputFiles({ name: 'list.csv', mimeType: 'text/csv', buffer: Buffer.from(csv) })
+  await expect(dialog.getByText('list.csv：共 2 列、4 欄')).toBeVisible()
+  // Lexeme → 詞形、Gloss（英文內容）→ 英文；Remarks 自動是備註，改成不匯入；Region 自動對到方言
+  await expect(dialog.getByLabel('「Lexeme」匯入成')).toHaveValue('text')
+  await expect(dialog.getByLabel('「Gloss」匯入成')).toHaveValue('en')
+  await dialog.getByLabel('「Remarks」匯入成').selectOption('ignore')
+  await expect(dialog.getByLabel('「Region」匯入成')).toHaveValue('dialect')
+  await expect(dialog.getByText('會匯入 2 列')).toBeVisible()
+  await dialog.getByRole('button', { name: '匯入', exact: true }).click()
+  await page.getByPlaceholder('篩選').fill('kita')
+  await expect(page.getByRole('textbox', { name: '詞形' })).toHaveValue('kita, ita')
+  await expect(page.getByRole('textbox', { name: '英文' })).toHaveValue('road')
+  await expect(page.getByRole('textbox', { name: '備註' })).toHaveValue('')
+
+  // 再匯入同樣欄首的檔：套用記住的對應（Remarks 不匯入）；完全相同的列略過
+  await page.getByRole('button', { name: '匯入詞表' }).click()
+  await dialog.locator('input[type=file]').setInputFiles({ name: 'list.csv', mimeType: 'text/csv', buffer: Buffer.from(csv) })
+  await expect(dialog.getByLabel('「Remarks」匯入成')).toHaveValue('ignore')
+  await expect(dialog.getByLabel('「Region」匯入成')).toHaveValue('dialect')
+  await expect(dialog.getByText('2 列和現有的資料或前面的列完全相同，會略過')).toBeVisible()
+  await expect(dialog.getByRole('button', { name: '匯入', exact: true })).toBeDisabled()
+
+  // Excel 檔：說明要另存成 CSV
+  await dialog.locator('input[type=file]').setInputFiles({ name: 'list.xlsx', mimeType: 'application/octet-stream', buffer: Buffer.from([0x50, 0x4b, 0x03, 0x04, 0, 0]) })
+  await expect(dialog.getByRole('alert')).toContainText('CSV UTF-8')
 })

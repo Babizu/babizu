@@ -9,7 +9,7 @@ import { ref } from 'vue'
 import type { BuildStep } from '@babizu/playground/build.ts'
 import type { PlaygroundProject } from '@babizu/playground/project.ts'
 import site from 'virtual:babizu/site'
-import { dbName, getFile, kvGet } from './db.ts'
+import { dbName, findBuild, isQuotaError } from './db.ts'
 import { currentProject } from './runtime.ts'
 
 /** 建置的狀態：idle 沒有在建置；error 失敗（message 是技術細節） */
@@ -30,6 +30,13 @@ export async function projectHash(project: PlaygroundProject): Promise<string> {
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('').slice(0, 16)
 }
 
+/** 建置失敗的說明：儲存空間不足另外說明怎麼辦，其他附上技術細節 */
+function describeBuildError(err: unknown): string {
+  const message = err instanceof Error ? err.message : String(err)
+  if (isQuotaError(err) || /quota/iu.test(message)) return 'quota'
+  return message
+}
+
 let ensured: Promise<string> | null = null
 
 /** 目前專案的資料版本（需要時先建置） */
@@ -43,8 +50,8 @@ export function ensureBuilt(): Promise<string> {
 
 async function build(project: PlaygroundProject): Promise<string> {
   const hash = await projectHash(project)
-  const pointer = await kvGet<{ hash: string; version: string }>(DB, 'build')
-  if (pointer?.hash === hash && (await getFile(DB, pointer.version, 'manifest.json'))) return pointer.version
+  const cached = await findBuild(DB, hash)
+  if (cached) return cached
   buildState.value = { step: 'dataset', done: 0, total: 0, message: null }
   const worker = new Worker(new URL('../workers/build.worker.ts', import.meta.url), { type: 'module' })
   try {
@@ -63,7 +70,7 @@ async function build(project: PlaygroundProject): Promise<string> {
       worker.postMessage({ project: JSON.parse(JSON.stringify(project)), db: DB, hash })
     })
   } catch (err) {
-    buildState.value = { step: 'error', done: 0, total: 0, message: err instanceof Error ? err.message : String(err) }
+    buildState.value = { step: 'error', done: 0, total: 0, message: describeBuildError(err) }
     throw err
   } finally {
     worker.terminate()

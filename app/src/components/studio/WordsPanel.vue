@@ -3,14 +3,14 @@
  * 工作台的「詞表」分頁：詞與例句兩張可以直接編輯的表格（新增、刪除、篩選、分頁），以及匯入（ImportDialog）。
  * 方言欄是每個語言變體一個切換鈕；其他寫法以逗號分開。
  */
-import { ChevronLeftIcon, ChevronRightIcon, PlusIcon, Trash2Icon, UploadIcon } from '@lucide/vue'
+import { ChevronLeftIcon, ChevronRightIcon, ImportIcon, PlusIcon, Trash2Icon } from '@lucide/vue'
 import { computed, nextTick, ref, watch, reactive } from 'vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { t } from '@/i18n.ts'
 import { site } from '@/lib/labels.ts'
 import { textOf } from '@/playground/localized.ts'
-import { draft as studioDraft } from '@/playground/studio.ts'
+import { focusPath, issuePaths, draft as studioDraft } from '@/playground/studio.ts'
 import { nextId } from '@babizu/playground/project.ts'
 import ImportDialog from './ImportDialog.vue'
 
@@ -65,6 +65,18 @@ async function showImported(mode: 'append' | 'replace') {
 function removeRow(k: number) {
   draft[kind.value].splice(k, 1)
 }
+const invalid = (path: string) => issuePaths.value.has(path) || undefined
+const rowInvalid = (k: number) => ['text', 'id', 'dialects'].some((f) => issuePaths.value.has(`${kind.value}[${k}].${f}`))
+
+/** 問題清單按「前往」：換到那張表、清掉篩選、翻到那一頁（捲動與聚焦由工作台頁面做） */
+watch(focusPath, async (path) => {
+  const m = /^(words|sentences)\[(\d+)\]/u.exec(path ?? '')
+  if (!m) return
+  kind.value = m[1] as 'words' | 'sentences'
+  filter.value = ''
+  await nextTick()
+  page.value = Math.floor(Number(m[2]) / PAGE)
+})
 </script>
 
 <template>
@@ -85,13 +97,13 @@ function removeRow(k: number) {
       </div>
       <Input v-model="filter" class="h-9 w-48" :placeholder="t('篩選')" :aria-label="t('篩選')" />
       <div class="ml-auto flex gap-2">
-        <Button variant="outline" size="sm" @click="importing = true"><UploadIcon />{{ t('匯入') }}</Button>
+        <Button variant="outline" size="sm" @click="importing = true"><ImportIcon />{{ kind === 'words' ? t('匯入詞表') : t('匯入例句') }}</Button>
         <Button variant="outline" size="sm" @click="addRow"><PlusIcon />{{ kind === 'words' ? t('新增一個詞') : t('新增一個例句') }}</Button>
       </div>
     </div>
 
     <p v-if="!draft[kind].length" class="text-muted-foreground rounded-lg border border-dashed p-6 text-center text-sm">
-      {{ t('還沒有資料。按「匯入」貼上或上傳一份表格（CSV、TSV、Excel），或按「新增」一列一列輸入。') }}
+      {{ t('還沒有資料。按「匯入」上傳 CSV 檔或貼上表格，或按「新增」一列一列輸入。') }}
     </p>
     <div v-else class="relative overflow-x-auto rounded-lg border">
       <table class="w-full text-sm" :class="kind === 'words' ? 'min-w-[60rem]' : 'min-w-[44rem]'">
@@ -110,12 +122,17 @@ function removeRow(k: number) {
           </tr>
         </thead>
         <tbody class="divide-y">
-          <tr v-for="k in visible" :key="draft[kind][k].id">
-            <td class="px-1.5 py-1"><Input v-model="draft[kind][k].text" class="native-text h-8" :aria-label="kind === 'words' ? t('詞形') : t('句子')" :aria-invalid="!draft[kind][k].text.trim() || undefined" /></td>
+          <tr v-for="k in visible" :key="draft[kind][k].id" :data-path="`${kind}[${k}]`" :class="rowInvalid(k) && 'bg-destructive/5'">
+            <td class="px-1.5 py-1">
+              <div class="flex items-center gap-1.5">
+                <span class="text-muted-foreground w-8 shrink-0 text-right text-xs tabular-nums" :title="t('第 {n} 列，編號 {id}', { n: k + 1, id: draft[kind][k].id })">{{ k + 1 }}</span>
+                <Input v-model="draft[kind][k].text" class="native-text h-8" :aria-label="kind === 'words' ? t('詞形') : t('句子')" :aria-invalid="!draft[kind][k].text.trim() || invalid(`${kind}[${k}].text`) || invalid(`${kind}[${k}].id`)" />
+              </div>
+            </td>
             <td class="px-1.5 py-1"><Input v-model="draft[kind][k].zh" class="h-8" :aria-label="t('中文')" /></td>
             <td class="px-1.5 py-1"><Input v-model="draft[kind][k].en" class="h-8" :aria-label="t('英文')" /></td>
             <td class="px-1.5 py-1">
-              <div class="flex flex-wrap gap-1">
+              <div class="flex flex-wrap gap-1 rounded-md" :class="invalid(`${kind}[${k}].dialects`) && 'ring-destructive ring-1 ring-offset-1'">
                 <button
                   v-for="v in draft.varieties"
                   :key="v.code"
@@ -127,7 +144,16 @@ function removeRow(k: number) {
                 >
                   {{ varietyName(v.code) }}
                 </button>
-                <span v-for="d in draft[kind][k].dialects.filter((d) => !draft.varieties.some((v) => v.code === d))" :key="d" class="text-destructive text-xs">{{ d }}?</span>
+                <button
+                  v-for="d in draft[kind][k].dialects.filter((d) => !draft.varieties.some((v) => v.code === d))"
+                  :key="d"
+                  type="button"
+                  class="border-destructive text-destructive h-7 rounded-md border border-dashed px-2 text-xs"
+                  :title="t('「{code}」不在語言變體清單中。按一下從這一列拿掉', { code: d })"
+                  @click="toggleDialect(draft[kind][k], d)"
+                >
+                  {{ d }} ×
+                </button>
               </div>
             </td>
             <template v-if="kind === 'words'">

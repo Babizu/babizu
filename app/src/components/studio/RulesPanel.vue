@@ -10,7 +10,8 @@ import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { msg, t } from '@/i18n.ts'
-import { draft as studioDraft } from '@/playground/studio.ts'
+import { askConfirm } from '@/playground/confirm.ts'
+import { issuePaths, draft as studioDraft } from '@/playground/studio.ts'
 import { ruleRowFrom, ruleRowProblem, ruleRowView, type RuleRowView } from '@babizu/playground/rule-rows.ts'
 
 /** 草稿（以 reactive 取用：模板裡直接改它的欄位，Vue 才知道它不是 ref） */
@@ -27,9 +28,12 @@ const groups = computed<RuleGroup[]>(() => draft.profile.rules ?? [])
 function addGroup() {
   ;(draft.profile.rules ??= []).push({ category: t('新的規則組'), rules: [['', '', 0.1]] })
 }
-function removeGroup(k: number) {
-  if (!groups.value[k].rules.length || window.confirm(t('刪除規則組「{name}」和它的 {count} 條規則？', { name: groups.value[k].category, count: groups.value[k].rules.length }))) groups.value.splice(k, 1)
+async function removeGroup(k: number) {
+  const group = groups.value[k]
+  if (group.rules.length && !(await askConfirm({ title: t('刪除規則組「{name}」？', { name: group.category }), message: t('這一組的 {count} 條規則會一起刪除。', { count: group.rules.length }), confirm: t('刪除'), destructive: true }))) return
+  groups.value.splice(groups.value.indexOf(group), 1)
 }
+const invalid = (path: string) => issuePaths.value.has(path) || undefined
 function update(group: RuleGroup, k: number, patch: Partial<RuleRowView>) {
   group.rules[k] = ruleRowFrom({ ...ruleRowView(group.rules[k]), ...patch })
 }
@@ -121,13 +125,13 @@ function setCost(key: 'substitute' | 'delete' | 'insert', value: string) {
               </tr>
             </thead>
             <tbody>
-              <tr v-for="(row, k) in group.rules.map(ruleRowView)" :key="k">
+              <tr v-for="(row, k) in group.rules.map(ruleRowView)" :key="k" :data-path="`profile.rules[${g}].rules[${k}]`" :class="invalid(`profile.rules[${g}].rules[${k}]`) && 'bg-destructive/5'">
                 <td class="px-1 py-1">
-                  <Input class="native-text h-8 font-mono" :model-value="row.source" :aria-label="t('寫法 A')" :aria-invalid="ruleRowProblem(row) === 'empty' || undefined" @update:model-value="(v) => update(group, k, { source: String(v) })" />
+                  <Input class="native-text h-8 font-mono" :model-value="row.source" :aria-label="t('寫法 A')" :aria-invalid="ruleRowProblem(row) === 'empty' || invalid(`profile.rules[${g}].rules[${k}]`)" @update:model-value="(v) => update(group, k, { source: String(v) })" />
                 </td>
                 <td class="text-muted-foreground text-center" aria-hidden="true">{{ row.bidirectional === false ? '→' : '↔' }}</td>
                 <td class="px-1 py-1">
-                  <Input class="native-text h-8 font-mono" :model-value="row.target" :placeholder="t('（脫落）')" :aria-label="t('寫法 B')" :aria-invalid="ruleRowProblem(row) === 'empty' || undefined" @update:model-value="(v) => update(group, k, { target: String(v) })" />
+                  <Input class="native-text h-8 font-mono" :model-value="row.target" :placeholder="t('（脫落）')" :aria-label="t('寫法 B')" :aria-invalid="ruleRowProblem(row) === 'empty' || invalid(`profile.rules[${g}].rules[${k}]`)" @update:model-value="(v) => update(group, k, { target: String(v) })" />
                 </td>
                 <td class="px-1 py-1">
                   <Input

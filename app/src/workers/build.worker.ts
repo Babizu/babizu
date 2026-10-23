@@ -13,7 +13,7 @@ import { buildProject } from '@babizu/playground/build.ts'
 import type { PlaygroundProject } from '@babizu/playground/project.ts'
 import type { RangeAnalysis } from '@babizu/search/derivations.ts'
 import { analyzeInProcess, type AnalyzeChunks } from '@babizu/site/site-data.ts'
-import { kvSet, putBuild } from '../playground/db.ts'
+import { putBuild } from '../playground/db.ts'
 
 async function sha1Hex(text: string): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-1', new TextEncoder().encode(text))
@@ -75,10 +75,10 @@ self.addEventListener('message', async (event: MessageEvent<{ project: Playgroun
     const threads = Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 2) - 1))
     const analyze = typeof Worker !== 'undefined' && threads > 1 ? analyzeParallel(threads, progress) : analyzeInProcess(progress)
     const build = await buildProject(project, { sha1Hex, analyze, onStep: (step) => self.postMessage({ type: 'step', step }) })
-    await putBuild(db, build.version, build.files)
-    await kvSet(db, 'build', { hash, version: build.version, stats: build.stats })
+    await putBuild(db, hash, build.version, build.files)
     self.postMessage({ type: 'done', version: build.version, stats: build.stats })
   } catch (err) {
-    self.postMessage({ type: 'error', message: err instanceof Error ? err.message : String(err) })
+    const quota = err instanceof DOMException && err.name === 'QuotaExceededError'
+    self.postMessage({ type: 'error', message: quota ? 'QuotaExceededError' : err instanceof Error ? err.message : String(err) })
   }
 })
