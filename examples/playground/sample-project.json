@@ -6,8 +6,8 @@
     "en": "Pazeh and Kaxabu (sample project)"
   },
   "description": {
-    "zh-TW": "從《巴宰語詞典》、《噶哈巫語分類辭典》、潘德興詞彙表與林鴻瑞《噶哈巫語參考語法》選出的幾十個詞與例句，用來展示 babizu：方言規則取自巴宰–噶哈巫語辭典最早的語音對應規則，構詞是幾個常見、能產的詞綴。完整的辭典在 https://babizu.github.io/pazeh-kaxabu/",
-    "en": "A few dozen words and sentences chosen from the Pazih Dictionary, the Kaxabu classified dictionary, Pan Dexing’s wordlist and Lin Hongrui’s Kaxabu reference grammar, for showing babizu. The dialect rules come from the first sound-correspondence rules of the Pazeh–Kaxabu dictionary; the morphology lists a few common, productive affixes. The full dictionary is at https://babizu.github.io/pazeh-kaxabu/"
+    "zh-TW": "從《巴宰語詞典》（李壬癸與土田滋）、《噶哈巫語分類辭典》（潘永歷）、《噶哈巫語參考語法》（林鴻瑞）選出的幾十個詞與例句，以及一些音變規則與較能產的常用詞綴。用來展示 babizu 相關功能，展示如何編輯規則與條目。",
+    "en": "A few dozen words and example sentences selected from the Pazeh Dictionary (Li and Tsuchida), Kaxabu Classification Dictionary (Pan Ing-Lek), and Kaxabu Reference Grammar (Lim Hong-Sui 2023), as well as some phonological rules and commonly used affixes. This project is used to demonstrate the functions of babizu and how to edit rules and entries."
   },
   "varieties": [
     {
@@ -58,7 +58,7 @@
         "label": {
           "en": "Vowels"
         },
-        "description": "元音音值的方言對應（巴宰 u、i，噶哈巫常是 o、é）",
+        "description": "元音常見變化",
         "rules": [
           [
             "u",
@@ -87,7 +87,7 @@
         "label": {
           "en": "Flap r"
         },
-        "description": "r 的脫落、變 l、變喉塞音，以及造成的元音延長。元音＋r 變長元音（er ＝ ee、ur ＝ uu）只在詞尾（與詞素交界）",
+        "description": "r 的脫落、變 l、變喉塞音，以及造成的元音延長",
         "rules": [
           [
             "r",
@@ -271,15 +271,15 @@
         {
           "form": "sa",
           "gloss": {
-            "zh-TW": "工具焦點",
-            "en": "IV"
+            "zh-TW": "工具焦點、工具名物化",
+            "en": "IV, Instrument Nominalization"
           }
         },
         {
           "form": "saa",
           "gloss": {
-            "zh-TW": "工具焦點",
-            "en": "IV"
+            "zh-TW": "工具焦點、工具名物化",
+            "en": "IV, Instrument Nominalization"
           }
         }
       ],
@@ -319,15 +319,15 @@
         {
           "pattern": "CV",
           "gloss": {
-            "zh-TW": "重疊",
-            "en": "RED"
+            "zh-TW": "CV重疊",
+            "en": "CV~RED"
           }
         },
         {
           "pattern": "CVV",
           "gloss": {
-            "zh-TW": "進行",
-            "en": "PROG"
+            "zh-TW": "CVV進行",
+            "en": "CVV~PROG"
           }
         }
       ],
@@ -352,15 +352,6 @@
           "prefix": "m",
           "infix": "a",
           "suffix": "ay",
-          "gloss": {
-            "zh-TW": "主事焦點・非實現",
-            "en": "AV.IRR"
-          }
-        },
-        {
-          "prefix": "ma",
-          "suffix": "ay",
-          "stemInitial": "V",
           "gloss": {
             "zh-TW": "主事焦點・非實現",
             "en": "AV.IRR"
