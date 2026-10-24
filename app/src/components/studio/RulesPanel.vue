@@ -60,9 +60,9 @@ function setNormalizer(key: 'lowercase' | 'stripDiacritics', value: boolean) {
   draft.profile.normalizer = { ...(draft.profile.normalizer ?? {}), [key]: value }
 }
 const COSTS = [
-  { key: 'substitute', label: msg('替換'), fallback: 1.5 },
+  { key: 'substitute', label: msg('替換'), fallback: 1.2 },
   { key: 'delete', label: msg('刪除'), fallback: 1 },
-  { key: 'insert', label: msg('插入'), fallback: 0.8 },
+  { key: 'insert', label: msg('插入'), fallback: 1.0 },
 ] as const
 function setCost(key: 'substitute' | 'delete' | 'insert', value: string) {
   const costs = { ...(draft.profile.costs ?? {}) }

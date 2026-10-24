@@ -23,21 +23,21 @@ export interface CharCostOverride {
 }
 
 export interface CostOptions {
-  /** 預設 1.5 */
+  /** 預設 1.2 */
   substitute?: number
   /** 預設 1.0 */
   delete?: number
-  /** 預設 0.8 */
+  /** 預設 1.0 */
   insert?: number
   /** 以字元為鍵的覆寫表，例如空白 */
   overrides?: Readonly<Record<string, CharCostOverride>>
 }
 
-/** 需求文件指定的基本成本：替換 1.5、刪除 1.0、插入 0.8；空白的插入與刪除皆為 0.1（空白不能與字母互換）。 */
+/** 需求文件指定的基本成本：替換 1.2、刪除 1.0、插入 1.0；空白的插入與刪除皆為 0.1（空白不能與字母互換）。 */
 export const DEFAULT_COSTS: Readonly<Required<CostOptions>> = Object.freeze({
-  substitute: 1.5,
+  substitute: 1.2,
   delete: 1.0,
-  insert: 0.8,
+  insert: 1.0,
   overrides: Object.freeze({
     ' ': Object.freeze({ delete: 0.1, insert: 0.1 }),
   }),

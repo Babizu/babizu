@@ -85,8 +85,8 @@ describe('FuzzyIndex', () => {
   })
 
   it('分數相同時依距離、再依詞排序，與走訪順序無關', () => {
-    // sum 正規化下 b（距離 2）與 ac（距離 2.5）分數都是 1；走訪順序是 ac 在前
-    const index = new FuzzyIndex(new WeightedEditDistance()).addAll([
+    // sum 正規化下 b（距離 2）與 ac（距離 2.5）分數都是 1；走訪順序是 ac 在前（成本固定，不隨預設值變）
+    const index = new FuzzyIndex(new WeightedEditDistance({ costs: { substitute: 1.5, delete: 1, insert: 0.8 } })).addAll([
       ['ac', 'ac'],
       ['b', 'b'],
     ])

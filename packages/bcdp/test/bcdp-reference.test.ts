@@ -388,7 +388,7 @@ describe('固定案例', () => {
 
     it('構詞音變只在交界適用：沒有詞綴時 t → d 不成立', () => {
       const setup = fixed({ ...spec, suffixes: [{ form: 'an' }] }, new RuleSet())
-      expect(setup.metric.distance('kabad', 'kabat')).toBe(1.5) // 普通距離沒有交界
+      expect(setup.metric.distance('kabad', 'kabat')).toBe(1.2) // 普通距離沒有交界
       expect(compare(setup, ['kabat'], 'kabadan').got.get('kabat')).toBeCloseTo(0.35, 9)
     })
   })

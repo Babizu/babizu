@@ -22,7 +22,7 @@ describe('距離函式：查詢與候選必須是字串', () => {
   })
 
   it('空字串是合法的輸入', () => {
-    expect(metric.distance('', 'a')).toBe(0.8)
+    expect(metric.distance('', 'a')).toBe(1)
   })
 })
 

@@ -16,7 +16,7 @@
  *   "normalizer": { "lowercase": true, "charMap": { "ʔ": "'" }, "stripDiacritics": true, "preserve": ["é"] },
  *   "notationChars": "-=<>…~*",
  *   "boundaries": [" "],
- *   "costs": { "substitute": 1.5, "delete": 1.0, "insert": 0.8 },
+ *   "costs": { "substitute": 1.2, "delete": 1.0, "insert": 1.0 },
  *   "rules": [{ "category": "閃音", "rules": [["r", "l", 0.1]] }]
  * }
  * ```

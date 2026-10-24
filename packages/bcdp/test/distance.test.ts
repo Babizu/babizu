@@ -10,10 +10,10 @@ describe('基本成本（無規則）', () => {
     expect(metric.distance('', '')).toBe(0)
   })
 
-  it('替換 1.5、刪除 1.0、插入 0.8', () => {
-    expect(metric.distance('abc', 'abd')).toBe(1.5)
+  it('替換 1.2、刪除 1.0、插入 1.0', () => {
+    expect(metric.distance('abc', 'abd')).toBe(1.2)
     expect(metric.distance('abc', 'ab')).toBe(1) // 查詢多一字：刪除
-    expect(metric.distance('ab', 'abc')).toBe(0.8) // 查詢少一字：插入
+    expect(metric.distance('ab', 'abc')).toBe(1) // 查詢少一字：插入
   })
 
   it('「刪除＋插入」比替換便宜時選前者', () => {
@@ -24,8 +24,8 @@ describe('基本成本（無規則）', () => {
   it('空白的插入、刪除是 0.1；空白不能與字母互換（字母不能以邊界的價錢消失）', () => {
     expect(metric.distance('baruzakbinayu', 'baruzak binayu')).toBe(0.1)
     expect(metric.distance('baruzak binayu', 'baruzakbinayu')).toBe(0.1)
-    // 空白 → x：刪掉空白（0.1）再插入 x（0.8），不是替換
-    expect(metric.distance('ab cd', 'abxcd')).toBeCloseTo(0.9, 9)
+    // 空白 → x：刪掉空白（0.1）再插入 x（1.0），不是替換
+    expect(metric.distance('ab cd', 'abxcd')).toBeCloseTo(1.1, 9)
     // 子音不能直接換成空白（否則 0.1 就等於刪掉一個子音）：是刪除 b ＋ 插入空白
     expect(metric.distance('dabran', 'da ran')).toBeCloseTo(1.1, 9)
     expect(metric.costs.sub('b', ' ')).toBe(Infinity)
@@ -33,7 +33,7 @@ describe('基本成本（無規則）', () => {
   })
 
   it('空字串邊界', () => {
-    expect(metric.distance('', 'abc')).toBe(2.4)
+    expect(metric.distance('', 'abc')).toBe(3)
     expect(metric.distance('abc', '')).toBe(3)
   })
 
@@ -65,7 +65,7 @@ describe('巴宰–噶哈巫語預設規則：需求文件中的例子', () => {
   })
 
   it('非詞尾的 l 不適用 l → n，只能一般替換', () => {
-    expect(metric.distance('alaw', 'anaw')).toBe(1.5)
+    expect(metric.distance('alaw', 'anaw')).toBe(1.2)
   })
 
   it('詞尾規則在片語中的詞邊界（空白前）也適用', () => {
@@ -98,19 +98,19 @@ describe('位置限制', () => {
 
   it('initial 只在詞首（字串開頭或空白之後）', () => {
     expect(metric.distance('xa', 'ya')).toBe(0.1)
-    expect(metric.distance('ax', 'ay')).toBe(1.5)
+    expect(metric.distance('ax', 'ay')).toBe(1.2)
     expect(metric.distance('a xa', 'a ya')).toBe(0.1)
   })
 
   it('final 只在詞尾（字串結尾或空白之前）', () => {
     expect(metric.distance('aq', 'aw')).toBe(0.1)
-    expect(metric.distance('qa', 'wa')).toBe(1.5)
+    expect(metric.distance('qa', 'wa')).toBe(1.2)
     expect(metric.distance('aq b', 'aw b')).toBe(0.1)
   })
 
   it('X 與 Y 兩側都必須在詞尾', () => {
     // X 的 q 在詞尾，但 Y 的 w 後面還有 b：只能替換 q→w 再插入 b
-    expect(metric.distance('aq', 'awb')).toBe(1.5 + 0.8)
+    expect(metric.distance('aq', 'awb')).toBe(1.2 + 1)
   })
 })
 
@@ -125,7 +125,7 @@ describe('雙向規則', () => {
     const rules = new RuleSet().add('ab', 'c', 0.2, { bidirectional: false })
     const metric = new WeightedEditDistance({ rules })
     expect(metric.distance('ab', 'c')).toBe(0.2)
-    expect(metric.distance('c', 'ab')).toBe(1.5 + 0.8)
+    expect(metric.distance('c', 'ab')).toBe(1.2 + 1)
   })
 })
 
@@ -134,14 +134,14 @@ describe('正規化距離', () => {
 
   it('max／sum／query 策略', () => {
     expect(metric.normalizedDistance('bintul', 'bintun', 'max')).toBeCloseTo(0.1 / 6)
-    expect(metric.normalizedDistance('ab', 'abcd', 'max')).toBeCloseTo(1.6 / 4)
-    expect(metric.normalizedDistance('ab', 'abcd', 'sum')).toBeCloseTo((2 * 1.6) / 6)
-    expect(metric.normalizedDistance('ab', 'abcd', 'query')).toBeCloseTo(1.6 / 2)
+    expect(metric.normalizedDistance('ab', 'abcd', 'max')).toBeCloseTo(2 / 4)
+    expect(metric.normalizedDistance('ab', 'abcd', 'sum')).toBeCloseTo((2 * 2) / 6)
+    expect(metric.normalizedDistance('ab', 'abcd', 'query')).toBeCloseTo(2 / 2)
   })
 
   it('自訂策略', () => {
     const d = metric.normalizedDistance('ab', 'abcd', { score: (dist, n, m) => dist / (n * m) })
-    expect(d).toBeCloseTo(1.6 / 8)
+    expect(d).toBeCloseTo(2 / 8)
   })
 
   it('未知策略會丟出錯誤', () => {

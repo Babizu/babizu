@@ -30,7 +30,7 @@ import { resolveNormalization, type NormalizationStrategy } from './score-normal
 import { createNormalizer, type Normalizer, type NormalizerOptions } from './text-normalize.ts'
 
 export interface MetricOptions {
-  /** 基本成本（預設替換 1.5／刪除 1.0／插入 0.8／空白 0.1） */
+  /** 基本成本（預設替換 1.2／刪除 1.0／插入 1.0／空白 0.1） */
   costs?: CostModel | CostOptions
   /** 語音對應規則 */
   rules?: RuleSet | ReadonlyArray<RuleTableRow | RuleGroup>

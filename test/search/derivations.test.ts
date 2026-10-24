@@ -349,6 +349,9 @@ describe('虛擬詞根的對稱：建置與查詢用同一個函式、同樣的�
 })
 
 describe('自動同根：詞根在詞庫中（查詢自動拆解出的詞根往下走）', () => {
+  // 這組測試驗證同根機制：差一個字母的詞（masamian／musamian）要靠自動同根找到，所以成本固定在較高的值
+  // （預設的替換 1.2 在 8 字查詢的標準門檻 1.4 之內，差一個字母的詞會直接是模糊命中）
+  const COSTS = { ...PAZEH_PROFILE.costs, substitute: 1.5, delete: 1, insert: 0.8 }
   const MORPH = { cost: 0.1, minStem: 3, prefixes: [{ form: 'ma' }, { form: 'mu' }, { form: 'sa' }], suffixes: [{ form: 'an' }] }
   const list = [
     rec('samian', 'word', 'samian'),
@@ -366,7 +369,7 @@ describe('自動同根：詞根在詞庫中（查詢自動拆解出的詞根往�
     rec('makitiku', 'word', 'makitiku'),
     rec('mukitiku', 'word', 'mukitiku'),
   ]
-  const data = JSON.parse(JSON.stringify(buildSearchIndex({ items: list.map((record) => ({ record, shard: 'all' })), groups: [], sourceIds: ['dict'], profile: { ...PAZEH_PROFILE, morphology: MORPH } })))
+  const data = JSON.parse(JSON.stringify(buildSearchIndex({ items: list.map((record) => ({ record, shard: 'all' })), groups: [], sourceIds: ['dict'], profile: { ...PAZEH_PROFILE, costs: COSTS, morphology: MORPH } })))
   const s = new SearchEngine({ ...data, derivations: buildDerivationGraph(data) })
 
   it('查 masamian：自動拆解出詞庫中的 samian，往下找到 musamian（自動同根，詞根在詞庫中，沒有詞庫外的代價）', () => {

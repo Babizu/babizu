@@ -42,9 +42,9 @@
       ]
     },
     "costs": {
-      "substitute": 1.5,
+      "substitute": 1.2,
       "delete": 1,
-      "insert": 0.8,
+      "insert": 1,
       "overrides": {
         " ": {
           "delete": 0.1,
