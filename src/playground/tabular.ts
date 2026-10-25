@@ -116,9 +116,9 @@ export function parseTable(text: string, delimiter: string = detectDelimiter(tex
 }
 
 /** 一欄要對到什麼 */
-export type ColumnRole = 'text' | 'zh' | 'en' | 'dialect' | 'pos' | 'alt' | 'note' | 'ignore'
+export type ColumnRole = 'text' | 'root' | 'zh' | 'en' | 'dialect' | 'pos' | 'alt' | 'note' | 'ignore'
 
-export const COLUMN_ROLES: ColumnRole[] = ['text', 'zh', 'en', 'dialect', 'pos', 'alt', 'note', 'ignore']
+export const COLUMN_ROLES: ColumnRole[] = ['text', 'root', 'zh', 'en', 'dialect', 'pos', 'alt', 'note', 'ignore']
 
 /** 欄首的比對鍵：小寫、去掉空白、底線、連字號、括號與常見標點 */
 export function headerKey(header: string): string {
@@ -131,6 +131,7 @@ export function headerKey(header: string): string {
 /** 欄首的常見寫法（比對鍵）。gloss 這類不分語言的放在 GLOSS，依內容決定 */
 const HEADER_NAMES: Array<[Exclude<ColumnRole, 'ignore'>, string[]]> = [
   ['text', ['詞', '詞形', '詞彙', '族語', '族語詞', '族語詞彙', '語詞', '拼寫', '原文', '句子', '族語句子', '例句', 'word', 'words', 'form', 'wordform', 'lexeme', 'headword', 'lemma', 'text', 'entry', 'sentence', 'vernacular', 'native', 'orthography', 'tokens']],
+  ['root', ['詞根', '字根', '語根', '詞幹', '根詞', '衍生自', '來源詞', '原詞', 'root', 'roots', 'rootword', 'stem', 'base', 'baseform', 'derivedfrom', 'etymon']],
   ['zh', ['中文', '華語', '國語', '漢語', '中文釋義', '中文意思', '中文翻譯', '華語釋義', '華語翻譯', 'zh', 'zhtw', 'chinese', 'mandarin', 'chinesegloss', 'mandaringloss', 'glosszh']],
   ['en', ['英文', '英語', '英文釋義', '英文意思', '英文翻譯', 'en', 'eng', 'english', 'englishgloss', 'englishtranslation', 'glossen', 'glosseng']],
   ['dialect', ['方言', '方言別', '方言點', '語言變體', '變體', '語別', '地區', '地點', '部落', '社', 'dialect', 'dialects', 'variety', 'varieties', 'dialectname', 'dialectcode', 'varietyname', 'doculect', 'language', 'lect', 'locality', 'place', 'region']],
@@ -257,7 +258,7 @@ export interface ImportOptions {
 }
 
 /** 判斷重複用的鍵：詞形、中英文、方言（排序後）都相同 */
-const rowKey = (r: { text: string; zh: string; en: string; dialects: string[] }) => JSON.stringify([r.text, r.zh, r.en, [...r.dialects].sort()])
+const rowKey = (r: { text: string; zh: string; en: string; dialects: string[]; root?: string }) => JSON.stringify([r.text, r.zh, r.en, [...r.dialects].sort(), r.root ?? ''])
 
 /** 表格 → 專案的詞 */
 export function tableToWords(table: string[][], roles: ColumnRole[], { hasHeader, varieties, usedIds = [], existing = [], skipDuplicates = false }: ImportOptions): ImportResult<ProjectWord> {
@@ -286,6 +287,7 @@ export function tableToWords(table: string[][], roles: ColumnRole[], { hasHeader
       pos: get('pos')[0] ?? '',
       alt: get('alt').flatMap((a) => a.split(LIST_SPLIT)).map((a) => a.trim()).filter(Boolean),
       note: get('note').join('；'),
+      root: get('root')[0] ?? '',
     }
     if (skipDuplicates) {
       // 方言對不到的值也算進鍵：自動新增變體之後才不會把不同方言的列當成重複
@@ -303,7 +305,7 @@ export function tableToWords(table: string[][], roles: ColumnRole[], { hasHeader
 
 /** 表格 → 專案的例句（用到的欄：text、zh、en、dialect、note） */
 export function tableToSentences(table: string[][], roles: ColumnRole[], { usedIds = [], ...opts }: ImportOptions): ImportResult<ProjectSentence> {
-  const words = tableToWords(table, roles, opts)
+  const words = tableToWords(table, roles.map((r) => (r === 'root' ? 'ignore' : r)), opts)
   const next = nextId('s', usedIds)
   return { ...words, rows: words.rows.map(({ text, zh, en, dialects, note }) => ({ id: next(), text, zh, en, dialects, note })) }
 }

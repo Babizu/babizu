@@ -876,5 +876,7 @@
   "（另有 {count} 個提醒）": " ({count} more notes)",
   "（這個瀏覽器不能儲存專案）": "(this browser cannot store projects)",
   "選擇 CSV 檔": "Choose a CSV file",
-  "還沒有選擇檔案": "No file chosen"
+  "還沒有選擇檔案": "No file chosen",
+  "這個詞衍生自哪個詞。查詞根會找到這個詞，詞條頁顯示「衍生自」": "Which word this one is derived from. Searching for the root finds this word, and the entry page shows \"Derived from\"",
+  "{list}第 {row} 列的詞根必須是文字": "{list} row {row}: the root must be text"
 }

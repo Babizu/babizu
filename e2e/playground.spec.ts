@@ -3,7 +3,7 @@
  * 專案留在瀏覽器裡，可以匯出、匯入。每個測試是新的瀏覽器環境（IndexedDB 是空的），從範例專案開始。
  */
 
-import { readFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { expect, test, type Page } from '@playwright/test'
 
 /** 頁面內容寬度不得超過視窗寬度（允許 1px 誤差） */
@@ -180,4 +180,33 @@ test('匯入 CSV 檔：Windows 換行、引號裡的逗號與換行；自訂欄�
   // Excel 檔：說明要另存成 CSV
   await dialog.locator('input[type=file]').setInputFiles({ name: 'list.xlsx', mimeType: 'application/octet-stream', buffer: Buffer.from([0x50, 0x4b, 0x03, 0x04, 0, 0]) })
   await expect(dialog.getByRole('alert')).toContainText('CSV UTF-8')
+})
+
+test('詞根欄：上傳 CSV（BOM、CRLF）→ 詞表有詞根欄 → 建置 → 查詞根找得到衍生詞，詞條頁顯示「衍生自」', async ({ page }, testInfo) => {
+  const file = testInfo.outputPath('roots.csv')
+  writeFileSync(file, '﻿詞,詞根,中文\r\nzabuk,,灰塵\r\nmazabuk,zabuk,沾滿灰塵\r\n"mi,zabuk",zabuk,"有逗號\r\n也有換行"\r\n')
+  await studio(page, '詞表')
+  await page.getByRole('button', { name: '匯入詞表' }).click()
+  const dialog = page.getByRole('dialog')
+  await dialog.locator('input[type=file]').setInputFiles(file)
+  await expect(dialog.getByLabel('「詞根」匯入成')).toHaveValue('root')
+  await expect(dialog.getByText('會匯入 3 列')).toBeVisible()
+  await dialog.getByRole('button', { name: '匯入', exact: true }).click()
+
+  // 詞表有「詞根」欄，值是匯入的
+  await page.getByPlaceholder('篩選').fill('mazabuk')
+  await expect(page.getByRole('textbox', { name: '詞根' })).toHaveValue('zabuk')
+  await page.getByPlaceholder('篩選').fill('mi,zabuk')
+  // 單行輸入框不顯示格子裡的換行（資料裡還在）
+  await expect(page.getByRole('textbox', { name: '中文' })).toHaveValue('有逗號也有換行')
+  await build(page)
+
+  // 查詞根：詞根本身與標了詞根的詞都找得到
+  await page.goto('./#/?q=zabuk&f=native')
+  const derived = page.locator('article').filter({ hasText: 'mazabuk' }).first()
+  await expect(derived).toBeVisible({ timeout: 30_000 })
+  await derived.getByRole('link').first().click()
+  const morphology = page.getByRole('region', { name: '構詞與變體' })
+  await expect(morphology.getByText('衍生自')).toBeVisible()
+  await expect(morphology.getByRole('link', { name: 'zabuk', exact: true })).toBeVisible()
 })

@@ -87,13 +87,13 @@ describe('轉成專案的詞與例句', () => {
     expect(r.skippedRows).toEqual([3])
     expect(r.unknownDialects).toEqual(['山區'])
     expect(r.rows).toEqual([
-      { id: 'w3', text: 'ralan', zh: '路', en: 'road', dialects: ['north'], pos: '', alt: ['ralang', 'rallan'], note: '' },
-      { id: 'w4', text: 'batu', zh: '石頭', en: 'stone', dialects: [], pos: '', alt: [], note: '' },
+      { id: 'w3', text: 'ralan', zh: '路', en: 'road', dialects: ['north'], pos: '', alt: ['ralang', 'rallan'], note: '', root: '' },
+      { id: 'w4', text: 'batu', zh: '石頭', en: 'stone', dialects: [], pos: '', alt: [], note: '', root: '' },
     ])
   })
 
   it('略過與現有資料或前面的列完全相同的列', () => {
-    const existing = [{ id: 'w1', text: 'ralan', zh: '路', en: 'road', dialects: ['north'], pos: '', alt: [], note: '' }]
+    const existing = [{ id: 'w1', text: 'ralan', zh: '路', en: 'road', dialects: ['north'], pos: '', alt: [], note: '', root: '' }]
     const r = tableToWords([...table, ['batu', '石頭', 'stone', '山區', '']], roles, { hasHeader: true, varieties: VARIETIES, existing, skipDuplicates: true })
     expect(r.rows.map((w) => w.text)).toEqual(['batu'])
     expect(r.duplicateRows).toEqual([2, 5])

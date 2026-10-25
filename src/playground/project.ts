@@ -42,6 +42,11 @@ export interface ProjectWord {
   /** 其他寫法 */
   alt: string[]
   note: string
+  /**
+   * 詞根（這個詞衍生自哪個詞）。轉成記錄的 `morphology.derivedFrom`：查詞根會找到這個詞，詞條頁顯示「衍生自」。
+   * 舊的專案檔沒有這一欄。
+   */
+  root?: string
 }
 
 /** 例句的一列 */
@@ -224,11 +229,13 @@ export function validateProject(input: unknown): ProjectIssue[] {
       else if (ids.has(row.id)) add(`${at}.id`, msg('{list}第 {row} 列的編號「{id}」和第 {first} 列重複'), { list: sourceText(names.list), row: rowName(k, text), id: row.id, first: (ids.get(row.id) as number) + 1 })
       else ids.set(row.id, k)
       if (!text) missing.push(k)
+      const root = (row as { root?: unknown } | undefined)?.root
+      if (root !== undefined && typeof root !== 'string') add(`${at}.root`, msg('{list}第 {row} 列的詞根必須是文字'), { list: sourceText(names.list), row: rowName(k, text) })
       for (const d of Array.isArray(row?.dialects) ? row.dialects : []) {
         if (!codes.has(d)) unknown.set(d, [...(unknown.get(d) ?? []), k])
       }
       if (text) {
-        const key = JSON.stringify([text, row.zh ?? '', row.en ?? '', [...(row.dialects ?? [])].sort()])
+        const key = JSON.stringify([text, row.zh ?? '', row.en ?? '', [...(row.dialects ?? [])].sort(), (row as { root?: string }).root ?? ''])
         const first = seen.get(key)
         if (first === undefined) seen.set(key, k)
         else duplicates.push([first, k])
@@ -358,6 +365,7 @@ export function projectToDataset(project: PlaygroundProject, locale = 'zh-TW'): 
         pos: w.pos.trim() || null,
         variants: w.alt.map((a) => a.trim()).filter(Boolean).map((text) => ({ relation: '~' as const, text })),
         notes: w.note.trim() ? [w.note.trim()] : [],
+        ...(w.root?.trim() ? { morphology: { formType: null, segmentation: null, gloss: null, derivedFrom: [{ relation: '<' as const, text: w.root.trim() }] } } : {}),
         group: { id: words.id, role: 'item', parent: null, seq },
       },
     ),

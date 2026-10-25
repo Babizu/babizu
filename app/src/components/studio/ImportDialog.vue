@@ -60,6 +60,7 @@ const error = ref('')
 
 const ROLE_LABELS: Record<ColumnRole, string> = {
   text: msg('詞形／句子'),
+  root: msg('詞根'),
   zh: msg('中文'),
   en: msg('英文'),
   dialect: msg('方言'),
@@ -165,7 +166,7 @@ const result = computed(() => (table.value.length ? convert(options.value) : nul
 const ready = computed(() => !!result.value && roles.value.includes('text') && result.value.rows.length > 0)
 
 /** 預覽：轉換之後的前 5 列 */
-const PREVIEW_FIELDS = computed(() => (props.kind === 'words' ? (['text', 'zh', 'en', 'dialect', 'pos', 'alt', 'note'] as const) : (['text', 'zh', 'en', 'dialect', 'note'] as const)).filter((f) => roles.value.includes(f)))
+const PREVIEW_FIELDS = computed(() => (props.kind === 'words' ? (['text', 'root', 'zh', 'en', 'dialect', 'pos', 'alt', 'note'] as const) : (['text', 'zh', 'en', 'dialect', 'note'] as const)).filter((f) => roles.value.includes(f)))
 const varietyName = (code: string) => {
   const v = draft.varieties.find((x) => x.code === code)
   return (typeof v?.label === 'string' ? v.label : v?.label[site.defaultLocale]) || code

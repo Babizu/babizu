@@ -49,7 +49,7 @@ function addRow() {
   filter.value = ''
   if (kind.value === 'words') {
     const id = nextId('w', draft.words.map((w) => w.id))()
-    draft.words.push({ id, text: '', zh: '', en: '', dialects: [], pos: '', alt: [], note: '' })
+    draft.words.push({ id, text: '', root: '', zh: '', en: '', dialects: [], pos: '', alt: [], note: '' })
   } else {
     const id = nextId('s', draft.sentences.map((s) => s.id))()
     draft.sentences.push({ id, text: '', zh: '', en: '', dialects: [], note: '' })
@@ -106,10 +106,11 @@ watch(focusPath, async (path) => {
       {{ t('還沒有資料。按「匯入」上傳 CSV 檔或貼上表格，或按「新增」一列一列輸入。') }}
     </p>
     <div v-else class="relative overflow-x-auto rounded-lg border">
-      <table class="w-full text-sm" :class="kind === 'words' ? 'min-w-[60rem]' : 'min-w-[44rem]'">
+      <table class="w-full text-sm" :class="kind === 'words' ? 'min-w-[68rem]' : 'min-w-[44rem]'">
         <thead class="bg-muted/50 text-muted-foreground text-left text-xs">
           <tr>
             <th class="px-2 py-2 font-medium">{{ kind === 'words' ? t('詞形') : t('句子') }}</th>
+            <th v-if="kind === 'words'" class="px-2 py-2 font-medium" :title="t('這個詞衍生自哪個詞。查詞根會找到這個詞，詞條頁顯示「衍生自」')">{{ t('詞根') }}</th>
             <th class="px-2 py-2 font-medium">{{ t('中文') }}</th>
             <th class="px-2 py-2 font-medium">{{ t('英文') }}</th>
             <th class="px-2 py-2 font-medium">{{ t('方言') }}</th>
@@ -128,6 +129,14 @@ watch(focusPath, async (path) => {
                 <span class="text-muted-foreground w-8 shrink-0 text-right text-xs tabular-nums" :title="t('第 {n} 列，編號 {id}', { n: k + 1, id: draft[kind][k].id })">{{ k + 1 }}</span>
                 <Input v-model="draft[kind][k].text" class="native-text h-8" :aria-label="kind === 'words' ? t('詞形') : t('句子')" :aria-invalid="!draft[kind][k].text.trim() || invalid(`${kind}[${k}].text`) || invalid(`${kind}[${k}].id`)" />
               </div>
+            </td>
+            <td v-if="kind === 'words'" class="px-1.5 py-1">
+              <Input
+                class="native-text h-8 w-32"
+                :model-value="draft.words[k].root ?? ''"
+                :aria-label="t('詞根')"
+                @update:model-value="(v: string | number) => (draft.words[k].root = String(v))"
+              />
             </td>
             <td class="px-1.5 py-1"><Input v-model="draft[kind][k].zh" class="h-8" :aria-label="t('中文')" /></td>
             <td class="px-1.5 py-1"><Input v-model="draft[kind][k].en" class="h-8" :aria-label="t('英文')" /></td>
