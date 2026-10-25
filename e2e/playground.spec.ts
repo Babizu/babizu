@@ -70,9 +70,10 @@ test('新增一條方言規則 → 建置 → 模糊搜尋找到原本找不到�
 
 test('構詞：加一個前綴 → 建置 → 實驗室的 BCDP 分頁拆出詞根', async ({ page }) => {
   await studio(page, '構詞')
-  // 範例已有 9 個前綴：新增的是前綴的第 10 列。maa-（相互）不在範例中
-  await page.getByRole('button', { name: '新增', exact: true }).first().click()
-  await page.getByRole('textbox', { name: '寫法', exact: true }).nth(9).fill('maa')
+  // maa-（相互）不在範例中：在前綴的最後新增一列
+  const prefixes = page.locator('section').filter({ has: page.getByRole('heading', { name: '前綴', exact: true }) })
+  await prefixes.getByRole('button', { name: '新增' }).click()
+  await prefixes.getByRole('textbox', { name: '寫法', exact: true }).last().fill('maa')
   await build(page)
   await page.goto('./#/lab?tab=bcdp&q=maabaket&t=baket')
   await expect(page.getByText('找到的詞根').first()).toBeVisible({ timeout: 30_000 })
@@ -302,4 +303,60 @@ test('自動同根：詞根不在詞表中時，標籤也直接寫出查詢與�
   const hit = page.locator('article').filter({ hasText: 'kiliwen' }).first()
   // 查詢拆成 kii~ + kiliw；這個詞拆成 kiliw + -en
   await expect(hit.getByRole('button', { name: /自動同根.*kii~ \+ kiliw ／ kiliw \+ -en/ })).toBeVisible({ timeout: 30_000 })
+})
+
+test('允許的詞綴組合：pu- ＋ <a> ＋ -ay → 建置 → pausunguday 拆成 p<a>u- ＋ sungut ＋ -ay（交界的 t → d 照樣適用）', async ({ page }) => {
+  await studio(page, '構詞')
+  const section = (name: string) => page.locator('section').filter({ has: page.getByRole('heading', { name, exact: true }) })
+
+  // 單獨列出詞綴：pu-、<a>、-ay（範例已有 9 個前綴、3 個後綴、1 個中綴）
+  await section('前綴').getByRole('button', { name: '新增' }).click()
+  await section('前綴').getByRole('textbox', { name: '寫法' }).last().fill('pu')
+  await section('中綴').getByRole('button', { name: '新增' }).click()
+  await section('中綴').getByRole('textbox', { name: '寫法' }).last().fill('a')
+  await section('後綴').getByRole('button', { name: '新增' }).click()
+  await section('後綴').getByRole('textbox', { name: '寫法' }).last().fill('ay')
+  await page.getByRole('tab', { name: '詞表' }).click()
+  await page.getByRole('button', { name: '新增一個詞' }).click()
+  await page.getByRole('textbox', { name: '詞形' }).last().fill('sungut')
+  await page.getByRole('tab', { name: '構詞' }).click()
+
+  // 還沒設定組合：搜尋拆不出來
+  await build(page)
+  await page.goto('./#/?q=pausunguday')
+  await expect(page.getByText('沒有結果')).toBeVisible({ timeout: 30_000 })
+
+  // 設定組合：依「先加上去的在前」排 pu-、<a>、-ay；預覽顯示 p<a>u-…-ay
+  await studio(page, '構詞')
+  const combos = section('允許的詞綴組合')
+  const before = await combos.locator('[data-path^="profile.morphology.constructions["]').count()
+  await combos.getByRole('button', { name: '新增' }).click()
+  const combo = combos.locator('[data-path^="profile.morphology.constructions["]').nth(before)
+  await combo.getByRole('button', { name: '加一個詞素' }).click()
+  await combo.getByRole('combobox', { name: '第 1 個詞素' }).selectOption({ label: 'pu-' })
+  await combo.getByRole('combobox', { name: '第 2 個詞素' }).selectOption({ label: '<a>' })
+  await combo.getByRole('combobox', { name: '第 3 個詞素' }).selectOption({ label: '-ay' })
+  await combo.getByRole('textbox', { name: '組合的意思' }).fill('鋪設・非實現')
+  await expect(combo.getByText('p<a>u-…-ay')).toBeVisible()
+
+  await build(page)
+  await page.goto('./#/?q=pausunguday')
+  const hit = page.locator('article').filter({ hasText: 'sungut' }).first()
+  await expect(hit.getByRole('button', { name: /自動拆解.*p<a>u- \+ sungut \+ -ay/ })).toBeVisible({ timeout: 30_000 })
+})
+
+test('允許的詞綴組合：推導不出來的組合說明原因並擋住建置；原本的環綴（平面清單）顯示成組合', async ({ page }) => {
+  await studio(page, '構詞')
+  const combos = page.locator('section').filter({ has: page.getByRole('heading', { name: '允許的詞綴組合', exact: true }) })
+  // 範例是平面清單寫法：三個環綴（ta-…-i、ta-…-aw、m<a>-…-ay）顯示成組合，預覽是同一種標記
+  await expect(page.getByText('這份設定檔是平面清單的寫法')).toBeVisible()
+  await expect(combos.getByText('m<a>-…-ay').first()).toBeVisible()
+  // 兩個中綴都落在詞根上：無法成立
+  await combos.getByRole('button', { name: '新增' }).click()
+  const combo = combos.locator('[data-path^="profile.morphology.constructions["]').last()
+  await combo.getByRole('combobox', { name: '第 1 個詞素' }).selectOption('infix.in')
+  await combo.getByRole('combobox', { name: '第 2 個詞素' }).selectOption('infix.in')
+  await expect(combo.getByText(/這個組合無法成立/)).toBeVisible()
+  await expect(page.getByText(/允許的詞綴組合第 \d+ 個無法成立/)).toBeVisible()
+  await expect(page.getByRole('button', { name: '建置', exact: true })).toBeDisabled()
 })

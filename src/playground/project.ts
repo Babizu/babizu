@@ -5,7 +5,7 @@
  * 再以與 `babizu build` 相同的程式建置（src/site/site-data.ts）。不碰檔案，瀏覽器與 Node 都能用。
  */
 
-import { validateProfile, type LanguageProfile } from '#bcdp'
+import { validateProfile, type GrammarSpec, type LanguageProfile } from '#bcdp'
 import { computeStats, type LoadedSource } from '../dataset-core.ts'
 import { createCitation, createGroup, createRecord, createSense } from '../schema/records.ts'
 import type { CorpusRecord, CorpusSource } from '../schema/types.ts'
@@ -256,7 +256,60 @@ export function validateProject(input: unknown): ProjectIssue[] {
   return issues
 }
 
+/**
+ * 檢查構詞文法的詞素與允許的詞綴組合（工作台逐列編輯得到的部分）。
+ * 推導不出來的組合（例如兩個中綴都落在詞根上）由 validateProfile 的 validateGrammar 指出。
+ */
+function checkGrammar(g: GrammarSpec, addHere: AddIssue): void {
+  const morphemes = Array.isArray(g.morphemes) ? g.morphemes : []
+  const ids = new Set(morphemes.map((x) => x?.id))
+  const rowOf = new Map<string, number>()
+  const seen = new Map<string, number>()
+  morphemes.forEach((x, i) => {
+    if (!x || typeof x !== 'object') return
+    const type = x.type
+    const kind = sourceText(MORPHEME_KINDS[type] ?? msg('詞素'))
+    const row = (rowOf.get(type) ?? 0) + 1
+    rowOf.set(type, row)
+    const at = `profile.morphology.morphemes[${i}]`
+    if (type === 'reduplication') {
+      if (x.free === false) return
+      const pattern = typeof x.pattern === 'string' ? x.pattern : ''
+      if (!pattern) return
+      const key = `reduplication\u0000${pattern}`
+      if (seen.has(key)) addHere(at, msg('構詞：重疊型式「{pattern}」重複了（第 {first} 個與第 {row} 個）'), { pattern, first: (seen.get(key) as number), row }, 'warning')
+      else seen.set(key, row)
+      return
+    }
+    const forms = Array.isArray(x.forms) ? x.forms : x.form === undefined ? [] : [x.form]
+    if (!forms.length || forms.every((f) => typeof f !== 'string' || !f.trim())) {
+      addHere(at, msg('構詞：{kind}第 {row} 個沒有寫法。填上（例如 ma），或刪掉這一列'), { kind, row })
+      return
+    }
+    for (const form of forms) {
+      if (typeof form !== 'string') continue
+      if (/\s/u.test(form)) addHere(at, msg('構詞：{kind}「{form}」不能有空白（詞綴不跨越詞的邊界）'), { kind, form })
+      else if (/^[-<]|[->]$/u.test(form)) addHere(at, msg('構詞：{kind}「{form}」不用寫連字號或角括號，只寫字母（例如 {plain}）'), { kind, form, plain: form.replace(/^[-<]+|[->]+$/gu, '') })
+      else if (x.free !== false) {
+        const key = `${type}\u0000${form}`
+        if (seen.has(key)) addHere(at, msg('構詞：{kind}「{form}」重複了（第 {first} 個與第 {row} 個）'), { kind, form, first: seen.get(key) as number, row }, 'warning')
+        else seen.set(key, row)
+      }
+    }
+    if (x.cost !== undefined && !isCost(x.cost)) addHere(at, msg('構詞：{kind}「{form}」的成本要是 0 以上的數字'), { kind, form: forms.join('/') })
+  })
+  const constructions = Array.isArray(g.constructions) ? g.constructions : []
+  constructions.forEach((c, i) => {
+    const at = `profile.morphology.constructions[${i}]`
+    const sequence = Array.isArray(c?.sequence) ? c.sequence : []
+    if (sequence.some((id) => !id || !ids.has(id))) addHere(at, msg('允許的詞綴組合第 {row} 個有詞素還沒選（或選的詞素已經刪掉）'), { row: i + 1 })
+    else if (sequence.length < 2) addHere(at, msg('允許的詞綴組合第 {row} 個至少要有兩個詞素（只有一個的，直接列成詞綴就好）'), { row: i + 1 })
+  })
+}
+
 /** 構詞平面清單的名稱 */
+/** 文法詞素的類型名稱 */
+const MORPHEME_KINDS: Record<string, string> = { prefix: msg('前綴'), suffix: msg('後綴'), infix: msg('中綴'), reduplication: msg('重疊') }
 const AFFIX_LISTS = { prefixes: msg('前綴'), suffixes: msg('後綴'), infixes: msg('中綴') } as const
 const COST_NAMES = { substitute: msg('替換'), delete: msg('刪除'), insert: msg('插入') } as const
 
@@ -307,7 +360,7 @@ function checkProfile(profile: unknown, add: AddIssue): void {
 
   // 構詞（平面清單；構詞文法交給 validateProfile）
   const m = pr.morphology as Record<string, unknown> | undefined
-  if (m && typeof m === 'object' && !('morphemes' in m)) {
+  if (m && typeof m === 'object' && !('morphemes' in m || 'constructions' in m)) {
     for (const [key, label] of Object.entries(AFFIX_LISTS)) {
       const list = m[key]
       if (!Array.isArray(list)) continue
@@ -341,12 +394,17 @@ function checkProfile(profile: unknown, add: AddIssue): void {
       })
     }
   }
+  // 構詞（文法寫法：詞素與允許的詞綴組合）
+  if (m && typeof m === 'object' && ('morphemes' in m || 'constructions' in m)) checkGrammar(m as GrammarSpec, addHere)
   if (found) return
 
   const errors = validateProfile(profile)
   for (const e of errors) {
     const field = /^(morphology|rules|normalizer|costs|boundaries)[\w.[\]]*/u.exec(e)?.[0]
-    add(field ? `profile.${field}` : 'profile', msg('語言設定檔：{detail}'), { detail: e })
+    // 允許的詞綴組合推導不出來（例如兩個中綴都落在詞根上）：說明是哪一個組合
+    const combo = /^morphology\.constructions\[(\d+)\]（[^）]*）：(.*)$/u.exec(e)
+    if (combo) add(`profile.morphology.constructions[${combo[1]}]`, msg('允許的詞綴組合第 {row} 個無法成立：{detail}'), { row: Number(combo[1]) + 1, detail: combo[2] })
+    else add(field ? `profile.${field}` : 'profile', msg('語言設定檔：{detail}'), { detail: e })
   }
   if (errors.length) return
   try {

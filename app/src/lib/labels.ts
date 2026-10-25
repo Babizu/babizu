@@ -415,5 +415,6 @@ export const SPEC_LABELS = {
   infixes: msg('中綴', '規格清單'),
   reduplication: msg('重疊型式'),
   alternations: msg('構詞音變', '規格清單'),
+  constructions: msg('允許的詞綴組合'),
 }
 export const specLabel = (key: string) => labelOf(SPEC_LABELS, key)

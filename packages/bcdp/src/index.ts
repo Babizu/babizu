@@ -47,7 +47,7 @@ export {
 export { createMorphSearch, type MorphHit, type MorphSearch, type MorphSearchDeps, type MorphStepHit, type Prepared, type SoundNote } from './morph-search.ts'
 export type { MissReason, MorphAlignment } from './morph-explain.ts'
 export { DERIVATION_MAX_COST, isVirtualRootShape, lexicalEdgeCost, soundOf, virtualRootCost, virtualRoots, type VirtualRoot } from './virtual-roots.ts'
-export { expandGrammar, isGrammarSpec, validateGrammar, type GrammarSpec } from './grammar.ts'
+export { expandGrammar, isGrammarSpec, validateGrammar, type ConstructionSpec, type GrammarSpec, type MorphemeSpec } from './grammar.ts'
 export { roundCost, EPSILON } from './dp.ts'
 export {
   PROFILE_FORMAT,

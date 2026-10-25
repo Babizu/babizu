@@ -63,7 +63,7 @@ function tabOf(issue: ProjectIssue): Tab {
   if (p.startsWith('words') || p.startsWith('sentences')) return 'words'
   if (p.startsWith('profile.rules') || p.startsWith('profile.normalizer') || p.startsWith('profile.costs')) return 'rules'
   if (p.startsWith('profile.morphology')) {
-    return /^profile\.morphology\.(prefixes|suffixes|infixes|alternations|reduplication)\[/u.test(p) ? 'morphology' : 'advanced'
+    return /^profile\.morphology\.(prefixes|suffixes|infixes|alternations|reduplication|morphemes|constructions)\[/u.test(p) ? 'morphology' : 'advanced'
   }
   if (p.startsWith('profile')) return 'advanced'
   return 'project'

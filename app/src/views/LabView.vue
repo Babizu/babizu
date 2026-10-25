@@ -52,12 +52,22 @@ watch([tab, tabQuery], () => {
 /** 構詞規格的摘要（構詞分頁的設定欄） */
 const morphSummary = computed((): Array<[string, number]> => {
   if (!MORPHOLOGY) return []
-  // 構詞文法的寫法沒有這幾個清單（是 0）
-  const count = (key: string) => {
-    const list = (MORPHOLOGY as unknown as Record<string, unknown>)[key]
-    return Array.isArray(list) ? list.length : 0
+  const spec = MORPHOLOGY as unknown as Record<string, unknown>
+  const length = (key: string) => (Array.isArray(spec[key]) ? (spec[key] as unknown[]).length : 0)
+  // 構詞文法的寫法：詞素依類型數，另有允許的詞綴組合
+  if ('morphemes' in spec || 'constructions' in spec) {
+    const morphemes = (Array.isArray(spec.morphemes) ? spec.morphemes : []) as Array<{ type?: string }>
+    const ofType = (type: string) => morphemes.filter((m) => m.type === type).length
+    return [
+      ['prefixes', ofType('prefix')],
+      ['suffixes', ofType('suffix')],
+      ['infixes', ofType('infix')],
+      ['reduplication', ofType('reduplication')],
+      ['constructions', length('constructions')],
+      ['alternations', length('alternations')],
+    ]
   }
-  return ['prefixes', 'suffixes', 'infixes', 'reduplication', 'alternations'].map((key) => [key, count(key)])
+  return ['prefixes', 'suffixes', 'infixes', 'reduplication', 'alternations'].map((key) => [key, length(key)])
 })
 </script>
 
