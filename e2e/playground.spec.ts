@@ -5,6 +5,7 @@
 
 import { readFileSync, writeFileSync } from 'node:fs'
 import { expect, test, type Page } from '@playwright/test'
+import { workbook } from '../test/playground/xlsx-fixture.ts'
 
 /** 頁面內容寬度不得超過視窗寬度（允許 1px 誤差） */
 async function expectNoHorizontalOverflow(page: Page) {
@@ -177,8 +178,8 @@ test('匯入 CSV 檔：Windows 換行、引號裡的逗號與換行；自訂欄�
   await expect(dialog.getByText('2 列和現有的資料或前面的列完全相同，會略過')).toBeVisible()
   await expect(dialog.getByRole('button', { name: '匯入', exact: true })).toBeDisabled()
 
-  // Excel 檔：說明要另存成 CSV
-  await dialog.locator('input[type=file]').setInputFiles({ name: 'list.xlsx', mimeType: 'application/octet-stream', buffer: Buffer.from([0x50, 0x4b, 0x03, 0x04, 0, 0]) })
+  // 壞掉的 Excel 檔：說明請另存成 CSV
+  await dialog.locator('input[type=file]').setInputFiles({ name: 'broken.xlsx', mimeType: 'application/octet-stream', buffer: Buffer.from([0x50, 0x4b, 0x03, 0x04, 0, 0]) })
   await expect(dialog.getByRole('alert')).toContainText('CSV UTF-8')
 })
 
@@ -209,4 +210,48 @@ test('詞根欄：上傳 CSV（BOM、CRLF）→ 詞表有詞根欄 → 建置 �
   const morphology = page.getByRole('region', { name: '構詞與變體' })
   await expect(morphology.getByText('衍生自')).toBeVisible()
   await expect(morphology.getByRole('link', { name: 'zabuk', exact: true })).toBeVisible()
+})
+
+test('匯入 Excel（.xlsx）：選工作表、詞根欄、建置後查詞根找得到衍生詞；舊版 .xls 說明怎麼辦', async ({ page }, testInfo) => {
+  const file = testInfo.outputPath('words.xlsx')
+  writeFileSync(
+    file,
+    workbook([
+      { name: '說明', rows: [['這張表不是詞表']] },
+      {
+        name: '詞表',
+        rows: [
+          ['Lexeme', 'Root', 'Gloss', 'Count'],
+          ['rumaq', null, 'house', 3],
+          ['mirumaq', 'rumaq', 'to build a house', 1],
+        ],
+      },
+    ]),
+  )
+  await studio(page, '詞表')
+  await page.getByRole('button', { name: '匯入詞表' }).click()
+  const dialog = page.getByRole('dialog')
+  await dialog.locator('input[type=file]').setInputFiles(file)
+
+  // 多個工作表：預設第一張有內容的（說明），改選「詞表」
+  await expect(dialog.getByLabel('工作表')).toBeVisible()
+  await dialog.getByLabel('工作表').selectOption({ label: '詞表（3 列）' })
+  await expect(dialog.getByLabel('「Lexeme」匯入成')).toHaveValue('text')
+  await expect(dialog.getByLabel('「Root」匯入成')).toHaveValue('root')
+  await expect(dialog.getByLabel('「Gloss」匯入成')).toHaveValue('en')
+  await expect(dialog.getByText('會匯入 2 列')).toBeVisible()
+  await dialog.getByRole('button', { name: '匯入', exact: true }).click()
+
+  await page.getByPlaceholder('篩選').fill('mirumaq')
+  await expect(page.getByRole('textbox', { name: '詞根' })).toHaveValue('rumaq')
+  await expect(page.getByRole('textbox', { name: '英文' })).toHaveValue('to build a house')
+  await build(page)
+  await page.goto('./#/?q=rumaq&f=native')
+  await expect(page.locator('article').filter({ hasText: 'mirumaq' }).first()).toBeVisible({ timeout: 30_000 })
+
+  // 舊版 .xls（二進位格式）：說明請另存新檔
+  await studio(page, '詞表')
+  await page.getByRole('button', { name: '匯入詞表' }).click()
+  await dialog.locator('input[type=file]').setInputFiles({ name: 'old.xls', mimeType: 'application/vnd.ms-excel', buffer: Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]) })
+  await expect(dialog.getByRole('alert')).toContainText('舊版的 Excel 檔（.xls）')
 })

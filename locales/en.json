@@ -763,7 +763,6 @@
   "「{name}」是表格，不是專案檔。要匯入詞表，請到「詞表」分頁按「匯入詞表」。": "\"{name}\" is a table, not a project file. To import a word list, use \"Import word list\" on the Word list tab.",
   "「{name}」是語言設定檔，不是專案檔。要套用它，請把內容貼到「進階」分頁。": "\"{name}\" is a language profile, not a project file. To use it, paste its content on the Advanced tab.",
   "「{name}」有還沒建置的變更。草稿會保留在這個專案裡，之後切換回來可以繼續編輯或建置；網站在那之前顯示的是它上一次建置的內容。": "\"{name}\" has changes that are not built yet. The draft stays in that project; switch back to keep editing or build it. Until then the site shows its last build.",
-  "上傳 CSV 檔，或在試算表選取範圍、複製、貼在下面。Excel 檔請先「另存新檔」，格式選「CSV UTF-8（逗號分隔）」。第一列可以是欄首（例如：詞、中文、英文、方言），之後可以自己指定每一欄對到哪個欄位。": "Upload a CSV file, or select a range in a spreadsheet, copy it and paste it below. For Excel files, use \"Save As\" and choose \"CSV UTF-8 (comma delimited)\" first. The first row may be headers (e.g. word, Chinese, English, dialect); you can then choose which field each column maps to.",
   "不匯入": "Don't import",
   "不新增時，這些值不會匯入（那些列的方言欄留空）。": "If not added, these values are dropped (those rows get no dialect).",
   "代碼用小寫英數（例如 north），每個方言或變體可以設定其上層方言，搜尋時選擇上層方言則底下的方言或變體都會出現。": "Codes use lowercase letters and digits (e.g. north). Each dialect or variety can have a parent dialect; selecting the parent in search also includes every dialect or variety under it.",
@@ -875,8 +874,13 @@
   "顯示其他 {count} 個": "Show {count} more",
   "（另有 {count} 個提醒）": " ({count} more notes)",
   "（這個瀏覽器不能儲存專案）": "(this browser cannot store projects)",
-  "選擇 CSV 檔": "Choose a CSV file",
   "還沒有選擇檔案": "No file chosen",
   "這個詞衍生自哪個詞。查詞根會找到這個詞，詞條頁顯示「衍生自」": "Which word this one is derived from. Searching for the root finds this word, and the entry page shows \"Derived from\"",
-  "{list}第 {row} 列的詞根必須是文字": "{list} row {row}: the root must be text"
+  "{list}第 {row} 列的詞根必須是文字": "{list} row {row}: the root must be text",
+  "選擇 CSV 或 Excel 檔": "Choose a CSV or Excel file",
+  "上傳 CSV 或 Excel（.xlsx）檔，或在試算表選取範圍、複製、貼在下面。第一列可以是欄首（例如：詞、中文、英文、方言），之後可以自己指定每一欄對到哪個欄位。": "Upload a CSV or Excel (.xlsx) file, or select a range in a spreadsheet, copy it and paste it below. The first row may be headers (e.g. word, Chinese, English, dialect); you can then choose which field each column maps to.",
+  "讀取中…": "Reading…",
+  "工作表": "Sheet",
+  "{name}（{rows} 列）": "{name} ({rows} rows)",
+  "工作表「{name}」是空的（沒有任何有內容的列）。": "The sheet \"{name}\" is empty (no rows with content)."
 }

@@ -135,6 +135,7 @@
     "clsx": "^2.1.1",
     "csv-parse": "^7.0.2",
     "marked": "^18.0.14",
+    "read-excel-file": "^9.3.10",
     "reka-ui": "^2.10.4",
     "tailwind-merge": "^3.7.0",
     "tailwindcss": "^4.3.3",
@@ -147,7 +148,6 @@
   "peerDependencies": {
     "@xmldom/xmldom": "^0.9.12",
     "fflate": "^0.8.3",
-    "read-excel-file": "^9.3.10",
     "sharp": "^0.35.4"
   },
   "peerDependenciesMeta": {
@@ -155,9 +155,6 @@
       "optional": true
     },
     "fflate": {
-      "optional": true
-    },
-    "read-excel-file": {
       "optional": true
     },
     "sharp": {

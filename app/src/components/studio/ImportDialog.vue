@@ -1,8 +1,9 @@
 <script setup lang="ts">
 /**
- * 匯入詞表或例句：上傳 CSV 檔，或從試算表複製貼上 → 每一欄對到一個欄位 → 預覽 → 附加或取代。
+ * 匯入詞表或例句：上傳 CSV 或 Excel（.xlsx）檔，或從試算表複製貼上 → 每一欄對到一個欄位 → 預覽 → 附加或取代。
  *
- * - 剖析、編碼、換行、欄首對應的規則在 @babizu/playground/tabular.ts；
+ * - 剖析、編碼、換行、欄首對應的規則在 @babizu/playground/tabular.ts；Excel 在 xlsx.ts（動態載入 read-excel-file）；
+ * - Excel 檔有好幾個工作表時，可以選要匯入哪一個；
  * - 改過的欄首對應記在瀏覽器裡（IndexedDB 的 'import-roles'），下次遇到同名的欄首直接套用；
  * - 方言欄的值可以是變體代碼或名稱；對不到的值可以自動新增為語言變體；
  * - 附加時可以略過與現有資料完全相同的列（避免同一份檔匯入兩次）。
@@ -32,6 +33,7 @@ import {
   type ColumnRole,
   type ImportOptions,
 } from '@babizu/playground/tabular.ts'
+import { isLegacyXls, isXlsx, readWorkbook, type Sheet } from '@babizu/playground/xlsx.ts'
 
 /** 草稿（以 reactive 取用：模板裡直接改它的欄位，Vue 才知道它不是 ref） */
 const draft = reactive(studioDraft)
@@ -56,6 +58,10 @@ const skipDuplicates = ref(true)
 const mode = ref<'append' | 'replace'>('append')
 const fileName = ref('')
 const encodingNote = ref('')
+/** Excel 檔的工作表（CSV 與貼上時是空的） */
+const sheets = ref<Sheet[]>([])
+const sheetIndex = ref(0)
+const reading = ref(false)
 const error = ref('')
 
 const ROLE_LABELS: Record<ColumnRole, string> = {
@@ -79,6 +85,7 @@ watch(open, async (value) => {
   roles.value = []
   fileName.value = ''
   encodingNote.value = ''
+  sheets.value = []
   error.value = ''
   mode.value = 'append'
   try {
@@ -109,24 +116,35 @@ function guess() {
   roles.value = [...guessed.value]
 }
 
-function useText(text: string) {
+function useRows(rows: string[][]) {
   error.value = ''
-  table.value = []
-  try {
-    table.value = parseTable(text)
-  } catch (err) {
-    error.value = err instanceof TableError ? t('讀不懂這份表格。{message}', { message: err.message }) : t('讀不懂這份表格：{message}', { message: (err as Error).message })
-    return
-  }
-  if (!table.value.length) {
+  table.value = rows
+  if (!rows.length) {
     error.value = t('表格是空的（沒有任何有內容的列）。')
     return
   }
   guess()
 }
+function useText(text: string) {
+  error.value = ''
+  table.value = []
+  try {
+    useRows(parseTable(text))
+  } catch (err) {
+    error.value = err instanceof TableError ? t('讀不懂這份表格。{message}', { message: err.message }) : t('讀不懂這份表格：{message}', { message: (err as Error).message })
+  }
+}
+/** 選了 Excel 的某個工作表 */
+function useSheet(index: number) {
+  sheetIndex.value = index
+  const sheet = sheets.value[index]
+  useRows(sheet ? sheet.table : [])
+  if (sheet && !sheet.table.length) error.value = t('工作表「{name}」是空的（沒有任何有內容的列）。', { name: sheet.name })
+}
 function parsePasted() {
   fileName.value = ''
   encodingNote.value = ''
+  sheets.value = []
   useText(pasted.value)
 }
 async function onFile(event: Event) {
@@ -136,14 +154,28 @@ async function onFile(event: Event) {
   if (!file) return
   fileName.value = file.name
   encodingNote.value = ''
+  sheets.value = []
+  table.value = []
+  error.value = ''
+  reading.value = true
   try {
-    const { text, encoding } = decodeText(new Uint8Array(await file.arrayBuffer()))
-    if (encoding === 'big5') encodingNote.value = t('這個檔案是 Big5 編碼（中文版 Excel 的預設），已自動轉換。')
-    else if (encoding !== 'utf-8') encodingNote.value = t('這個檔案是 UTF-16 編碼，已自動轉換。')
-    useText(text)
+    const bytes = new Uint8Array(await file.arrayBuffer())
+    if (isXlsx(bytes) || isLegacyXls(bytes)) {
+      sheets.value = await readWorkbook(bytes)
+      // 預設選第一個有內容的工作表
+      useSheet(Math.max(0, sheets.value.findIndex((s) => s.table.length > 0)))
+    } else {
+      const { text, encoding } = decodeText(bytes)
+      if (encoding === 'big5') encodingNote.value = t('這個檔案是 Big5 編碼（中文版 Excel 的預設），已自動轉換。')
+      else if (encoding !== 'utf-8') encodingNote.value = t('這個檔案是 UTF-16 編碼，已自動轉換。')
+      useText(text)
+    }
   } catch (err) {
     table.value = []
+    sheets.value = []
     error.value = err instanceof TableError ? err.message : t('無法讀取「{name}」：{message}', { name: file.name, message: (err as Error).message })
+  } finally {
+    reading.value = false
   }
 }
 
@@ -222,15 +254,21 @@ async function doImport() {
       <DialogHeader>
         <DialogTitle>{{ kind === 'words' ? t('匯入詞表') : t('匯入例句') }}</DialogTitle>
         <DialogDescription class="leading-relaxed">
-          {{ t('上傳 CSV 檔，或在試算表選取範圍、複製、貼在下面。Excel 檔請先「另存新檔」，格式選「CSV UTF-8（逗號分隔）」。第一列可以是欄首（例如：詞、中文、英文、方言），之後可以自己指定每一欄對到哪個欄位。') }}
+          {{ t('上傳 CSV 或 Excel（.xlsx）檔，或在試算表選取範圍、複製、貼在下面。第一列可以是欄首（例如：詞、中文、英文、方言），之後可以自己指定每一欄對到哪個欄位。') }}
         </DialogDescription>
       </DialogHeader>
 
       <div class="space-y-3">
         <div class="flex flex-wrap items-center gap-2 text-sm">
-          <Button variant="outline" size="sm" @click="fileInput?.click()"><FileUpIcon />{{ t('選擇 CSV 檔') }}</Button>
-          <span class="text-muted-foreground min-w-0 truncate">{{ fileName || t('還沒有選擇檔案') }}</span>
-          <input ref="fileInput" type="file" accept=".csv,text/csv,.tsv,.txt,text/plain" class="hidden" :aria-label="t('選擇 CSV 檔')" @change="onFile" />
+          <Button variant="outline" size="sm" :disabled="reading" @click="fileInput?.click()"><FileUpIcon />{{ t('選擇 CSV 或 Excel 檔') }}</Button>
+          <span class="text-muted-foreground min-w-0 truncate">{{ reading ? t('讀取中…') : fileName || t('還沒有選擇檔案') }}</span>
+          <input ref="fileInput" type="file" accept=".csv,text/csv,.tsv,.txt,text/plain,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" class="hidden" :aria-label="t('選擇 CSV 或 Excel 檔')" @change="onFile" />
+          <label v-if="sheets.length > 1" class="flex items-center gap-2">
+            <span class="font-medium">{{ t('工作表') }}</span>
+            <select :value="sheetIndex" class="border-input bg-background h-8 rounded-md border px-2 text-sm" @change="(e) => useSheet(Number((e.target as HTMLSelectElement).value))">
+              <option v-for="(sheet, k) in sheets" :key="k" :value="k">{{ t('{name}（{rows} 列）', { name: sheet.name, rows: sheet.table.length }) }}</option>
+            </select>
+          </label>
         </div>
         <div class="space-y-1">
           <label for="import-paste" class="text-sm font-medium">{{ t('或貼上表格') }}</label>

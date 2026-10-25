@@ -112,6 +112,11 @@ export function parseTable(text: string, delimiter: string = detectDelimiter(tex
     if (err instanceof CsvError) throw explainCsvError(err, src)
     throw err
   }
+  return normalizeTable(rows)
+}
+
+/** 每格去掉前後空白、正規化成 NFC，並去掉全空白的列（CSV 與 Excel 共用） */
+export function normalizeTable(rows: string[][]): string[][] {
   return rows.map((row) => row.map((cell) => cell.normalize('NFC').trim())).filter((row) => row.some((cell) => cell !== ''))
 }
 
