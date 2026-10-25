@@ -5,14 +5,15 @@
  * 用構詞文法（morphemes、constructions）寫的設定檔在這裡不能編輯，請到「進階」分頁。
  */
 import { PlusIcon, Trash2Icon } from '@lucide/vue'
-import { REDUPLICATION_PATTERNS, type MorphologySpec, type ReduplicationPattern } from '#bcdp'
+import { REDUPLICATION_PATTERNS, type Gloss, type MorphologySpec, type ReduplicationPattern } from '#bcdp'
 import { computed, reactive } from 'vue'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { msg, t } from '@/i18n.ts'
-import { specLabel } from '@/lib/labels.ts'
+import { site, specLabel } from '@/lib/labels.ts'
 import { askConfirm } from '@/playground/confirm.ts'
+import { textOf, withText } from '@/playground/localized.ts'
 import { issuePaths, draft as studioDraft } from '@/playground/studio.ts'
 
 /** 草稿（以 reactive 取用：模板裡直接改它的欄位，Vue 才知道它不是 ref） */
@@ -38,7 +39,13 @@ function addAffix(key: AffixList) {
   const s = spec.value as MorphologySpec
   ;(s[key] ??= []).push({ form: '' })
 }
-const glossText = (gloss: unknown) => (typeof gloss === 'string' ? gloss : '')
+/** 詞綴、重疊的「意思」：字串，或依語系的說明（顯示預設語系的；改的時候只改這一個語系，其他語系的保留） */
+type Glossed = { gloss?: Gloss }
+const glossText = (gloss: unknown) => (typeof gloss === 'string' ? gloss : gloss && typeof gloss === 'object' ? textOf(gloss as Record<string, string>, site.defaultLocale) : '')
+function setGloss(entry: Glossed, value: string) {
+  if (entry.gloss && typeof entry.gloss === 'object') entry.gloss = withText(entry.gloss, site.defaultLocale, value, site.locales)
+  else entry.gloss = value || undefined
+}
 const invalid = (path: string) => issuePaths.value.has(path) || undefined
 
 /** 重疊型式的說明 */
@@ -52,12 +59,16 @@ const PATTERN_HINTS: Record<ReduplicationPattern, string> = {
   CVCVC: msg('前兩個音節＋輔音'),
   full: msg('整個詞'),
 }
-const hasPattern = (p: ReduplicationPattern) => (spec.value?.reduplication ?? []).some((r) => r.pattern === p)
-function togglePattern(p: ReduplicationPattern, on: boolean) {
+/** 需要宣告滑音（glides）才能用的型式 */
+const NEEDS_GLIDES = new Set<ReduplicationPattern>(['CGV', 'CVG'])
+/** 新增一個重疊：預設選還沒用過的第一種型式 */
+function addReduplication() {
   const s = spec.value as MorphologySpec
-  const list = (s.reduplication ?? []).filter((r) => r.pattern !== p)
-  s.reduplication = on ? [...list, { pattern: p }] : list
+  const used = new Set((s.reduplication ?? []).map((r) => r.pattern))
+  ;(s.reduplication ??= []).push({ pattern: REDUPLICATION_PATTERNS.find((p) => !used.has(p)) ?? 'CV' })
 }
+/** 同一種型式列了不只一次 */
+const duplicatePattern = (k: number) => (spec.value?.reduplication ?? []).findIndex((r) => r.pattern === spec.value?.reduplication?.[k]?.pattern) !== k
 
 type AlternationSpec = NonNullable<MorphologySpec['alternations']>[number]
 const POSITIONS: Array<{ value: NonNullable<AlternationSpec['position']>; label: string }> = [
@@ -112,18 +123,33 @@ function setText(key: 'vowels' | 'glides', value: string) {
           <p class="text-muted-foreground text-xs">{{ t(list.hint) }}</p>
           <div v-for="(affix, k) in listOf(list.key)" :key="k" class="flex items-center gap-2" :data-path="`profile.morphology.${list.key}[${k}]`">
             <Input v-model="affix.form" class="native-text h-8 w-32 font-mono" :aria-label="t('寫法')" :aria-invalid="!affix.form.trim() || invalid(`profile.morphology.${list.key}[${k}]`)" />
-            <Input class="h-8 flex-1" :model-value="glossText(affix.gloss)" :placeholder="t('意思（選填）')" :aria-label="t('意思')" @update:model-value="(v) => (affix.gloss = String(v) || undefined)" />
+            <Input class="h-8 flex-1" :model-value="glossText(affix.gloss)" :placeholder="t('意思（選填）')" :aria-label="t('意思')" @update:model-value="(v) => setGloss(affix, String(v))" />
             <Button variant="ghost" size="icon" :aria-label="t('刪除')" @click="listOf(list.key).splice(k, 1)"><Trash2Icon /></Button>
           </div>
         </section>
 
         <section class="max-w-3xl space-y-2">
-          <h2 class="font-semibold">{{ specLabel('reduplication') }}</h2>
-          <div class="grid gap-2 sm:grid-cols-2">
-            <label v-for="p in REDUPLICATION_PATTERNS" :key="p" class="flex items-start gap-2 text-sm">
-              <Checkbox class="mt-0.5" :model-value="hasPattern(p)" @update:model-value="(v) => togglePattern(p, v === true)" />
-              <span><span class="font-mono">{{ p }}</span> <span class="text-muted-foreground text-xs">{{ t(PATTERN_HINTS[p]) }}</span></span>
-            </label>
+          <div class="flex items-baseline justify-between gap-2">
+            <h2 class="font-semibold">{{ specLabel('reduplication') }}</h2>
+            <Button variant="ghost" size="sm" @click="addReduplication"><PlusIcon />{{ t('新增') }}</Button>
+          </div>
+          <p class="text-muted-foreground text-xs">{{ t('重疊用 ~ 表示，例如 ki~kiliw：重疊的部分在 ~ 之前。選擇是哪一種重疊（重疊哪一段），再寫它的意思。') }}</p>
+          <p v-if="!(spec.reduplication ?? []).length" class="text-muted-foreground text-sm">{{ t('還沒有重疊。按「新增」加一種。') }}</p>
+          <div v-for="(r, k) in spec.reduplication ?? []" :key="k" class="space-y-1" :data-path="`profile.morphology.reduplication[${k}]`">
+            <div class="flex flex-wrap items-center gap-2">
+              <select
+                v-model="r.pattern"
+                class="border-input bg-background h-8 min-w-0 flex-[1_1_14rem] rounded-md border px-2 text-sm sm:flex-none"
+                :aria-label="t('這一列的重疊型式')"
+                :aria-invalid="duplicatePattern(k) || invalid(`profile.morphology.reduplication[${k}]`)"
+              >
+                <option v-for="p in REDUPLICATION_PATTERNS" :key="p" :value="p">{{ p }}　{{ t(PATTERN_HINTS[p]) }}</option>
+              </select>
+              <Input class="h-8 min-w-0 flex-[2_1_10rem]" :model-value="glossText(r.gloss)" :placeholder="t('意思（選填）')" :aria-label="t('重疊的意思')" @update:model-value="(v) => setGloss(r, String(v))" />
+              <Button variant="ghost" size="icon" :aria-label="t('刪除')" @click="spec.reduplication?.splice(k, 1)"><Trash2Icon /></Button>
+            </div>
+            <p v-if="NEEDS_GLIDES.has(r.pattern) && !spec.glides" class="text-destructive text-xs">{{ t('{pattern} 要在下面的「可以當滑音的元音」填上滑音（例如 iu）。', { pattern: r.pattern }) }}</p>
+            <p v-if="duplicatePattern(k)" class="text-muted-foreground text-xs">{{ t('這一種型式已經列過了。') }}</p>
           </div>
         </section>
 

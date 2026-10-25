@@ -49,7 +49,13 @@ const alternative = computed(() => props.analysis.bestCost !== undefined && prop
 const sibling = computed(() => props.analysis.sibling ?? null)
 /** 自動同根的詞根依音節數的成本：詞庫中的詞根含在拆解（cost）裡，虛擬詞根含在詞庫外的代價（penalty）裡，分開列出 */
 const siblingRootCost = computed(() => sibling.value?.rootCost ?? 0)
-const summary = computed(() => (sibling.value ? sibling.value.root : morphSummary(props.analysis)))
+/**
+ * 標籤上直接寫出拆法：自動拆解、自動派生是這個詞的拆法（kii~ + kiliw）；
+ * 自動同根是兩個詞各自的拆法：查詢 ／ 命中的詞（kii~ + kiliw ／ mi- + kiliw），詞根不在詞庫中也一樣
+ */
+const summary = computed(() =>
+  sibling.value ? `${morphSummary({ stem: sibling.value.root, steps: sibling.value.steps })} ／ ${morphSummary(props.analysis)}` : morphSummary(props.analysis),
+)
 const intro = computed(() =>
   props.matchType === 'lemma'
     ? t('{query} → {stem}', { query: props.query, stem: props.analysis.stem })

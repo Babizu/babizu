@@ -882,5 +882,12 @@
   "讀取中…": "Reading…",
   "工作表": "Sheet",
   "{name}（{rows} 列）": "{name} ({rows} rows)",
-  "工作表「{name}」是空的（沒有任何有內容的列）。": "The sheet \"{name}\" is empty (no rows with content)."
+  "工作表「{name}」是空的（沒有任何有內容的列）。": "The sheet \"{name}\" is empty (no rows with content).",
+  "重疊用 ~ 表示，例如 ki~kiliw：重疊的部分在 ~ 之前。選擇是哪一種重疊（重疊哪一段），再寫它的意思。": "Reduplication is written with ~, e.g. ki~kiliw: the reduplicated part comes before the ~. Choose which kind of reduplication it is (which part is copied), then write what it means.",
+  "還沒有重疊。按「新增」加一種。": "No reduplication yet. Press Add to add one.",
+  "重疊的意思": "Meaning of the reduplication",
+  "{pattern} 要在下面的「可以當滑音的元音」填上滑音（例如 iu）。": "{pattern} needs glides in the \"Vowels that can be glides\" field below (e.g. iu).",
+  "這一種型式已經列過了。": "This pattern is already listed.",
+  "構詞：重疊型式「{pattern}」重複了（第 {first} 個與第 {row} 個）": "Morphology: the reduplication pattern \"{pattern}\" is listed twice (entries {first} and {row})",
+  "這一列的重疊型式": "Reduplication pattern of this row"
 }

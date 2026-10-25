@@ -27,7 +27,7 @@ const { shortTitle } = useSources()
 const searchRoute = (query: string) => ({ name: 'search', query: { q: query, ...(props.fuzziness === 'normal' ? {} : { fz: props.fuzziness }) } })
 
 /** 拆解中的詞綴的寫法（與構詞樣式相同的符號） */
-const affixText = (a: { type: string; form: string }) => (a.type === 'prefix' ? `${a.form}-` : a.type === 'suffix' ? `-${a.form}` : `<${a.form}>`)
+const affixText = (a: { type: string; form: string }) => (a.type === 'prefix' ? `${a.form}-` : a.type === 'suffix' ? `-${a.form}` : a.type === 'reduplication' ? `${a.form}~` : `<${a.form}>`)
 
 const STATUS = {
   match: { glyph: '✓', label: msg('比到'), class: 'text-muted-foreground' },

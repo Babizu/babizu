@@ -260,7 +260,7 @@ export function partsLayout(parts: NonNullable<StepLike['parts']>, vowels: strin
 }
 
 /**
- * 構詞步驟的寫法：前綴 `mu-`、後綴 `-an`、中綴 `<in>`、重疊 `ba-`、詞幹交替 `t→d`、環綴 `ta-…-aw`。
+ * 構詞步驟的寫法：前綴 `mu-`、後綴 `-an`、中綴 `<in>`、重疊 `ba~`、詞幹交替 `t→d`、環綴 `ta-…-aw`。
  * 構詞文法的步驟由詞素構成時依 parts 寫出：組合規則 `m<a>-…-ay`、`m<in>u-`。
  */
 export function formatMorphStep(step: StepLike): string {
@@ -269,7 +269,9 @@ export function formatMorphStep(step: StepLike): string {
     const core = [before, stemOp].filter(Boolean).join('')
     return after.length ? `${core}…${after.join('')}` : core
   }
-  if (step.type === 'prefix' || step.type === 'reduplication') return `${step.form}-`
+  if (step.type === 'prefix') return `${step.form}-`
+  // 重疊用波浪符（萊比錫標註規則：ki~kiliw），不是詞綴的短槓
+  if (step.type === 'reduplication') return `${step.form}~`
   if (step.type === 'suffix') return `-${step.form}`
   if (step.type === 'infix') return `<${step.form}>`
   if (step.type === 'alternation') return step.form.replace('>', '→')

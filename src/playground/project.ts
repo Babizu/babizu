@@ -324,6 +324,16 @@ function checkProfile(profile: unknown, add: AddIssue): void {
         if (a?.cost !== undefined && !isCost(a.cost)) addHere(at, msg('構詞：{kind}「{form}」的成本要是 0 以上的數字'), { kind: name, form })
       })
     }
+    const reduplication = m.reduplication
+    if (Array.isArray(reduplication)) {
+      const seen = new Map<string, number>()
+      reduplication.forEach((r: { pattern?: unknown }, i) => {
+        const pattern = typeof r?.pattern === 'string' ? r.pattern : ''
+        if (!pattern) return
+        if (seen.has(pattern)) addHere(`profile.morphology.reduplication[${i}]`, msg('構詞：重疊型式「{pattern}」重複了（第 {first} 個與第 {row} 個）'), { pattern, first: (seen.get(pattern) as number) + 1, row: i + 1 }, 'warning')
+        else seen.set(pattern, i)
+      })
+    }
     const alternations = m.alternations
     if (Array.isArray(alternations)) {
       alternations.forEach((a: { underlying?: unknown; surface?: unknown }, i) => {

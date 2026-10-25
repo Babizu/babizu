@@ -255,3 +255,51 @@ test('匯入 Excel（.xlsx）：選工作表、詞根欄、建置後查詞根找
   await dialog.locator('input[type=file]').setInputFiles({ name: 'old.xls', mimeType: 'application/vnd.ms-excel', buffer: Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]) })
   await expect(dialog.getByRole('alert')).toContainText('舊版的 Excel 檔（.xls）')
 })
+
+test('重疊型式：新增一種、選型式、寫意思 → 建置 → 搜尋的標籤直接寫出拆法，重疊用 ~', async ({ page }) => {
+  await studio(page, '構詞')
+  const section = page.locator('section').filter({ has: page.getByRole('heading', { name: '重疊型式', exact: true }) })
+  // 範例已有兩種重疊（CV、CVV），意思是依語系的說明：顯示預設語系的
+  await expect(section.getByRole('combobox', { name: '這一列的重疊型式' })).toHaveCount(2)
+  await expect(section.getByRole('textbox', { name: '重疊的意思' }).first()).not.toHaveValue('')
+
+  // 新增：預設選還沒用過的型式，改選「整個詞」，寫意思
+  await section.getByRole('button', { name: '新增' }).click()
+  const rows = section.getByRole('combobox', { name: '這一列的重疊型式' })
+  await expect(rows).toHaveCount(3)
+  await rows.nth(2).selectOption('full')
+  await section.getByRole('textbox', { name: '重疊的意思' }).nth(2).fill('重複')
+  // 同一種型式列兩次：提醒（不擋建置）
+  await rows.nth(1).selectOption('full')
+  await expect(page.getByText(/重疊型式「full」重複了/)).toBeVisible()
+  await rows.nth(1).selectOption('CVV')
+
+  // 詞根 kiliw 在詞表中：查 kiikiliw 是 kii~ ＋ kiliw
+  await page.getByRole('tab', { name: '詞表' }).click()
+  await page.getByRole('button', { name: '新增一個詞' }).click()
+  await page.getByRole('textbox', { name: '詞形' }).last().fill('kiliw')
+  await build(page)
+  await page.goto('./#/?q=kiikiliw')
+  const hit = page.locator('article').filter({ hasText: 'kiliw' }).first()
+  await expect(hit.getByRole('button', { name: /自動拆解.*kii~ \+ kiliw/ })).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByText('kii- + kiliw')).toHaveCount(0)
+
+  // 整個詞重疊：kiliw~kiliw，意思是剛才寫的
+  await page.goto('./#/?q=kiliwkiliw')
+  const full = page.locator('article').filter({ hasText: 'kiliw' }).first()
+  await full.getByRole('button', { name: /自動拆解.*kiliw~ \+ kiliw/ }).click()
+  await expect(page.getByRole('dialog').or(page.locator('[role=dialog], [data-reka-popper-content-wrapper]')).getByText('重複').first()).toBeVisible()
+})
+
+test('自動同根：詞根不在詞表中時，標籤也直接寫出查詢與命中詞各自的拆法', async ({ page }) => {
+  await studio(page, '詞表')
+  for (const w of ['mikiliw', 'kiliwen']) {
+    await page.getByRole('button', { name: '新增一個詞' }).click()
+    await page.getByRole('textbox', { name: '詞形' }).last().fill(w)
+  }
+  await build(page)
+  await page.goto('./#/?q=kiikiliw')
+  const hit = page.locator('article').filter({ hasText: 'kiliwen' }).first()
+  // 查詢拆成 kii~ + kiliw；這個詞拆成 kiliw + -en
+  await expect(hit.getByRole('button', { name: /自動同根.*kii~ \+ kiliw ／ kiliw \+ -en/ })).toBeVisible({ timeout: 30_000 })
+})

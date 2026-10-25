@@ -70,6 +70,13 @@ describe('labels', () => {
     expect(morphSummary({ stem: 'tuku', steps })).toBe('mu- + pa- + tuku + -i + -an')
   })
 
+  it('重疊用波浪符 ~（不是前綴的短槓）：ki~kiliw、kii~kiliw；與前綴、後綴一起依位置排列', () => {
+    expect(formatMorphStep({ type: 'reduplication', form: 'kii' })).toBe('kii~')
+    expect(morphSummary({ stem: 'kiliw', steps: [{ type: 'reduplication', form: 'kii' }] })).toBe('kii~ + kiliw')
+    // mu- 在外、ki~ 在內、-an 後綴
+    expect(morphSummary({ stem: 'kiliw', steps: [{ type: 'prefix', form: 'mu' }, { type: 'suffix', form: 'an' }, { type: 'reduplication', form: 'ki' }] })).toBe('mu- + ki~ + kiliw + -an')
+  })
+
   it('構詞文法的組合：依詞素寫出，落在前綴上的中綴插在前綴的首輔音之後', () => {
     const p = (type: string, form: string) => ({ type, form })
     // M<a>…-ay：m- 之後插入 <a>，再加 -ay
