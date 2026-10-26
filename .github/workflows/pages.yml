@@ -1,10 +1,11 @@
 # 展示版（docs/playground.md）部署到這個 repo 的 GitHub Pages（https://babizu.github.io/babizu/）。
-# 發版標籤（v*）時部署，也可以在 Actions 頁手動執行。第一次要到 Settings → Pages → Source 選 GitHub Actions。
+# push 到 main 時部署，也可以在 Actions 頁手動執行。第一次要到 Settings → Pages → Source 選 GitHub Actions。
+# 不用標籤觸發：github-pages 環境的保護規則只允許 main 分支部署，標籤（v*）會被擋下。
 name: Pages
 
 on:
   push:
-    tags: ['v*']
+    branches: [main]
   workflow_dispatch:
 
 permissions:
