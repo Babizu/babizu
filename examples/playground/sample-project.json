@@ -304,6 +304,13 @@
             "zh-TW": "受事焦點",
             "en": "PV"
           }
+        },
+        {
+          "form": "i",
+          "gloss": {
+            "zh-TW": "祈使；呼格",
+            "en": "IMP; vocative"
+          }
         }
       ],
       "infixes": [
